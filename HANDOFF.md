@@ -9,7 +9,7 @@ A **real-time collaborative command-and-control dashboard** for coordinating all
 
 **Live project location:** `C:\Users\fante\Desktop\s5\958 Planner`
 **Local dev server:** `http://localhost:5173`
-**Tech stack:** React + Vite, Supabase (PostgreSQL + Realtime), TailwindCSS optional
+**Tech stack:** React + Vite, Supabase (PostgreSQL + Realtime), TailwindCSS option
 
 ---
 
