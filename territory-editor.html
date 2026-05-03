@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Territory Editor — 958</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #07090e; color: #b8c4d8;
+  font-family: 'Courier New', monospace;
+  height: 100vh; display: flex; flex-direction: column;
+  overflow: hidden; user-select: none;
+}
+#topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 14px; background: #0d1220;
+  border-bottom: 1px solid #1a2438; flex-shrink: 0;
+}
+#topbar h1 {
+  font-family: Georgia, serif; font-size: 14px;
+  color: #d4a832; letter-spacing: 3px; text-transform: uppercase; margin-right: 4px;
+}
+#status { font-size: 10px; color: #3a4e68; letter-spacing: 1px; flex: 1; }
+.btn {
+  padding: 5px 12px; border: 1px solid #1e2c44; background: #0d1424;
+  color: #6a7c99; cursor: pointer; font-family: 'Courier New', monospace;
+  font-size: 10px; letter-spacing: 1px; text-transform: uppercase;
+  transition: all 0.12s; white-space: nowrap;
+}
+.btn:hover:not(:disabled) { border-color: #d4a832; color: #d4a832; }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn.gold { border-color: #d4a832; color: #d4a832; background: #140f00; }
+.btn.gold:hover:not(:disabled) { background: #1e1600; }
+.zoom-wrap {
+  display: flex; align-items: center; gap: 4px;
+  border: 1px solid #1a2438; padding: 3px 8px; background: #090d18;
+}
+.zoom-wrap span { font-size: 10px; color: #4a5c7a; letter-spacing: 1px; }
+#zoom-label { min-width: 34px; text-align: center; color: #8898bb; }
+
+#main { display: flex; flex: 1; overflow: hidden; }
+
+#map-container { flex: 1; overflow: auto; background: #050709; position: relative; cursor: crosshair; }
+#map-inner {
+  position: relative; background: #080b12;
+  background-image:
+    linear-gradient(rgba(20,32,54,0.5) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(20,32,54,0.5) 1px, transparent 1px);
+  background-size: var(--gs,12px) var(--gs,12px);
+}
+.tile {
+  position: absolute; cursor: pointer; border: 1px solid rgba(0,0,0,0.5);
+  transition: filter 0.1s; display: flex; align-items: center;
+  justify-content: center; overflow: hidden;
+}
+.tile:hover { filter: brightness(1.5); z-index: 2; border-color: rgba(255,255,255,0.3) !important; }
+.tile.selected { border: 2px solid #d4a832 !important; filter: brightness(1.3); z-index: 3; }
+.tile-label {
+  color: rgba(255,255,255,0.65); text-align: center; pointer-events: none;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1;
+}
+#sel-box {
+  position: absolute; border: 1px solid #d4a832;
+  background: rgba(212,168,50,0.07); pointer-events: none; z-index: 10; display: none;
+}
+
+#sidebar {
+  width: 285px; min-width: 285px; background: #0b1120;
+  border-left: 1px solid #161f34; display: flex; flex-direction: column; overflow: hidden;
+}
+#sb-header { padding: 12px 14px 10px; border-bottom: 1px solid #161f34; background: #0e1528; }
+#sb-header .lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #3a4e68; }
+#sb-count { font-size: 26px; color: #d4a832; font-family: Georgia, serif; line-height: 1.1; }
+#sb-ids { font-size: 9px; color: #2e3e58; margin-top: 3px; line-height: 1.5; word-break: break-all; }
+#sb-buff { margin-top: 8px; display: none; flex-direction: column; gap: 4px; }
+.buff-badge {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: #0a1020; border: 1px solid #1e2c44; padding: 4px 8px; font-size: 10px;
+}
+.buff-badge .bb-icon { font-size: 12px; }
+.buff-badge .bb-val { color: #d4a832; }
+.buff-badge .bb-unit { color: #4a5c7a; font-size: 9px; }
+
+#edit-form { padding: 12px 14px; flex: 1; overflow-y: auto; }
+.fg { margin-bottom: 12px; }
+.fl { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: #3a4e68; margin-bottom: 5px; }
+.fi {
+  width: 100%; background: #060a14; border: 1px solid #182030; color: #b8c4d8;
+  padding: 7px 9px; font-family: 'Courier New', monospace; font-size: 11px;
+  outline: none; transition: border-color 0.12s; appearance: none; -webkit-appearance: none;
+}
+.fi:focus { border-color: #d4a832; }
+select.fi {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='5'%3E%3Cpath d='M0 0l4 5 4-5z' fill='%233a4e68'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 9px center; padding-right: 24px; cursor: pointer;
+}
+.sect-label {
+  font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+  color: #d4a832; opacity: 0.6; margin: 14px 0 10px;
+  border-top: 1px solid #161f34; padding-top: 10px;
+}
+.buff-info-box {
+  background: #060a14; border: 1px solid #182030; padding: 8px 10px;
+  font-size: 10px; color: #6a7a99; line-height: 2;
+}
+.buff-info-box .bv { color: #d4a832; }
+.fhint { font-size: 9px; color: #2e3e58; margin-top: 3px; }
+#apply-btn {
+  width: 100%; padding: 9px; background: #0f0b00; border: 1px solid #d4a832;
+  color: #d4a832; cursor: pointer; font-family: 'Courier New', monospace;
+  font-size: 10px; letter-spacing: 2px; text-transform: uppercase; margin-top: 4px;
+  transition: background 0.12s;
+}
+#apply-btn:hover { background: #1a1200; }
+#hint { font-size: 10px; color: #2a3a54; line-height: 2; padding: 6px 0; }
+
+#legend { border-top: 1px solid #161f34; padding: 10px 14px; overflow-y: auto; max-height: 185px; }
+#legend .lbl { font-size: 9px; letter-spacing: 2px; text-transform: uppercase; color: #3a4e68; margin-bottom: 7px; }
+.li { display: flex; align-items: center; gap: 7px; margin-bottom: 4px; font-size: 10px; color: #6a7c99; }
+.ld { width: 11px; height: 11px; border-radius: 2px; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div id="topbar">
+  <h1>⬡ Territory Editor</h1>
+  <span id="status">Load a territories.json file to begin</span>
+  <button class="btn" onclick="document.getElementById('fi').click()">↑ Load JSON</button>
+  <input type="file" id="fi" accept=".json" style="display:none">
+  <button class="btn" id="btn-all" onclick="selectAll()" disabled>Select All</button>
+  <button class="btn" id="btn-clr" onclick="clearSel()" disabled>Clear</button>
+  <button class="btn gold" id="btn-exp" onclick="exportJSON()" disabled>↓ Export JSON</button>
+  <div class="zoom-wrap">
+    <span>ZOOM</span>
+    <button class="btn" onclick="setZoom(zoom-0.05)" style="border:none;padding:4px 8px">−</button>
+    <span id="zoom-label">25%</span>
+    <button class="btn" onclick="setZoom(zoom+0.05)" style="border:none;padding:4px 8px">+</button>
+  </div>
+</div>
+
+<div id="main">
+  <div id="map-container">
+    <div id="map-inner"><div id="sel-box"></div></div>
+  </div>
+
+  <div id="sidebar">
+    <div id="sb-header">
+      <div class="lbl">Selected Tiles</div>
+      <div id="sb-count">0</div>
+      <div id="sb-ids">—</div>
+      <div id="sb-buff"></div>
+    </div>
+
+    <div id="edit-form">
+      <div id="hint">
+        Click a tile to select.<br>
+        Shift+click to add to selection.<br>
+        Drag on empty space to box-select.
+      </div>
+
+      <div id="edit-fields" style="display:none">
+
+        <div class="fg">
+          <div class="fl">Name</div>
+          <select class="fi" id="f-name">
+            <option value="">— mixed / keep —</option>
+            <option>Trailblazer Bank</option>
+            <option>Warzone Outpost</option>
+            <option>Trade Post</option>
+            <option>Grand Nexus</option>
+            <option>Golden Palace</option>
+            <option>Coyote Town</option>
+            <option>Derby Grounds</option>
+            <option>Lawless Road</option>
+            <option>Sand County</option>
+            <option>Waterhold</option>
+            <option>Small CrystalGold Mine</option>
+            <option>Medium CrystalGold Mine</option>
+            <option>Large CrystalGold Mine</option>
+            <option>Colossal CrystalGold Mine</option>
+            <option>Mega CrystalGold Mine</option>
+          </select>
+        </div>
+
+        <div class="fg">
+          <div class="fl">Level</div>
+          <select class="fi" id="f-level">
+            <option value="">— mixed / keep —</option>
+          </select>
+        </div>
+
+        <!-- Bank buff: item + percentage (editable) -->
+        <div id="bank-buff-section" style="display:none">
+          <div class="sect-label">Bank Buff</div>
+          <div class="fg">
+            <div class="fl">Buff Item</div>
+            <select class="fi" id="f-buff-item">
+              <option value="">— mixed / keep —</option>
+              <option value="__null__">None</option>
+              <option>coin</option><option>construction</option><option>food</option>
+              <option>gathering</option><option>healing</option><option>iron</option>
+              <option>march</option><option>research</option><option>training</option>
+            </select>
+          </div>
+          <div class="fg">
+            <div class="fl">Buff %</div>
+            <select class="fi" id="f-buff-pct">
+              <option value="">— mixed / keep —</option>
+              <option value="__null__">None</option>
+              <option>1</option><option>1.5</option><option>2</option><option>2.5</option>
+              <option>3</option><option>3.5</option><option>4</option><option>4.5</option>
+              <option>5</option><option>6</option><option>7.5</option><option>10</option>
+              <option>12.5</option><option>15</option><option>17.5</option><option>20</option><option>30</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Fixed buff info (cities, nexus, warzone, palace) — read-only -->
+        <div id="fixed-buff-section" style="display:none">
+          <div class="sect-label">Fixed Buffs</div>
+          <div class="buff-info-box" id="fixed-buff-info"></div>
+          <div class="fhint">Defined by tile type — not editable here.</div>
+        </div>
+
+        <button id="apply-btn" onclick="applyEdits()">Apply to Selected</button>
+      </div>
+    </div>
+
+    <div id="legend">
+      <div class="lbl">Tile Types</div>
+      <div id="legend-items"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const MAP_SIZE = 3000;
+
+const COLORS = {
+  'Trailblazer Bank':          '#2a3d6a',
+  'Warzone Outpost':           '#7a1515',
+  'Trade Post':                '#154d30',
+  'Grand Nexus':               '#3d1870',
+  'Golden Palace':             '#7a5810',
+  'Coyote Town':               '#5c3415',
+  'Derby Grounds':             '#123f6a',
+  'Lawless Road':              '#6a2c0c',
+  'Sand County':               '#685020',
+  'Waterhold':                 '#0f4d5a',
+  'Small CrystalGold Mine':    '#4a3a00',
+  'Medium CrystalGold Mine':   '#685200',
+  'Large CrystalGold Mine':    '#826600',
+  'Colossal CrystalGold Mine': '#9e7c10',
+  'Mega CrystalGold Mine':     '#b89220',
+};
+const tileColor = n => COLORS[n] || '#1e2d4a';
+
+const FIXED_BUFF_TYPES = new Set([
+  'Warzone Outpost','Grand Nexus','Golden Palace',
+  'Coyote Town','Derby Grounds','Lawless Road','Sand County','Waterhold',
+  'Small CrystalGold Mine','Medium CrystalGold Mine','Large CrystalGold Mine',
+  'Colossal CrystalGold Mine','Mega CrystalGold Mine'
+]);
+const BANK_TYPES = new Set(['Trailblazer Bank','Trade Post']);
+
+let data = [], selected = new Set(), zoom = 0.25;
+let dragging = false, dragOrigin = null;
+
+document.getElementById('fi').addEventListener('change', e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = ev => {
+    data = JSON.parse(ev.target.result);
+    buildLevelOpts(); renderMap(); renderLegend();
+    document.getElementById('status').textContent = data.length + ' tiles — ' + f.name;
+    document.getElementById('btn-exp').disabled = false;
+    document.getElementById('btn-all').disabled = false;
+  };
+  r.readAsText(f);
+});
+
+function buildLevelOpts() {
+  const levels = [...new Set(data.map(t => t.level))].sort((a,b)=>a-b);
+  const s = document.getElementById('f-level');
+  s.innerHTML = '<option value="">— mixed / keep —</option>';
+  levels.forEach(l => { const o = document.createElement('option'); o.value=l; o.textContent=l; s.appendChild(o); });
+}
+
+function setZoom(z) {
+  zoom = Math.max(0.08, Math.min(2, z));
+  document.getElementById('zoom-label').textContent = Math.round(zoom*100) + '%';
+  const px = Math.round(MAP_SIZE*zoom);
+  const inner = document.getElementById('map-inner');
+  inner.style.width = inner.style.height = px+'px';
+  inner.style.setProperty('--gs', Math.round(50*zoom)+'px');
+  document.querySelectorAll('.tile').forEach(el => {
+    const t = data.find(x => x.id === el.dataset.id);
+    if (t) { applyGeo(el,t); el.querySelector('.tile-label').style.fontSize = lblPx()+'px'; }
+  });
+}
+
+const lblPx = () => Math.max(5, Math.round(8*zoom));
+
+function applyGeo(el, t) {
+  const c = t.coordinates;
+  el.style.left   = Math.round(c.x*zoom)+'px';
+  el.style.top    = Math.round(c.y*zoom)+'px';
+  el.style.width  = Math.round(c.width*zoom)+'px';
+  el.style.height = Math.round(c.height*zoom)+'px';
+}
+
+function tooltip(t) {
+  let s = t.id+' — '+t.name+' (Lv.'+t.level+')';
+  if (t.buff) {
+    if (t.buff.influence)         s += '\n⚑ '+t.buff.influence.toLocaleString()+' influence';
+    if (t.buff.crystal_gold_rate) s += '\n◈ '+t.buff.crystal_gold_rate+'/hr crystal gold';
+    if (t.buff.item && t.buff.percentage) s += '\n+ '+t.buff.percentage+'% '+t.buff.item;
+  }
+  return s;
+}
+
+function renderMap() {
+  const inner = document.getElementById('map-inner');
+  inner.querySelectorAll('.tile').forEach(el => el.remove());
+  const frag = document.createDocumentFragment();
+  data.forEach(t => {
+    const el = document.createElement('div');
+    el.className = 'tile'; el.id = 'tile-'+t.id; el.dataset.id = t.id;
+    applyGeo(el,t); el.style.backgroundColor = tileColor(t.name); el.title = tooltip(t);
+    const lbl = document.createElement('div');
+    lbl.className = 'tile-label'; lbl.textContent = t.id; lbl.style.fontSize = lblPx()+'px';
+    el.appendChild(lbl);
+    el.addEventListener('click', ev => tileClick(ev, t.id));
+    frag.appendChild(el);
+  });
+  inner.appendChild(frag);
+  const px = Math.round(MAP_SIZE*zoom);
+  inner.style.width = inner.style.height = px+'px';
+  inner.style.setProperty('--gs', Math.round(50*zoom)+'px');
+}
+
+function renderLegend() {
+  const names = [...new Set(data.map(t=>t.name))].sort();
+  document.getElementById('legend-items').innerHTML = names.map(n =>
+    '<div class="li"><div class="ld" style="background:'+tileColor(n)+'"></div><span>'+n+'</span></div>'
+  ).join('');
+}
+
+function tileClick(ev, id) {
+  ev.stopPropagation();
+  if (ev.shiftKey||ev.ctrlKey||ev.metaKey) {
+    if (selected.has(id)) selected.delete(id); else selected.add(id);
+  } else {
+    if (selected.size===1 && selected.has(id)) selected.clear();
+    else { selected.clear(); selected.add(id); }
+  }
+  updateUI();
+}
+
+function selectAll() { data.forEach(t=>selected.add(t.id)); updateUI(); }
+function clearSel()  { selected.clear(); updateUI(); }
+
+function buffBadges(t) {
+  if (!t.buff) return '';
+  let h = '';
+  if (t.buff.influence)
+    h += '<div class="buff-badge"><span class="bb-icon">⚑</span><span class="bb-val">'+
+      t.buff.influence.toLocaleString()+'</span><span class="bb-unit">influence</span></div>';
+  if (t.buff.crystal_gold_rate)
+    h += '<div class="buff-badge"><span class="bb-icon">◈</span><span class="bb-val">'+
+      t.buff.crystal_gold_rate+'</span><span class="bb-unit">/hr crystal gold</span></div>';
+  if (t.buff.item && t.buff.percentage)
+    h += '<div class="buff-badge"><span class="bb-icon">+</span><span class="bb-val">'+
+      t.buff.percentage+'%</span><span class="bb-unit">'+t.buff.item+'</span></div>';
+  return h;
+}
+
+function fixedBuffHTML(tiles) {
+  const lines = new Set();
+  tiles.forEach(t => {
+    if (!t.buff) return;
+    if (t.buff.influence)
+      lines.add('⚑ <span class="bv">'+t.buff.influence.toLocaleString()+'</span> influence');
+    if (t.buff.crystal_gold_rate)
+      lines.add('◈ <span class="bv">'+t.buff.crystal_gold_rate+'</span>/hr crystal gold');
+    if (t.buff.item==='research' && t.buff.percentage)
+      lines.add('+ <span class="bv">'+t.buff.percentage+'%</span> research speed');
+  });
+  return [...lines].join('<br>') || 'No buff data';
+}
+
+function updateUI() {
+  document.querySelectorAll('.tile').forEach(el =>
+    el.classList.toggle('selected', selected.has(el.dataset.id))
+  );
+  const count = selected.size;
+  document.getElementById('sb-count').textContent = count;
+  const ids = [...selected];
+  document.getElementById('sb-ids').textContent =
+    count===0 ? '—' :
+    ids.length<=10 ? ids.join(', ') :
+    ids.slice(0,10).join(', ')+' +'+(ids.length-10)+' more';
+
+  const buffDiv = document.getElementById('sb-buff');
+  if (count===1) {
+    const t = data.find(x=>x.id===ids[0]);
+    buffDiv.style.display = 'flex';
+    buffDiv.innerHTML = buffBadges(t);
+  } else { buffDiv.style.display='none'; buffDiv.innerHTML=''; }
+
+  document.getElementById('hint').style.display         = count===0 ? '' : 'none';
+  document.getElementById('edit-fields').style.display  = count===0 ? 'none' : '';
+  document.getElementById('btn-clr').disabled           = count===0;
+  if (count>0) populateForm();
+}
+
+function populateForm() {
+  const sel = data.filter(t=>selected.has(t.id));
+  const names  = [...new Set(sel.map(t=>t.name))];
+  const levels = [...new Set(sel.map(t=>t.level))];
+  document.getElementById('f-name').value  = names.length===1  ? names[0]  : '';
+  document.getElementById('f-level').value = levels.length===1 ? levels[0] : '';
+
+  const hasBank  = sel.some(t=>BANK_TYPES.has(t.name));
+  const hasFixed = sel.some(t=>FIXED_BUFF_TYPES.has(t.name));
+
+  const bankSect = document.getElementById('bank-buff-section');
+  bankSect.style.display = hasBank ? '' : 'none';
+  if (hasBank) {
+    const bt = sel.filter(t=>BANK_TYPES.has(t.name));
+    const bitems = [...new Set(bt.map(t=>t.buff?t.buff.item:null))];
+    const bpcts  = [...new Set(bt.map(t=>t.buff?t.buff.percentage:null))];
+    document.getElementById('f-buff-item').value =
+      bitems.length===1 ? (bitems[0]===null?'__null__':bitems[0]) : '';
+    document.getElementById('f-buff-pct').value =
+      bpcts.length===1 ? (bpcts[0]===null?'__null__':bpcts[0]) : '';
+  }
+
+  const fixedSect = document.getElementById('fixed-buff-section');
+  fixedSect.style.display = hasFixed ? '' : 'none';
+  if (hasFixed)
+    document.getElementById('fixed-buff-info').innerHTML =
+      fixedBuffHTML(sel.filter(t=>FIXED_BUFF_TYPES.has(t.name)));
+}
+
+function applyEdits() {
+  const fName  = document.getElementById('f-name').value;
+  const fLevel = document.getElementById('f-level').value;
+  const fItem  = document.getElementById('f-buff-item').value;
+  const fPct   = document.getElementById('f-buff-pct').value;
+
+  data.forEach(t => {
+    if (!selected.has(t.id)) return;
+    if (fName)  t.name  = fName;
+    if (fLevel) t.level = parseInt(fLevel);
+
+    // Only edit item/pct for bank types
+    const isBank = BANK_TYPES.has(t.name) || (fName && BANK_TYPES.has(fName));
+    if (isBank) {
+      if (fItem==='__null__') { if(t.buff){t.buff.item=null;t.buff.percentage=null;}else t.buff=null; }
+      else if (fItem) { t.buff=t.buff||{}; t.buff.item=fItem; }
+      if (fPct==='__null__') { if(t.buff) t.buff.percentage=null; }
+      else if (fPct) { t.buff=t.buff||{}; t.buff.percentage=parseFloat(fPct); }
+    }
+
+    const el = document.getElementById('tile-'+t.id);
+    if (el) { if(fName) el.style.backgroundColor=tileColor(t.name); el.title=tooltip(t); }
+  });
+
+  const btn = document.getElementById('apply-btn');
+  btn.textContent='✓ Applied!';
+  setTimeout(()=>btn.textContent='Apply to Selected',1400);
+  populateForm(); renderLegend();
+}
+
+// Box select
+const selBox   = document.getElementById('sel-box');
+const mapInner = document.getElementById('map-inner');
+
+mapInner.addEventListener('mousedown', ev => {
+  if (ev.target!==mapInner && ev.target!==selBox) return;
+  dragging=true; dragOrigin={x:ev.offsetX,y:ev.offsetY};
+  selBox.style.cssText='display:block;left:'+dragOrigin.x+'px;top:'+dragOrigin.y+'px;width:0;height:0;';
+});
+document.addEventListener('mousemove', ev => {
+  if (!dragging||!dragOrigin) return;
+  const r=mapInner.getBoundingClientRect();
+  const cx=Math.max(0,Math.min(ev.clientX-r.left,mapInner.offsetWidth));
+  const cy=Math.max(0,Math.min(ev.clientY-r.top,mapInner.offsetHeight));
+  selBox.style.left=Math.min(dragOrigin.x,cx)+'px'; selBox.style.top=Math.min(dragOrigin.y,cy)+'px';
+  selBox.style.width=Math.abs(cx-dragOrigin.x)+'px'; selBox.style.height=Math.abs(cy-dragOrigin.y)+'px';
+});
+document.addEventListener('mouseup', ev => {
+  if (!dragging||!dragOrigin) return;
+  dragging=false; selBox.style.display='none';
+  const r=mapInner.getBoundingClientRect();
+  const cx=ev.clientX-r.left, cy=ev.clientY-r.top;
+  const w=Math.abs(cx-dragOrigin.x), h=Math.abs(cy-dragOrigin.y);
+  if (w>4 && h>4) {
+    const bx1=Math.min(dragOrigin.x,cx)/zoom, by1=Math.min(dragOrigin.y,cy)/zoom;
+    const bx2=Math.max(dragOrigin.x,cx)/zoom, by2=Math.max(dragOrigin.y,cy)/zoom;
+    if (!ev.shiftKey&&!ev.ctrlKey) selected.clear();
+    data.forEach(t=>{
+      const c=t.coordinates;
+      if(c.x<bx2&&c.x+c.width>bx1&&c.y<by2&&c.y+c.height>by1) selected.add(t.id);
+    });
+    updateUI();
+  }
+  dragOrigin=null;
+});
+
+function exportJSON() {
+  const blob=new Blob([JSON.stringify(data,null,4)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a'); a.href=url; a.download='territories.json';
+  a.click(); URL.revokeObjectURL(url);
+}
+</script>
+</body>
+</html>
