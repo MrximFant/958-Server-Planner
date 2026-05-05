@@ -41,6 +41,7 @@ function tierClass(v) {
   return 'tier-none';
 }
 
+
 function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2); }
 
 // Optional Discord notification (put webhook URL in .env as VITE_DISCORD_WEBHOOK)
