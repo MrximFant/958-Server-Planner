@@ -1,14 +1,17 @@
-import { Link, useLocation } from 'react-router-dom';
-import { Shield, Map, Users, BookOpen, Trophy } from 'lucide-react';
-
-const NAV_LINKS = [
-  { to: '/map',      label: 'WAR MAP',      icon: Map },
-  { to: '/alliance', label: 'ALLIANCE HQ',  icon: Users },
-  { to: '/rules',    label: 'RULES',        icon: BookOpen },
-];
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { Shield, Map, Users, BookOpen } from 'lucide-react';
 
 export default function Navbar() {
-  const { pathname } = useLocation();
+  const { pathname }  = useLocation();
+  const { serverId }  = useParams();
+
+  const base = serverId ? `/server/${serverId}` : '';
+
+  const NAV_LINKS = [
+    { to: `${base}/map`,      label: 'WAR MAP',     icon: Map },
+    { to: `${base}/alliance`, label: 'ALLIANCE HQ', icon: Users },
+    { to: `${base}/rules`,    label: 'RULES',       icon: BookOpen },
+  ];
 
   return (
     <nav style={{
@@ -18,13 +21,13 @@ export default function Navbar() {
       display: 'flex', alignItems: 'center', justifyContent: 'space-between',
       padding: '0 24px',
     }}>
-      <Link to="/" style={{
+      <Link to={base || '/'} style={{
         fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
         fontSize: 16, color: '#00c8ff', letterSpacing: '3px',
         textDecoration: 'none', textTransform: 'uppercase',
         display: 'flex', alignItems: 'center', gap: 8,
       }}>
-        <Shield size={20} fill="currentColor" /> 958 MASTERMIND
+        <Shield size={20} fill="currentColor" /> LW PLANNER
       </Link>
 
       <div style={{ display: 'flex', gap: 4 }}>
