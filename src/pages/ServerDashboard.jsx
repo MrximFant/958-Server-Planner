@@ -135,6 +135,11 @@ export default function ServerDashboard() {
               <span style={S.sessionBadge}>
                 {role === 'admin' ? '⚡ ADMIN' : `👤 ${activeSession.username}`}
               </span>
+              {role === 'admin' && (
+                <button style={S.adminBtn} onClick={() => navigate(`/server/${serverId}/admin`)}>
+                  <Settings size={12} /> ADMIN PANEL
+                </button>
+              )}
               <button style={S.logoutBtn} onClick={logout}>
                 <LogOut size={12} /> LOG OUT
               </button>
@@ -271,6 +276,7 @@ const styles = {
   topbar: { position: 'fixed', top: 0, left: 0, right: 0, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', background: 'rgba(8,13,20,0.9)', borderBottom: '1px solid #1e3550' },
   backBtn: { background: 'none', border: 'none', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' },
   sessionBadge: { fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: '#00c8ff', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', padding: '4px 10px' },
+  adminBtn: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.3)', color: '#f0a500', padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' },
   logoutBtn: { display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: '1px solid #1e3550', color: '#7a9bb8', padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' },
   loginBtn: { display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(0,200,255,0.06)', border: '1px solid rgba(0,200,255,0.25)', color: '#00c8ff', padding: '6px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' },
   hero: { position: 'relative', zIndex: 1, minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '100px 24px 60px', textAlign: 'center' },
