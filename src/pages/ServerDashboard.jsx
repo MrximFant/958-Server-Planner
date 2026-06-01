@@ -248,6 +248,7 @@ function FeatureCard({ feature: f, navigate, session }) {
   const S = styles;
   const isLocked   = f.locked && !session;
   const isDisabled = f.disabled || isLocked;
+  const Icon = f.icon;
   return (
     <div
       onClick={() => !isDisabled && f.to && navigate(f.to)}
@@ -259,12 +260,12 @@ function FeatureCard({ feature: f, navigate, session }) {
         {isLocked ? 'LOGIN' : f.tag}
       </div>
       <div style={{ width: 44, height: 44, background: f.glow, border: `1px solid ${f.border}`, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 16, color: f.color }}>
-        {isLocked ? <Lock size={20} /> : <f.icon size={20} />}
+        {isLocked ? <Lock size={20} /> : <Icon size={20} />}
       </div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: f.color, marginBottom: 6 }}>{f.label}</div>
       <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 20, color: '#d0e4f4', marginBottom: 10 }}>{f.title}</div>
       <p style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6, margin: '0 0 20px' }}>{f.desc}</p>
-      {!isDisabled && <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '2px', color: f.color }}}>OPEN <ChevronRight size={12} /></div>}
+      {!isDisabled && <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '2px', color: f.color }}>OPEN <ChevronRight size={12} /></div>}
     </div>
   );
 }
