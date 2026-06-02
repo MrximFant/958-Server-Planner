@@ -253,6 +253,17 @@ function Field({ label, placeholder = '', type = 'text', value, onChange }) {
           </button>
         )}
       </div>
+      <input
+        type={type}
+        placeholder={placeholder}
+        value={value}
+        onChange={e => onChange(e.target.value)}
+        style={{
+          width: '100%', background: 'rgba(0,200,255,0.04)', border: '1px solid #1e3550',
+          color: '#d0e4f4', padding: '10px 14px', fontFamily: "'Rajdhani',sans-serif",
+          fontSize: 15, outline: 'none', boxSizing: 'border-box',
+        }}
+      />
     </div>
   );
 }
