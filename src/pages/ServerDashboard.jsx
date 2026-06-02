@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword } from '../lib/auth';
-import { Map, Users, BookOpen, Trophy, Clock, Zap, Shield, LogOut, Settings, ChevronRight, Lock, Plus } from 'lucide-react';
+import { Map, Users, BookOpen, Trophy, Clock, Zap, Shield, LogOut, Settings, ChevronRight, Lock, Plus, Eye, EyeOff } from 'lucide-react';
 
 export default function ServerDashboard() {
   const { serverId }          = useParams();
@@ -230,11 +230,28 @@ export default function ServerDashboard() {
 }
 
 function Field({ label, type = 'text', value, onChange }) {
+  const [show, setShow] = useState(false);
+  const isPassword = type === 'password';
   const S = styles;
   return (
     <div style={{ marginBottom: 14 }}>
       <div style={S.label}>{label}</div>
-      <input type={type} value={value} onChange={e => onChange(e.target.value)} style={S.input} />
+      <div style={{ position: 'relative' }}>
+        <input
+          type={isPassword && !show ? 'password' : 'text'}
+          value={value} onChange={e => onChange(e.target.value)}
+          style={{ ...S.input, paddingRight: isPassword ? 38 : undefined }}
+        />
+        {isPassword && (
+          <button type="button" onClick={() => setShow(s => !s)} style={{
+            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+            background: 'none', border: 'none', color: '#3a5878', cursor: 'pointer', padding: 2,
+            display: 'flex', alignItems: 'center',
+          }}>
+            {show ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword, generateInviteCode } from '../lib/auth';
-import { Plus, Trash2, Copy, Check, ArrowLeft, Users, Shield, Link, Settings, Edit2, X } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, ArrowLeft, Users, Shield, Link, Settings, Edit2, X, Eye, EyeOff } from 'lucide-react';
 
 const TABS = ['ALLIANCES', 'MEMBERS', 'SERVER'];
 
@@ -294,11 +294,28 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
 
 // ── Server Tab ────────────────────────────────────────────────
 function ServerTab({ server, setServer, serverId }) {
+  const navigate    = useNavigate();
+  const { logout }  = useAuth();
   const [copied,    setCopied]    = useState(false);
   const [form,      setForm]      = useState({ newPassword: '', confirmPassword: '' });
   const [busy,      setBusy]      = useState(false);
   const [msg,       setMsg]       = useState('');
   const [error,     setError]     = useState('');
+
+  // Delete server state
+  const [deleteStep,    setDeleteStep]    = useState(0); // 0=idle 1=confirm 2=type
+  const [deleteConfirm, setDeleteConfirm] = useState('');
+  const [deleteBusy,    setDeleteBusy]    = useState(false);
+  const [deleteError,   setDeleteError]   = useState('');
+
+  async function handleDeleteServer() {
+    if (deleteConfirm !== 'DELETE') { setDeleteError('Type DELETE exactly.'); return; }
+    setDeleteBusy(true);
+    const { error: err } = await supabase.from('servers').delete().eq('id', serverId);
+    if (err) { setDeleteError(err.message); setDeleteBusy(false); return; }
+    logout();
+    navigate('/');
+  }
 
   async function copyServerInvite() {
     const url = `${window.location.origin}/join/${server.invite_code}`;
@@ -356,17 +373,91 @@ function ServerTab({ server, setServer, serverId }) {
           <button type="submit" style={S.saveBtn} disabled={busy}>{busy ? 'SAVING…' : 'UPDATE PASSWORD →'}</button>
         </form>
       </div>
+
+      {/* Delete server */}
+      <div style={{ ...S.settingsCard, borderColor: 'rgba(255,64,96,0.25)', marginTop: 32 }}>
+        <div style={{ ...S.settingsLabel, color: '#ff4060' }}>DANGER ZONE</div>
+        <div style={S.settingsSub}>Permanently delete this server and all its data. This cannot be undone.</div>
+
+        {deleteStep === 0 && (
+          <button
+            style={{ background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.4)', color: '#ff4060', padding: '9px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' }}
+            onClick={() => { setDeleteStep(1); setDeleteError(''); }}
+          >
+            DELETE THIS SERVER
+          </button>
+        )}
+
+        {deleteStep === 1 && (
+          <div>
+            <p style={{ color: '#ff4060', fontSize: 13, marginBottom: 16 }}>
+              Are you sure? This will delete <strong>all alliances, members, territories and settings</strong> for Server {server.server_number}.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                style={{ background: 'rgba(255,64,96,0.12)', border: '1px solid #ff4060', color: '#ff4060', padding: '9px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' }}
+                onClick={() => { setDeleteStep(2); setDeleteError(''); setDeleteConfirm(''); }}
+              >
+                YES, CONTINUE
+              </button>
+              <button style={S.cancelBtn} onClick={() => setDeleteStep(0)}>CANCEL</button>
+            </div>
+          </div>
+        )}
+
+        {deleteStep === 2 && (
+          <div>
+            <p style={{ color: '#ff4060', fontSize: 13, marginBottom: 12 }}>
+              Type <strong style={{ fontFamily: "'Share Tech Mono',monospace" }}>DELETE</strong> to confirm permanent deletion.
+            </p>
+            <input
+              value={deleteConfirm}
+              onChange={e => setDeleteConfirm(e.target.value)}
+              placeholder="Type DELETE here"
+              style={{ ...S.input, marginBottom: 12, borderColor: 'rgba(255,64,96,0.4)', maxWidth: 280 }}
+            />
+            {deleteError && <p style={S.error}>{deleteError}</p>}
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                style={{ background: '#ff4060', color: '#fff', border: 'none', padding: '9px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: deleteBusy ? 'default' : 'pointer', opacity: deleteBusy ? 0.6 : 1 }}
+                onClick={handleDeleteServer}
+                disabled={deleteBusy}
+              >
+                {deleteBusy ? 'DELETING…' : 'PERMANENTLY DELETE →'}
+              </button>
+              <button style={S.cancelBtn} onClick={() => { setDeleteStep(0); setDeleteConfirm(''); setDeleteError(''); }}>CANCEL</button>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 // ── Shared components ─────────────────────────────────────────
 function Field({ label, placeholder = '', type = 'text', value, onChange }) {
+  const [show, setShow] = useState(false);
+  const isPassword = type === 'password';
   return (
     <div style={{ marginBottom: 14, flex: 1 }}>
       <div style={styles.label}>{label}</div>
-      <input type={type} placeholder={placeholder} value={value}
-        onChange={e => onChange(e.target.value)} style={styles.input} />
+      <div style={{ position: 'relative' }}>
+        <input
+          type={isPassword && !show ? 'password' : 'text'}
+          placeholder={placeholder} value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{ ...styles.input, paddingRight: isPassword ? 38 : undefined }}
+        />
+        {isPassword && (
+          <button type="button" onClick={() => setShow(s => !s)} style={{
+            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+            background: 'none', border: 'none', color: '#3a5878', cursor: 'pointer', padding: 2,
+            display: 'flex', alignItems: 'center',
+          }}>
+            {show ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

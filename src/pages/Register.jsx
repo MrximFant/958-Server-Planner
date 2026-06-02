@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword } from '../lib/auth';
-import { Zap, Shield, CheckCircle } from 'lucide-react';
+import { Zap, Shield, CheckCircle, Eye, EyeOff } from 'lucide-react';
 
 export default function Register() {
   const { serverId, allianceId } = useParams();
@@ -224,10 +224,34 @@ export default function Register() {
 }
 
 function Field({ label, placeholder = '', type = 'text', value, onChange }) {
+  const [show, setShow] = useState(false);
+  const isPassword = type === 'password';
   return (
     <div style={{ marginBottom: 14, flex: 1 }}>
       <div style={{ fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 6 }}>
         {label}
+      </div>
+      <div style={{ position: 'relative' }}>
+        <input
+          type={isPassword && !show ? 'password' : 'text'}
+          placeholder={placeholder}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          style={{
+            width: '100%', background: 'rgba(0,200,255,0.04)', border: '1px solid #1e3550',
+            color: '#d0e4f4', padding: '10px 14px', paddingRight: isPassword ? 40 : 14,
+            fontFamily: "'Rajdhani',sans-serif", fontSize: 15, outline: 'none', boxSizing: 'border-box',
+          }}
+        />
+        {isPassword && (
+          <button type="button" onClick={() => setShow(s => !s)} style={{
+            position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+            background: 'none', border: 'none', color: '#3a5878', cursor: 'pointer', padding: 2,
+            display: 'flex', alignItems: 'center',
+          }}>
+            {show ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        )}
       </div>
       <input
         type={type}
