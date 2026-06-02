@@ -248,3 +248,129 @@
   .form-grid { grid-template-columns: 1fr; }
   .fg-full, .section-div { grid-column: 1; }
 }
+
+/* ═══ TOPBAR ════════════════════════════════════════════════ */
+.ahq-topbar {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 10;
+  display: flex; align-items: center; gap: 12;
+  padding: 12px 24px; background: rgba(8,13,20,0.95);
+  border-bottom: 1px solid var(--border);
+}
+.ahq-back-btn {
+  display: flex; align-items: center; background: none; border: none;
+  color: var(--text3); font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 12px; letter-spacing: 1px; cursor: pointer;
+}
+.ahq-back-btn:hover { color: var(--text2); }
+.ahq-topbar-center {
+  flex: 1; text-align: center;
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 14px; letter-spacing: 2px;
+}
+.ahq-topbar-right { display: flex; align-items: center; gap: 8px; }
+.ahq-role-badge {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 11px; letter-spacing: 1px; padding: 4px 10px;
+  border: 1px solid; white-space: nowrap;
+}
+.role-admin   { color: #f0a500; border-color: rgba(240,165,0,0.3); background: rgba(240,165,0,0.08); }
+.role-owner   { color: #f0a500; border-color: rgba(240,165,0,0.3); background: rgba(240,165,0,0.08); }
+.role-alladmin{ color: #00c8ff; border-color: rgba(0,200,255,0.3); background: rgba(0,200,255,0.08); }
+.role-member  { color: #7a9bb8; border-color: var(--border); background: transparent; }
+
+/* ═══ PANELS ════════════════════════════════════════════════ */
+.ahq-panel {
+  background: var(--bg2); border: 1px solid var(--border);
+  margin-bottom: 16px; overflow: hidden;
+}
+.ahq-panel-header {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 20px; border-bottom: 1px solid;
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 13px; letter-spacing: 2px; text-transform: uppercase;
+}
+.ahq-panel-sub {
+  margin-left: auto; font-size: 11px; font-weight: 400;
+  color: var(--text3); letter-spacing: 1px;
+}
+.ahq-empty { color: var(--text3); font-size: 13px; padding: 20px 0; font-style: italic; }
+
+/* ═══ MANAGEMENT ════════════════════════════════════════════ */
+.mgmt-member-list { display: flex; flex-direction: column; gap: 6px; padding-top: 8px; }
+.mgmt-member-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding: 10px 14px;
+  background: rgba(255,255,255,0.02); border: 1px solid var(--border);
+}
+.mgmt-member-info { flex: 1; min-width: 0; }
+.mgmt-member-name {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700;
+  font-size: 14px; color: var(--text); display: flex; align-items: center; gap: 6px;
+}
+.mgmt-member-sub { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.mgmt-edit-header {
+  font-family: 'Rajdhani', sans-serif; font-size: 13px; color: var(--text3);
+  letter-spacing: 1px; margin-bottom: 14px; padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.role-chip {
+  font-family: 'Rajdhani', sans-serif; font-size: 9px; font-weight: 700;
+  letter-spacing: 1px; padding: 1px 5px; border: 1px solid;
+}
+.admin-chip { color: #f0a500; border-color: rgba(240,165,0,0.4); background: rgba(240,165,0,0.08); }
+
+/* ═══ SETTINGS ══════════════════════════════════════════════ */
+.settings-card {
+  background: rgba(13,21,32,0.7); border: 1px solid var(--border);
+  padding: 16px 18px;
+}
+.settings-label {
+  font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 11px;
+  letter-spacing: 2px; color: var(--accent); margin-bottom: 12px;
+}
+.invite-code-box {
+  flex: 1; font-family: 'Share Tech Mono', monospace; font-size: 11px;
+  color: var(--text3); background: rgba(0,200,255,0.04);
+  border: 1px solid var(--border); padding: 8px 12px; word-break: break-all;
+}
+
+/* ═══ BUTTONS ═══════════════════════════════════════════════ */
+.icon-btn {
+  background: none; border: 1px solid var(--border); color: var(--text3);
+  width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+  cursor: pointer; flex-shrink: 0; transition: all 0.15s;
+}
+.icon-btn:hover { border-color: var(--accent); color: var(--accent); }
+.icon-btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+.btn-copy {
+  display: flex; align-items: center; gap: 5px; flex-shrink: 0;
+  background: rgba(0,200,255,0.08); border: 1px solid rgba(0,200,255,0.3);
+  color: var(--accent); padding: 8px 14px;
+  font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 12px;
+  letter-spacing: 1px; cursor: pointer;
+}
+.btn-secondary-sm {
+  margin-left: auto; background: none;
+  border: 1px solid var(--border2); color: var(--text2);
+  padding: 4px 12px; font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 11px; letter-spacing: 1px; cursor: pointer;
+}
+.btn-secondary-sm:hover { border-color: var(--accent); color: var(--accent); }
+.btn-cancel-sm {
+  background: none; border: 1px solid var(--border); color: var(--text3);
+  padding: 8px 18px; font-family: 'Rajdhani', sans-serif;
+  font-weight: 700; font-size: 12px; letter-spacing: 1px; cursor: pointer;
+}
+.btn-promote-sm {
+  background: rgba(0,232,122,0.08); border: 1px solid rgba(0,232,122,0.3);
+  color: var(--accent3); padding: 4px 12px;
+  font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 11px;
+  letter-spacing: 1px; cursor: pointer;
+}
+.btn-promote-sm:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-danger-sm {
+  background: rgba(255,64,96,0.08); border: 1px solid rgba(255,64,96,0.3);
+  color: var(--danger); padding: 4px 12px;
+  font-family: 'Rajdhani', sans-serif; font-weight: 700; font-size: 11px;
+  letter-spacing: 1px; cursor: pointer;
+}

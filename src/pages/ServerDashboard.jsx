@@ -90,6 +90,22 @@ export default function ServerDashboard() {
     setAuthView(null); setAuthBusy(false);
   }
 
+  async function handleOwnerLogin(e) {
+    e.preventDefault();
+    setAuthError(''); setAuthBusy(true);
+    if (!authForm.allianceId) { setAuthError('Select an alliance.'); setAuthBusy(false); return; }
+    const hash = await hashPassword(authForm.password);
+    const { data: al } = await supabase.from('alliances')
+      .select('id, name, owner_password')
+      .eq('id', authForm.allianceId)
+      .single();
+    if (!al || hash !== al.owner_password) {
+      setAuthError('Incorrect owner password.'); setAuthBusy(false); return;
+    }
+    login({ serverId, serverName: server.name, role: 'owner', allianceId: al.id, allianceName: al.name, memberId: null, username: null, allianceRole: null });
+    setAuthView(null); setAuthBusy(false);
+  }
+
   async function handleMemberLogin(e) {
     e.preventDefault();
     setAuthError(''); setAuthBusy(true);
@@ -103,7 +119,8 @@ export default function ServerDashboard() {
       .eq('password', hash)
       .single();
     if (error || !member) { setAuthError('Username or password incorrect.'); setAuthBusy(false); return; }
-    login({ serverId, serverName: server.name, role: 'member', allianceId: member.alliance_id, memberId: member.id, username: member.username });
+    const alName = alliances.find(a => a.id === member.alliance_id)?.name || '';
+    login({ serverId, serverName: server.name, role: 'member', allianceId: member.alliance_id, allianceName: alName, memberId: member.id, username: member.username, allianceRole: member.alliance_role || 'member' });
     setAuthView(null); setAuthBusy(false);
   }
 
@@ -133,7 +150,7 @@ export default function ServerDashboard() {
           {activeSession ? (
             <>
               <span style={S.sessionBadge}>
-                {role === 'admin' ? '⚡ ADMIN' : `👤 ${activeSession.username}`}
+                {role === 'admin' ? '⚡ ADMIN' : role === 'owner' ? `👑 ${activeSession.allianceName}` : `👤 ${activeSession.username}`}
               </span>
               {role === 'admin' && (
                 <button style={S.adminBtn} onClick={() => navigate(`/server/${serverId}/admin`)}>
@@ -149,8 +166,11 @@ export default function ServerDashboard() {
               <button style={S.loginBtn} onClick={() => { setAuthView('admin'); setAuthError(''); setAuthForm({ password: '', username: '', allianceId: '' }); }}>
                 <Shield size={12} /> ADMIN
               </button>
+              <button style={{ ...S.loginBtn, color: '#f0a500', borderColor: 'rgba(240,165,0,0.3)' }} onClick={() => { setAuthView('owner'); setAuthError(''); setAuthForm({ password: '', username: '', allianceId: '' }); }}>
+                👑 OWNER
+              </button>
               <button style={S.loginBtn} onClick={() => { setAuthView('member'); setAuthError(''); setAuthForm({ password: '', username: '', allianceId: '' }); }}>
-                <LogIn size={12} /> MEMBER LOGIN
+                <LogIn size={12} /> MEMBER
               </button>
             </div>
           )}
@@ -194,16 +214,33 @@ export default function ServerDashboard() {
         <div style={S.overlay} onClick={() => setAuthView(null)}>
           <div style={S.modal} onClick={e => e.stopPropagation()}>
             <div style={S.modalTitle}>
-              {authView === 'admin' ? '⚡ ADMIN LOGIN' : '👤 MEMBER LOGIN'}
+              {authView === 'admin' ? '⚡ ADMIN LOGIN' : authView === 'owner' ? '👑 OWNER LOGIN' : '👤 MEMBER LOGIN'}
             </div>
 
-            {authView === 'admin' ? (
+            {authView === 'admin' && (
               <form onSubmit={handleAdminLogin}>
                 <Field label="ADMIN PASSWORD" type="password" value={authForm.password} onChange={v => setAuthForm(f => ({ ...f, password: v }))} />
                 {authError && <p style={S.error}>{authError}</p>}
                 <button type="submit" style={S.modalBtn} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'LOGIN →'}</button>
               </form>
-            ) : (
+            )}
+
+            {authView === 'owner' && (
+              <form onSubmit={handleOwnerLogin}>
+                <div style={{ marginBottom: 14 }}>
+                  <div style={S.label}>ALLIANCE</div>
+                  <select value={authForm.allianceId} onChange={e => setAuthForm(f => ({ ...f, allianceId: e.target.value }))} style={S.select}>
+                    <option value="">— Select your alliance —</option>
+                    {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                  </select>
+                </div>
+                <Field label="OWNER PASSWORD" type="password" value={authForm.password} onChange={v => setAuthForm(f => ({ ...f, password: v }))} />
+                {authError && <p style={S.error}>{authError}</p>}
+                <button type="submit" style={{ ...S.modalBtn, background: '#f0a500' }} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'LOGIN →'}</button>
+              </form>
+            )}
+
+            {authView === 'member' && (
               <form onSubmit={handleMemberLogin}>
                 <div style={{ marginBottom: 14 }}>
                   <div style={S.label}>ALLIANCE</div>
