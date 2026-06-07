@@ -247,6 +247,13 @@
 @media (max-width: 600px) {
   .form-grid { grid-template-columns: 1fr; }
   .fg-full, .section-div { grid-column: 1; }
+  .ahq-topbar { padding: 10px 14px; gap: 8px; }
+  .ahq-topbar-center { font-size: 12px; }
+  .ahq-role-badge { font-size: 10px; padding: 3px 7px; }
+  .ahq-main { padding: 12px; padding-top: 66px; }
+  .ahq-panel-header { font-size: 12px; padding: 12px 14px; }
+  .teams-grid { grid-template-columns: 1fr; }
+  .mgmt-member-row { flex-wrap: wrap; }
 }
 
 /* ═══ TOPBAR ════════════════════════════════════════════════ */

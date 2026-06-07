@@ -144,7 +144,7 @@ export default function ServerDashboard() {
       <div style={S.grid} />
 
       {/* Top bar */}
-      <div style={S.topbar}>
+      <div style={S.topbar} className="sd-topbar">
         <button style={S.backBtn} onClick={() => navigate('/')}>← SERVERS</button>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           {activeSession ? (
@@ -264,6 +264,11 @@ export default function ServerDashboard() {
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');
+        @media (max-width: 600px) {
+          .sd-topbar { padding: 10px 14px !important; flex-wrap: wrap; gap: 8px; }
+          .sd-hero { padding: 90px 16px 40px !important; }
+          .sd-cards { padding: 32px 14px 60px !important; }
+        }
       `}</style>
     </div>
   );

@@ -60,11 +60,11 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      <div style={S.layout}>
+      <div style={S.layout} className="ap-layout">
         {/* Sidebar tabs */}
-        <div style={S.sidebar}>
+        <div style={S.sidebar} className="ap-sidebar">
           {TABS.map(t => (
-            <button key={t} style={{ ...S.sideTab, ...(tab === t ? S.sideTabActive : {}) }} onClick={() => setTab(t)}>
+            <button key={t} style={{ ...S.sideTab, ...(tab === t ? S.sideTabActive : {}) }} className="ap-tab" onClick={() => setTab(t)}>
               {t === 'ALLIANCES' && <Users size={14} />}
               {t === 'MEMBERS'   && <Shield size={14} />}
               {t === 'SERVER'    && <Settings size={14} />}
@@ -74,7 +74,7 @@ export default function AdminPanel() {
         </div>
 
         {/* Content */}
-        <div style={S.content}>
+        <div style={S.content} className="ap-content">
           {tab === 'ALLIANCES' && (
             <AlliancesTab
               serverId={serverId}
@@ -96,7 +96,15 @@ export default function AdminPanel() {
         </div>
       </div>
 
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');`}</style>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');
+        @media (max-width: 680px) {
+          .ap-layout { flex-direction: column !important; }
+          .ap-sidebar { width: 100% !important; border-right: none !important; border-bottom: 1px solid #1e3550; padding: 0 !important; display: flex !important; flex-direction: row !important; overflow-x: auto; }
+          .ap-tab { flex-direction: row !important; border-left: none !important; border-bottom: 3px solid transparent; padding: 12px 16px !important; white-space: nowrap; }
+          .ap-content { padding: 20px 16px !important; max-width: 100% !important; }
+        }
+      `}</style>
     </div>
   );
 }

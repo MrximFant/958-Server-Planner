@@ -292,6 +292,9 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
   const [saving, setSaving] = useState(false);
   const [copied, setCopied] = useState(false);
 
+  // Password reset for editing a member
+  const [pwdReset, setPwdReset]   = useState({ open: false, pwd: '', confirm: '', busy: false, msg: '' });
+
   // Settings state (owner only)
   const [pwdForm, setPwdForm] = useState({ newPwd: '', confirmPwd: '' });
   const [pwdBusy, setPwdBusy] = useState(false);
@@ -307,7 +310,19 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
     if (error) { showToast('Save failed: ' + error.message, true); return; }
     showToast('Member updated.');
     setEditingMember(null);
+    setPwdReset({ open: false, pwd: '', confirm: '', busy: false, msg: '' });
     onReload();
+  }
+
+  async function handleMemberPwdReset(e) {
+    e.preventDefault();
+    if (!pwdReset.pwd.trim()) { setPwdReset(p => ({ ...p, msg: 'error:Password cannot be empty.' })); return; }
+    if (pwdReset.pwd !== pwdReset.confirm) { setPwdReset(p => ({ ...p, msg: 'error:Passwords do not match.' })); return; }
+    setPwdReset(p => ({ ...p, busy: true, msg: '' }));
+    const hash = await hashPassword(pwdReset.pwd);
+    const { error } = await supabase.from('members').update({ password: hash }).eq('id', editingMember.id);
+    setPwdReset(p => ({ ...p, busy: false, msg: error ? 'error:' + error.message : 'ok:Password reset successfully.' }));
+    if (!error) { setPwdReset(p => ({ ...p, pwd: '', confirm: '' })); }
   }
 
   async function handleDelete(id, name) {
@@ -408,9 +423,39 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
                 <MemberForm
                   initialData={editingMember}
                   onSave={handleEditSave}
-                  onCancel={() => setEditingMember(null)}
+                  onCancel={() => { setEditingMember(null); setPwdReset({ open: false, pwd: '', confirm: '', busy: false, msg: '' }); }}
                   saving={saving}
                 />
+
+                {/* Password reset section */}
+                <div style={{ marginTop: 20, borderTop: '1px solid #1e3550', paddingTop: 16 }}>
+                  {!pwdReset.open ? (
+                    <button className="btn-cancel-sm" onClick={() => setPwdReset(p => ({ ...p, open: true }))}>
+                      RESET PASSWORD
+                    </button>
+                  ) : (
+                    <form onSubmit={handleMemberPwdReset}>
+                      <div style={{ marginBottom: 8, fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', color: '#3a5878' }}>
+                        RESET MEMBER PASSWORD
+                      </div>
+                      <PwdField label="NEW PASSWORD" value={pwdReset.pwd} onChange={v => setPwdReset(p => ({ ...p, pwd: v }))} />
+                      <PwdField label="CONFIRM PASSWORD" value={pwdReset.confirm} onChange={v => setPwdReset(p => ({ ...p, confirm: v }))} />
+                      {pwdReset.msg && (
+                        <p style={{ fontSize: 12, margin: '0 0 10px', color: pwdReset.msg.startsWith('ok:') ? '#00e87a' : '#ff4060' }}>
+                          {pwdReset.msg.replace(/^(ok|error):/, '')}
+                        </p>
+                      )}
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button type="submit" className="btn-primary" disabled={pwdReset.busy}>
+                          {pwdReset.busy ? 'SAVING…' : 'SAVE PASSWORD →'}
+                        </button>
+                        <button type="button" className="btn-cancel-sm" onClick={() => setPwdReset({ open: false, pwd: '', confirm: '', busy: false, msg: '' })}>
+                          CANCEL
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="mgmt-member-list">
