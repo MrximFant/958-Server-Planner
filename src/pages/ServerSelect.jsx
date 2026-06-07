@@ -2,17 +2,54 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { hashPassword, generateInviteCode } from '../lib/auth';
-import { Server, Plus, LogIn, Zap } from 'lucide-react';
+import { Server, Plus, LogIn, Zap, Key, Eye, EyeOff } from 'lucide-react';
+
+const DISCORD_WEBHOOK = import.meta.env.VITE_DISCORD_WEBHOOK;
+
+async function sendDiscordNotification(r) {
+  if (!DISCORD_WEBHOOK) return;
+  try {
+    await fetch(DISCORD_WEBHOOK, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        embeds: [{
+          title: '📋 New Server Request',
+          color: 0xf0a500,
+          fields: [
+            { name: 'Server Number', value: r.server_number, inline: true },
+            { name: 'Workspace Name', value: r.name, inline: true },
+            { name: 'Contact', value: r.contact_name, inline: true },
+            { name: 'Message', value: r.message || '—' },
+          ],
+          footer: { text: 'Review at /superadmin' },
+          timestamp: new Date().toISOString(),
+        }],
+      }),
+    });
+  } catch (_) { /* non-critical */ }
+}
 
 export default function ServerSelect() {
-  const navigate   = useNavigate();
-  const canvasRef  = useRef(null);
+  const navigate  = useNavigate();
+  const canvasRef = useRef(null);
   const [servers,  setServers]  = useState([]);
   const [loading,  setLoading]  = useState(true);
-  const [view,     setView]     = useState('list'); // list | create
-  const [form,     setForm]     = useState({ serverNumber: '', name: '', adminPassword: '' });
-  const [creating, setCreating] = useState(false);
-  const [error,    setError]    = useState('');
+  const [view,     setView]     = useState('list'); // list | request | activate
+
+  // Request form
+  const [reqForm,    setReqForm]    = useState({ serverNumber: '', name: '', contactName: '', message: '' });
+  const [reqBusy,    setReqBusy]    = useState(false);
+  const [reqError,   setReqError]   = useState('');
+  const [reqSuccess, setReqSuccess] = useState(false);
+
+  // Activate form
+  const [actCode,    setActCode]    = useState('');
+  const [actPwd,     setActPwd]     = useState('');
+  const [actConfirm, setActConfirm] = useState('');
+  const [actBusy,    setActBusy]    = useState(false);
+  const [actError,   setActError]   = useState('');
+  const [showPwd,    setShowPwd]    = useState(false);
 
   // Particle background
   useEffect(() => {
@@ -65,23 +102,66 @@ export default function ServerSelect() {
       .then(({ data }) => { setServers(data ?? []); setLoading(false); });
   }, []);
 
-  async function handleCreate(e) {
+  async function handleRequest(e) {
     e.preventDefault();
-    setError('');
-    if (!form.serverNumber.trim() || !form.name.trim() || !form.adminPassword.trim()) {
-      setError('All fields are required.'); return;
+    setReqError('');
+    const { serverNumber, name, contactName } = reqForm;
+    if (!serverNumber.trim() || !name.trim() || !contactName.trim()) {
+      setReqError('Server number, workspace name, and your name are required.'); return;
     }
-    setCreating(true);
-    const hash = await hashPassword(form.adminPassword);
-    const { data, error: err } = await supabase.from('servers').insert({
-      server_number: form.serverNumber.trim(),
-      name:          form.name.trim(),
-      admin_password: hash,
-      invite_code:   generateInviteCode(),
+    setReqBusy(true);
+    const { data, error } = await supabase.from('server_requests').insert({
+      server_number: serverNumber.trim(),
+      name:          name.trim(),
+      contact_name:  contactName.trim(),
+      message:       reqForm.message.trim() || null,
     }).select().single();
-    setCreating(false);
-    if (err) { setError(err.message); return; }
-    navigate(`/server/${data.id}`);
+    if (error) { setReqError(error.message); setReqBusy(false); return; }
+    await sendDiscordNotification(data);
+    setReqBusy(false);
+    setReqSuccess(true);
+  }
+
+  async function handleActivate(e) {
+    e.preventDefault();
+    setActError('');
+    const code = actCode.trim().toUpperCase();
+    if (!code) { setActError('Enter your activation code.'); return; }
+    if (!actPwd.trim()) { setActError('Set an admin password.'); return; }
+    if (actPwd !== actConfirm) { setActError('Passwords do not match.'); return; }
+
+    setActBusy(true);
+
+    const { data: req, error: fetchErr } = await supabase
+      .from('server_requests')
+      .select('*')
+      .eq('activation_code', code)
+      .single();
+
+    if (fetchErr || !req) {
+      setActError('Activation code not found.'); setActBusy(false); return;
+    }
+    if (req.status !== 'approved') {
+      setActError(`This request has status: ${req.status}. Contact the platform admin.`); setActBusy(false); return;
+    }
+    if (req.activation_used) {
+      setActError('This activation code has already been used.'); setActBusy(false); return;
+    }
+
+    const hash = await hashPassword(actPwd);
+    const { data: server, error: createErr } = await supabase.from('servers').insert({
+      server_number:  req.server_number,
+      name:           req.name,
+      admin_password: hash,
+      invite_code:    generateInviteCode(),
+    }).select().single();
+
+    if (createErr) { setActError(createErr.message); setActBusy(false); return; }
+
+    await supabase.from('server_requests').update({ activation_used: true }).eq('id', req.id);
+
+    setActBusy(false);
+    navigate(`/server/${server.id}`);
   }
 
   const S = styles;
@@ -92,31 +172,32 @@ export default function ServerSelect() {
       <div style={S.grid} />
 
       <div style={S.center}>
-        {/* Header */}
         <div style={S.badge}>
           <Zap size={10} fill="currentColor" />
           LAST WAR ALLIANCE PLANNER
           <Zap size={10} fill="currentColor" />
         </div>
         <h1 style={S.title}>SELECT SERVER</h1>
-        <p style={S.sub}>Choose your game server or create a new workspace.</p>
+        <p style={S.sub}>Choose your game server or request a new workspace.</p>
 
-        {/* Tabs */}
         <div style={S.tabs}>
-          <button style={{ ...S.tab, ...(view === 'list' ? S.tabActive : {}) }} onClick={() => setView('list')}>
-            <LogIn size={14} /> JOIN SERVER
+          <button style={{ ...S.tab, ...(view === 'list' ? S.tabActive : {}) }} onClick={() => { setView('list'); }}>
+            <LogIn size={14} /> SERVERS
           </button>
-          <button style={{ ...S.tab, ...(view === 'create' ? S.tabActive : {}) }} onClick={() => setView('create')}>
-            <Plus size={14} /> CREATE SERVER
+          <button style={{ ...S.tab, ...(view === 'request' ? S.tabActive : {}) }} onClick={() => { setView('request'); setReqSuccess(false); setReqError(''); }}>
+            <Plus size={14} /> REQUEST ACCESS
+          </button>
+          <button style={{ ...S.tab, ...(view === 'activate' ? S.tabActive : {}) }} onClick={() => { setView('activate'); setActError(''); }}>
+            <Key size={14} /> ACTIVATE
           </button>
         </div>
 
-        {/* Server list */}
+        {/* SERVER LIST */}
         {view === 'list' && (
           <div style={S.card}>
             {loading && <p style={S.dim}>Loading servers…</p>}
             {!loading && servers.length === 0 && (
-              <p style={S.dim}>No servers yet. Create the first one.</p>
+              <p style={S.dim}>No servers yet.</p>
             )}
             {servers.map(s => (
               <button key={s.id} style={S.serverRow} onClick={() => navigate(`/server/${s.id}`)}>
@@ -130,31 +211,79 @@ export default function ServerSelect() {
           </div>
         )}
 
-        {/* Create form */}
-        {view === 'create' && (
-          <form style={S.card} onSubmit={handleCreate}>
-            <Field label="SERVER NUMBER" placeholder="e.g. 958"
-              value={form.serverNumber} onChange={v => setForm(f => ({ ...f, serverNumber: v }))} />
-            <Field label="WORKSPACE NAME" placeholder="e.g. 958 Mastermind"
-              value={form.name} onChange={v => setForm(f => ({ ...f, name: v }))} />
-            <Field label="ADMIN PASSWORD" placeholder="Share this with your co-admins"
-              type="password" value={form.adminPassword} onChange={v => setForm(f => ({ ...f, adminPassword: v }))} />
-            {error && <p style={S.error}>{error}</p>}
-            <button type="submit" style={S.btn} disabled={creating}>
-              {creating ? 'CREATING…' : 'CREATE SERVER →'}
+        {/* REQUEST ACCESS */}
+        {view === 'request' && (
+          <div style={S.card}>
+            {reqSuccess ? (
+              <div style={{ textAlign: 'center', padding: '16px 0' }}>
+                <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 18, color: '#00e87a', marginBottom: 8 }}>REQUEST SUBMITTED</div>
+                <p style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6 }}>
+                  Your request has been received. The platform admin will review it and send you an activation code to complete setup.
+                </p>
+                <button style={{ ...S.btn, marginTop: 20, background: 'transparent', color: '#00c8ff', border: '1px solid rgba(0,200,255,0.3)' }}
+                  onClick={() => { setView('activate'); setReqSuccess(false); }}>
+                  I HAVE MY CODE — ACTIVATE →
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={handleRequest}>
+                <p style={{ color: '#7a9bb8', fontSize: 12, marginBottom: 18, lineHeight: 1.6 }}>
+                  Servers are approved by the platform admin. Fill in your details and your request will be reviewed shortly.
+                </p>
+                <Field label="SERVER NUMBER" placeholder="e.g. 958"
+                  value={reqForm.serverNumber} onChange={v => setReqForm(f => ({ ...f, serverNumber: v }))} />
+                <Field label="WORKSPACE NAME" placeholder="e.g. 958 Mastermind"
+                  value={reqForm.name} onChange={v => setReqForm(f => ({ ...f, name: v }))} />
+                <Field label="YOUR NAME / CONTACT" placeholder="Your in-game name or Discord handle"
+                  value={reqForm.contactName} onChange={v => setReqForm(f => ({ ...f, contactName: v }))} />
+                <div style={{ marginBottom: 16 }}>
+                  <div style={S.label}>MESSAGE (optional)</div>
+                  <textarea
+                    placeholder="Briefly describe your server and why you need a workspace…"
+                    value={reqForm.message}
+                    onChange={e => setReqForm(f => ({ ...f, message: e.target.value }))}
+                    rows={3}
+                    style={{ ...S.input, resize: 'vertical', lineHeight: 1.5 }}
+                  />
+                </div>
+                {reqError && <p style={S.error}>{reqError}</p>}
+                <button type="submit" style={S.btn} disabled={reqBusy}>
+                  {reqBusy ? 'SUBMITTING…' : 'SUBMIT REQUEST →'}
+                </button>
+              </form>
+            )}
+          </div>
+        )}
+
+        {/* ACTIVATE */}
+        {view === 'activate' && (
+          <form style={S.card} onSubmit={handleActivate}>
+            <p style={{ color: '#7a9bb8', fontSize: 12, marginBottom: 18, lineHeight: 1.6 }}>
+              Enter the activation code you received from the platform admin, then set your admin password to create your server.
+            </p>
+            <Field label="ACTIVATION CODE" placeholder="e.g. A3F7K2P9"
+              value={actCode} onChange={v => setActCode(v.toUpperCase())}
+              style={{ fontFamily: "'Share Tech Mono',monospace", letterSpacing: '4px' }}
+            />
+            <PwdField label="SET ADMIN PASSWORD" value={actPwd} onChange={setActPwd}
+              show={showPwd} onToggle={() => setShowPwd(s => !s)} />
+            <PwdField label="CONFIRM PASSWORD" value={actConfirm} onChange={setActConfirm}
+              show={showPwd} onToggle={() => setShowPwd(s => !s)} />
+            {actError && <p style={S.error}>{actError}</p>}
+            <button type="submit" style={S.btn} disabled={actBusy}>
+              {actBusy ? 'CREATING…' : 'CREATE SERVER →'}
             </button>
           </form>
         )}
       </div>
 
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');
-      `}</style>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');`}</style>
     </div>
   );
 }
 
-function Field({ label, placeholder, type = 'text', value, onChange }) {
+function Field({ label, placeholder, type = 'text', value, onChange, style: extraStyle }) {
   const S = styles;
   return (
     <div style={{ marginBottom: 16 }}>
@@ -162,8 +291,31 @@ function Field({ label, placeholder, type = 'text', value, onChange }) {
       <input
         type={type} placeholder={placeholder} value={value}
         onChange={e => onChange(e.target.value)}
-        style={S.input}
+        style={{ ...S.input, ...extraStyle }}
       />
+    </div>
+  );
+}
+
+function PwdField({ label, value, onChange, show, onToggle }) {
+  const S = styles;
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={S.label}>{label}</div>
+      <div style={{ position: 'relative' }}>
+        <input
+          type={show ? 'text' : 'password'}
+          value={value} onChange={e => onChange(e.target.value)}
+          style={{ ...S.input, paddingRight: 38 }}
+        />
+        <button type="button" onClick={onToggle} style={{
+          position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+          background: 'none', border: 'none', color: '#3a5878', cursor: 'pointer',
+          display: 'flex', alignItems: 'center', padding: 2,
+        }}>
+          {show ? <EyeOff size={14} /> : <Eye size={14} />}
+        </button>
+      </div>
     </div>
   );
 }
@@ -176,17 +328,17 @@ const styles = {
   badge: { display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', padding: '5px 16px', color: '#00c8ff', fontWeight: 700, fontSize: 11, letterSpacing: '2px', marginBottom: 24 },
   title: { fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 'clamp(36px, 8vw, 64px)', color: '#fff', letterSpacing: '-1px', margin: '0 0 8px', textShadow: '0 0 40px rgba(0,200,255,0.4)' },
   sub: { color: '#7a9bb8', fontSize: 14, marginBottom: 32 },
-  tabs: { display: 'flex', gap: 8, marginBottom: 20, justifyContent: 'center' },
-  tab: { display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(13,21,32,0.6)', border: '1px solid #1e3550', color: '#7a9bb8', padding: '8px 20px', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer', transition: 'all 0.2s' },
+  tabs: { display: 'flex', gap: 8, marginBottom: 20, justifyContent: 'center', flexWrap: 'wrap' },
+  tab: { display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(13,21,32,0.6)', border: '1px solid #1e3550', color: '#7a9bb8', padding: '8px 18px', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer', transition: 'all 0.2s' },
   tabActive: { border: '1px solid rgba(0,200,255,0.5)', color: '#00c8ff', background: 'rgba(0,200,255,0.08)' },
   card: { background: 'rgba(13,21,32,0.9)', border: '1px solid #1e3550', padding: '24px', textAlign: 'left' },
-  serverRow: { width: '100%', display: 'flex', alignItems: 'center', gap: 16, background: 'transparent', border: 'none', borderBottom: '1px solid #1a2d42', padding: '14px 0', cursor: 'pointer', transition: 'all 0.15s', color: '#d0e4f4', textAlign: 'left' },
+  serverRow: { width: '100%', display: 'flex', alignItems: 'center', gap: 16, background: 'transparent', border: 'none', borderBottom: '1px solid #1a2d42', padding: '14px 0', cursor: 'pointer', color: '#d0e4f4', textAlign: 'left' },
   serverIcon: { width: 40, height: 40, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00c8ff', flexShrink: 0 },
   serverName: { fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 16, color: '#d0e4f4' },
   serverSub: { fontSize: 11, color: '#3a5878', fontFamily: "'Share Tech Mono', monospace", marginTop: 2 },
   label: { fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 6 },
   input: { width: '100%', background: 'rgba(0,200,255,0.04)', border: '1px solid #1e3550', color: '#d0e4f4', padding: '10px 14px', fontFamily: "'Rajdhani', sans-serif", fontSize: 15, outline: 'none', boxSizing: 'border-box' },
-  btn: { width: '100%', background: '#00c8ff', color: '#080d14', border: 'none', padding: '13px', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: '2px', cursor: 'pointer', marginTop: 8 },
+  btn: { width: '100%', background: '#00c8ff', color: '#080d14', border: 'none', padding: '13px', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: '2px', cursor: 'pointer', marginTop: 4 },
   error: { color: '#ff4060', fontSize: 12, marginBottom: 8 },
   dim: { color: '#3a5878', fontSize: 13, textAlign: 'center', padding: '16px 0' },
 };

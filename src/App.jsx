@@ -8,6 +8,7 @@ import Map             from './pages/Map';
 import AllianceHQ      from './pages/AllianceHQ';
 import Rules           from './pages/Rules';
 import Register        from './pages/Register';
+import SuperAdmin      from './pages/SuperAdmin';
 
 function App() {
   return (
@@ -15,6 +16,7 @@ function App() {
       <Router>
         <Routes>
           <Route path="/"                           element={<ServerSelect />} />
+          <Route path="/superadmin"                 element={<SuperAdmin />} />
           <Route path="/join/:inviteCode"           element={<JoinServer />} />
           <Route path="/server/:serverId"           element={<ServerDashboard />} />
           <Route path="/server/:serverId/admin"     element={<AdminPanel />} />
