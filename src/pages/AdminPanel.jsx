@@ -173,6 +173,15 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
         <button style={S.addBtn} onClick={openCreate}><Plus size={14} /> NEW ALLIANCE</button>
       </div>
 
+      <HelpCard title="HOW ALLIANCES WORK" lines={[
+        'Create each alliance here — give it a name, tag, colour, and an owner password.',
+        'The owner password is the shared login for that alliance\'s leader (R5). Give it directly to them.',
+        'Once the alliance exists, the owner logs in as OWNER from the server dashboard.',
+        'To invite players: the alliance owner copies the invite link from Alliance HQ → Settings and shares it with their members.',
+        'Players click the link, choose a username and password, and join automatically.',
+        'You can reassign or remove members at any time from the MEMBERS tab.',
+      ]} />
+
       {showForm && (
         <form style={S.formCard} onSubmit={handleSave}>
           <div style={S.formTitle}>{editing ? 'EDIT ALLIANCE' : 'CREATE ALLIANCE'}</div>
@@ -374,6 +383,14 @@ function ServerTab({ server, setServer, serverId }) {
         </div>
       </div>
 
+      <HelpCard title="SERVER ADMIN GUIDE" lines={[
+        'The server invite link lets people reach this server\'s dashboard — share it widely if you want.',
+        'Each alliance has its own separate invite link managed by the alliance owner.',
+        'Set the active season so all alliances show the correct map and member fields.',
+        'You can change the admin password below — all admins will need the new password next login.',
+        'Deleting the server permanently removes all alliances, members, and data. Use with caution.',
+      ]} />
+
       {/* Server invite link */}
       <div style={S.settingsCard}>
         <div style={S.settingsLabel}>SERVER INVITE LINK</div>
@@ -508,6 +525,29 @@ function Field({ label, placeholder = '', type = 'text', value, onChange }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function HelpCard({ title, lines }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: 'rgba(0,200,255,0.03)', border: '1px solid rgba(0,200,255,0.12)', marginBottom: 20 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', color: '#3a5878', padding: '10px 14px', cursor: 'pointer', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', textAlign: 'left' }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>ℹ {title}</span>
+        <span style={{ fontSize: 10 }}>{open ? '▲ HIDE' : '▼ SHOW'}</span>
+      </button>
+      {open && (
+        <ul style={{ margin: 0, padding: '4px 14px 12px 28px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {lines.map((l, i) => (
+            <li key={i} style={{ color: '#7a9bb8', fontSize: 12, lineHeight: 1.6 }}>{l}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

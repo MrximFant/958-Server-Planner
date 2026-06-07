@@ -194,6 +194,9 @@ export default function ServerDashboard() {
         </div>
       </section>
 
+      {/* Role help banner */}
+      {activeSession && <RoleHelp role={role} serverId={serverId} navigate={navigate} />}
+
       {/* Feature cards */}
       <section style={S.cards}>
         <div style={{ textAlign: 'center', marginBottom: 40 }}>
@@ -296,6 +299,80 @@ function Field({ label, type = 'text', value, onChange }) {
 // Needed for member login button icon
 function LogIn({ size }) {
   return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>;
+}
+
+const ROLE_HELP = {
+  admin: {
+    label: '⚡ SERVER ADMIN QUICK START',
+    color: '#f0a500',
+    steps: [
+      'Go to Admin Panel (top-right button) to create and manage alliances.',
+      'When creating an alliance, set an owner password and give it directly to the alliance leader.',
+      'The alliance leader logs in as OWNER from this page using that password.',
+      'To invite players: the owner copies the invite link from Alliance HQ → Settings → shares it with members.',
+      'Players self-register via the invite link — no manual entry needed.',
+      'Set the active season in Admin Panel → SERVER tab to control which map and fields are shown.',
+    ],
+  },
+  owner: {
+    label: '👑 ALLIANCE OWNER QUICK START',
+    color: '#f0a500',
+    steps: [
+      'Go to Alliance HQ to manage your roster.',
+      'In the SETTINGS tab, copy your alliance invite link and share it with your players.',
+      'Players click the link, register, and appear in your ROSTER tab automatically.',
+      'Promote up to 10 trusted members to Alliance Admin in the ADMINS tab — they can edit and remove members.',
+      'Control who can see your roster using the visibility toggles in SETTINGS.',
+      'If a member forgets their password, edit their record in the ROSTER tab to reset it.',
+    ],
+  },
+  member: {
+    label: '👤 MEMBER QUICK START',
+    color: '#00c8ff',
+    steps: [
+      'Go to Alliance HQ to view your alliance roster and update your profile.',
+      'In the MY PROFILE panel, fill in your squad powers, troop types, and event preferences.',
+      'Your alliance leadership uses this data to plan Canyon Storm and Desert Storm teams.',
+      'Keep your T1 power and team preference up to date before each event.',
+    ],
+  },
+};
+
+function RoleHelp({ role, serverId, navigate }) {
+  const [open, setOpen] = useState(false);
+  const help = ROLE_HELP[role];
+  if (!help) return null;
+  const S = styles;
+  return (
+    <section style={{ position: 'relative', zIndex: 1, maxWidth: 860, margin: '0 auto', padding: '0 24px 8px' }}>
+      <div style={{ background: 'rgba(13,21,32,0.85)', border: `1px solid rgba(240,165,0,0.2)` }}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', color: help.color, padding: '12px 18px', cursor: 'pointer', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', textAlign: 'left' }}
+        >
+          <span>ℹ {help.label}</span>
+          <span style={{ fontSize: 10, color: '#3a5878' }}>{open ? '▲ COLLAPSE' : '▼ HOW TO GET STARTED'}</span>
+        </button>
+        {open && (
+          <div style={{ padding: '4px 18px 16px' }}>
+            <ol style={{ margin: 0, padding: '0 0 0 18px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {help.steps.map((s, i) => (
+                <li key={i} style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6 }}>{s}</li>
+              ))}
+            </ol>
+            {(role === 'admin' || role === 'owner') && (
+              <button
+                onClick={() => navigate(role === 'admin' ? `/server/${serverId}/admin` : `/server/${serverId}/alliance`)}
+                style={{ marginTop: 14, background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.3)', color: '#f0a500', padding: '7px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' }}
+              >
+                {role === 'admin' ? 'OPEN ADMIN PANEL →' : 'OPEN ALLIANCE HQ →'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function FeatureCard({ feature: f, navigate, session }) {

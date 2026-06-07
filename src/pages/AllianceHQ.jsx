@@ -84,6 +84,29 @@ function formToDb(form) {
 
 // ── Shared UI pieces ─────────────────────────────────────────────
 
+function HelpCard({ title, lines }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: 'rgba(0,200,255,0.03)', border: '1px solid rgba(0,200,255,0.10)', marginBottom: 16 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', color: '#3a5878', padding: '10px 14px', cursor: 'pointer', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', textAlign: 'left' }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>ℹ {title}</span>
+        <span style={{ fontSize: 10 }}>{open ? '▲ HIDE' : '▼ SHOW'}</span>
+      </button>
+      {open && (
+        <ul style={{ margin: 0, padding: '4px 14px 12px 28px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {lines.map((l, i) => (
+            <li key={i} style={{ color: '#7a9bb8', fontSize: 12, lineHeight: 1.6 }}>{l}</li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function CheckBox({ checked, onChange, label, sub }) {
   return (
     <label className="check-row">
@@ -356,6 +379,24 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
       </div>
 
       <div style={{ padding: '0 20px 20px' }}>
+        {isOwner && tab === 'SETTINGS' && (
+          <HelpCard title="ALLIANCE OWNER GUIDE" lines={[
+            'Copy your alliance invite link and share it with players — they self-register and join automatically.',
+            'You can promote up to 10 trusted members to Alliance Admin in the ADMINS tab.',
+            'Alliance Admins can edit and remove members, but cannot change settings or promote others.',
+            'Use Roster Visibility to control whether other alliances on the server can see your roster.',
+            'If a member forgets their password, edit their profile in the ROSTER tab and set a new one.',
+            'Your owner password can be changed below — share the new one with anyone who needs access.',
+          ]} />
+        )}
+        {!isOwner && tab === 'INVITE' && (
+          <HelpCard title="INVITING PLAYERS" lines={[
+            'Copy this link and share it directly with players you want to join the alliance.',
+            'Players click the link, create a username and password, and are added automatically.',
+            'Only the alliance owner can promote or remove Alliance Admins.',
+          ]} />
+        )}
+
         {/* ROSTER TAB */}
         {tab === 'ROSTER' && (
           <div>
@@ -542,6 +583,12 @@ function MyProfilePanel({ memberId, members, showToast, onReload }) {
       </div>
       {open && (
         <div style={{ padding: '16px 20px 20px' }}>
+          <HelpCard title="ABOUT YOUR PROFILE" lines={[
+            'Keep your T1 power and troop type up to date — alliance leaders use this for Canyon Storm and Desert Storm planning.',
+            'Set your Canyon and Desert Storm team preference so the owner can build balanced teams.',
+            'Resistance and coffee buff affect your total resistance shown to leadership.',
+            'Only you can edit this panel. Your alliance owner or admin can also edit your stats if needed.',
+          ]} />
           <MemberForm
             initialData={member}
             onSave={handleSave}
