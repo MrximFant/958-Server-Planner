@@ -788,8 +788,8 @@ export default function AllianceHQ() {
   if (!activeSession) return null;
   if (loading) return <LoadingScreen />;
 
-  const showRoster = isAdmin || canManage || alliance?.roster_public !== false || (role === 'member' && activeSession?.allianceId === effectiveAllianceId);
-  const showPowerInRoster = isAdmin || canManage || alliance?.roster_show_power !== false;
+  const showRoster = canManage || alliance?.roster_public !== false || (role === 'member' && activeSession?.allianceId === effectiveAllianceId);
+  const showPowerInRoster = canManage || alliance?.roster_show_power !== false;
 
   return (
     <div className="ahq-root">
@@ -834,6 +834,32 @@ export default function AllianceHQ() {
                 <option value="">— Pick an alliance —</option>
                 {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
+
+              {alliance && members.length > 0 && (
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: alliance.color, display: 'inline-block', flexShrink: 0 }} />
+                    <span style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, color: alliance.color }}>{alliance.name}</span>
+                    <span style={{ fontSize: 12, color: '#3a5878' }}>— {members.length} member{members.length !== 1 ? 's' : ''}</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {members.map(m => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'rgba(0,200,255,0.03)', border: '1px solid #1a2d42', fontSize: 13 }}>
+                        <span style={{ color: '#d0e4f4', fontWeight: 600 }}>{m.in_game_name || m.username}</span>
+                        {m.in_game_name && m.in_game_name !== m.username && (
+                          <span style={{ color: '#3a5878', fontSize: 11, fontFamily: "'Share Tech Mono',monospace" }}>@{m.username}</span>
+                        )}
+                        {m.alliance_role === 'alliance_admin' && <span className="role-chip admin-chip">ADMIN</span>}
+                      </div>
+                    ))}
+                  </div>
+                  <p style={{ color: '#3a5878', fontSize: 11, marginTop: 10 }}>Player stats are managed by the alliance owner and admins.</p>
+                </div>
+              )}
+
+              {alliance && members.length === 0 && (
+                <p style={{ color: '#3a5878', fontSize: 13, marginTop: 16 }}>No members in this alliance yet.</p>
+              )}
             </div>
           </div>
         )}
