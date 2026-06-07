@@ -173,6 +173,15 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
         <button style={S.addBtn} onClick={openCreate}><Plus size={14} /> NEW ALLIANCE</button>
       </div>
 
+      <HelpCard title="HOW ALLIANCES WORK" lines={[
+        'Create each alliance here — give it a name, tag, colour, and an owner password.',
+        'The owner password is the shared login for that alliance\'s leader (R5). Give it directly to them.',
+        'Once the alliance exists, the owner logs in as OWNER from the server dashboard.',
+        'To invite players: the alliance owner copies the invite link from Alliance HQ → Settings and shares it with their members.',
+        'Players click the link, choose a username and password, and join automatically.',
+        'You can reassign or remove members at any time from the MEMBERS tab.',
+      ]} />
+
       {showForm && (
         <form style={S.formCard} onSubmit={handleSave}>
           <div style={S.formTitle}>{editing ? 'EDIT ALLIANCE' : 'CREATE ALLIANCE'}</div>
@@ -292,6 +301,16 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
   );
 }
 
+const SEASON_LABELS = {
+  0: 'Season 0 — Pre-Season / No Active Season',
+  1: 'Season 1',
+  2: 'Season 2',
+  3: 'Season 3',
+  4: 'Season 4',
+  5: 'Season 5 — Wild West',
+  6: 'Season 6',
+};
+
 // ── Server Tab ────────────────────────────────────────────────
 function ServerTab({ server, setServer, serverId }) {
   const navigate    = useNavigate();
@@ -302,11 +321,26 @@ function ServerTab({ server, setServer, serverId }) {
   const [msg,       setMsg]       = useState('');
   const [error,     setError]     = useState('');
 
+  // Season state
+  const [season,     setSeason]    = useState(server.current_season ?? 0);
+  const [seasonBusy, setSeasonBusy] = useState(false);
+  const [seasonMsg,  setSeasonMsg]  = useState('');
+
   // Delete server state
   const [deleteStep,    setDeleteStep]    = useState(0); // 0=idle 1=confirm 2=type
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleteBusy,    setDeleteBusy]    = useState(false);
   const [deleteError,   setDeleteError]   = useState('');
+
+  async function handleSeasonSave() {
+    setSeasonBusy(true); setSeasonMsg('');
+    const { error: err } = await supabase.from('servers').update({ current_season: season }).eq('id', serverId);
+    setSeasonBusy(false);
+    if (err) { setSeasonMsg('Error: ' + err.message); return; }
+    setServer(s => ({ ...s, current_season: season }));
+    setSeasonMsg('Season updated.');
+    setTimeout(() => setSeasonMsg(''), 3000);
+  }
 
   async function handleDeleteServer() {
     if (deleteConfirm !== 'DELETE') { setDeleteError('Type DELETE exactly.'); return; }
@@ -349,6 +383,14 @@ function ServerTab({ server, setServer, serverId }) {
         </div>
       </div>
 
+      <HelpCard title="SERVER ADMIN GUIDE" lines={[
+        'The server invite link lets people reach this server\'s dashboard — share it widely if you want.',
+        'Each alliance has its own separate invite link managed by the alliance owner.',
+        'Set the active season so all alliances show the correct map and member fields.',
+        'You can change the admin password below — all admins will need the new password next login.',
+        'Deleting the server permanently removes all alliances, members, and data. Use with caution.',
+      ]} />
+
       {/* Server invite link */}
       <div style={S.settingsCard}>
         <div style={S.settingsLabel}>SERVER INVITE LINK</div>
@@ -372,6 +414,31 @@ function ServerTab({ server, setServer, serverId }) {
           {msg   && <p style={{ color: '#00e87a', fontSize: 12, marginBottom: 8 }}>{msg}</p>}
           <button type="submit" style={S.saveBtn} disabled={busy}>{busy ? 'SAVING…' : 'UPDATE PASSWORD →'}</button>
         </form>
+      </div>
+
+      {/* Active season */}
+      <div style={S.settingsCard}>
+        <div style={S.settingsLabel}>ACTIVE SEASON</div>
+        <div style={S.settingsSub}>
+          Sets the current season for this server. This controls which map and member fields are shown across all alliances.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <select
+            value={season}
+            onChange={e => setSeason(Number(e.target.value))}
+            style={{ background: '#0d1520', border: '1px solid #1e3550', color: '#d0e4f4', padding: '9px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 14, outline: 'none', flex: 1, maxWidth: 360 }}
+          >
+            {Object.entries(SEASON_LABELS).map(([val, label]) => (
+              <option key={val} value={val}>{label}</option>
+            ))}
+          </select>
+          <button style={S.saveBtn} onClick={handleSeasonSave} disabled={seasonBusy}>
+            {seasonBusy ? 'SAVING…' : 'SAVE →'}
+          </button>
+        </div>
+        {seasonMsg && (
+          <p style={{ color: '#00e87a', fontSize: 12, marginTop: 10, marginBottom: 0 }}>{seasonMsg}</p>
+        )}
       </div>
 
       {/* Delete server */}
@@ -458,6 +525,29 @@ function Field({ label, placeholder = '', type = 'text', value, onChange }) {
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+function HelpCard({ title, lines }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ background: 'rgba(0,200,255,0.03)', border: '1px solid rgba(0,200,255,0.12)', marginBottom: 20 }}>
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', color: '#3a5878', padding: '10px 14px', cursor: 'pointer', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', textAlign: 'left' }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>ℹ {title}</span>
+        <span style={{ fontSize: 10 }}>{open ? '▲ HIDE' : '▼ SHOW'}</span>
+      </button>
+      {open && (
+        <ul style={{ margin: 0, padding: '4px 14px 12px 28px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {lines.map((l, i) => (
+            <li key={i} style={{ color: '#7a9bb8', fontSize: 12, lineHeight: 1.6 }}>{l}</li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
