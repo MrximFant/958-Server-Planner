@@ -5,6 +5,7 @@ import { hashPassword, generateInviteCode } from '../lib/auth';
 import { Server, Plus, LogIn, Zap, Key, Eye, EyeOff } from 'lucide-react';
 
 const DISCORD_WEBHOOK = import.meta.env.VITE_DISCORD_WEBHOOK;
+const DISCORD_INVITE  = import.meta.env.VITE_DISCORD_INVITE;
 
 async function sendDiscordNotification(r) {
   if (!DISCORD_WEBHOOK) return;
@@ -221,7 +222,25 @@ export default function ServerSelect() {
                 <p style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6 }}>
                   Your request has been received. The platform admin will review it and send you an activation code to complete setup.
                 </p>
-                <button style={{ ...S.btn, marginTop: 20, background: 'transparent', color: '#00c8ff', border: '1px solid rgba(0,200,255,0.3)' }}
+                {DISCORD_INVITE && (
+                  <div style={{ margin: '18px 0', background: 'rgba(88,101,242,0.08)', border: '1px solid rgba(88,101,242,0.3)', padding: '14px 16px' }}>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', color: '#8891f2', marginBottom: 8 }}>
+                      JOIN DISCORD TO RECEIVE YOUR CODE
+                    </div>
+                    <p style={{ color: '#7a9bb8', fontSize: 12, lineHeight: 1.6, marginBottom: 12 }}>
+                      The activation code will be sent to you via Discord. Join the server and the admin will reach out.
+                    </p>
+                    <a
+                      href={DISCORD_INVITE}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: '#5865f2', color: '#fff', padding: '9px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: '1px', textDecoration: 'none' }}
+                    >
+                      JOIN DISCORD →
+                    </a>
+                  </div>
+                )}
+                <button style={{ ...S.btn, marginTop: 8, background: 'transparent', color: '#00c8ff', border: '1px solid rgba(0,200,255,0.3)' }}
                   onClick={() => { setView('activate'); setReqSuccess(false); }}>
                   I HAVE MY CODE — ACTIVATE →
                 </button>
