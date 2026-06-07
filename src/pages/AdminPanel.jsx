@@ -292,6 +292,16 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
   );
 }
 
+const SEASON_LABELS = {
+  0: 'Season 0 — Pre-Season / No Active Season',
+  1: 'Season 1',
+  2: 'Season 2',
+  3: 'Season 3',
+  4: 'Season 4',
+  5: 'Season 5 — Wild West',
+  6: 'Season 6',
+};
+
 // ── Server Tab ────────────────────────────────────────────────
 function ServerTab({ server, setServer, serverId }) {
   const navigate    = useNavigate();
@@ -302,11 +312,26 @@ function ServerTab({ server, setServer, serverId }) {
   const [msg,       setMsg]       = useState('');
   const [error,     setError]     = useState('');
 
+  // Season state
+  const [season,     setSeason]    = useState(server.current_season ?? 0);
+  const [seasonBusy, setSeasonBusy] = useState(false);
+  const [seasonMsg,  setSeasonMsg]  = useState('');
+
   // Delete server state
   const [deleteStep,    setDeleteStep]    = useState(0); // 0=idle 1=confirm 2=type
   const [deleteConfirm, setDeleteConfirm] = useState('');
   const [deleteBusy,    setDeleteBusy]    = useState(false);
   const [deleteError,   setDeleteError]   = useState('');
+
+  async function handleSeasonSave() {
+    setSeasonBusy(true); setSeasonMsg('');
+    const { error: err } = await supabase.from('servers').update({ current_season: season }).eq('id', serverId);
+    setSeasonBusy(false);
+    if (err) { setSeasonMsg('Error: ' + err.message); return; }
+    setServer(s => ({ ...s, current_season: season }));
+    setSeasonMsg('Season updated.');
+    setTimeout(() => setSeasonMsg(''), 3000);
+  }
 
   async function handleDeleteServer() {
     if (deleteConfirm !== 'DELETE') { setDeleteError('Type DELETE exactly.'); return; }
@@ -372,6 +397,31 @@ function ServerTab({ server, setServer, serverId }) {
           {msg   && <p style={{ color: '#00e87a', fontSize: 12, marginBottom: 8 }}>{msg}</p>}
           <button type="submit" style={S.saveBtn} disabled={busy}>{busy ? 'SAVING…' : 'UPDATE PASSWORD →'}</button>
         </form>
+      </div>
+
+      {/* Active season */}
+      <div style={S.settingsCard}>
+        <div style={S.settingsLabel}>ACTIVE SEASON</div>
+        <div style={S.settingsSub}>
+          Sets the current season for this server. This controls which map and member fields are shown across all alliances.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <select
+            value={season}
+            onChange={e => setSeason(Number(e.target.value))}
+            style={{ background: '#0d1520', border: '1px solid #1e3550', color: '#d0e4f4', padding: '9px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 14, outline: 'none', flex: 1, maxWidth: 360 }}
+          >
+            {Object.entries(SEASON_LABELS).map(([val, label]) => (
+              <option key={val} value={val}>{label}</option>
+            ))}
+          </select>
+          <button style={S.saveBtn} onClick={handleSeasonSave} disabled={seasonBusy}>
+            {seasonBusy ? 'SAVING…' : 'SAVE →'}
+          </button>
+        </div>
+        {seasonMsg && (
+          <p style={{ color: '#00e87a', fontSize: 12, marginTop: 10, marginBottom: 0 }}>{seasonMsg}</p>
+        )}
       </div>
 
       {/* Delete server */}
