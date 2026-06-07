@@ -251,9 +251,15 @@ export default function ServerDashboard() {
                     <option value="">— Select your alliance —</option>
                     {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                   </select>
+                  <p style={{ color: '#3a5878', fontSize: 11, marginTop: 5 }}>
+                    Not sure which alliance? Ask your R5 or alliance leader.
+                  </p>
                 </div>
                 <Field label="USERNAME" value={authForm.username} onChange={v => setAuthForm(f => ({ ...f, username: v }))} />
                 <Field label="PASSWORD" type="password" value={authForm.password} onChange={v => setAuthForm(f => ({ ...f, password: v }))} />
+                <p style={{ color: '#3a5878', fontSize: 11, marginTop: -8, marginBottom: 12 }}>
+                  Forgot your password? Contact your alliance owner or admin.
+                </p>
                 {authError && <p style={S.error}>{authError}</p>}
                 <button type="submit" style={S.modalBtn} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'LOGIN →'}</button>
               </form>

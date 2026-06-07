@@ -35,10 +35,15 @@ export default function SuperAdmin() {
 
   // Servers state
   const [servers,       setServers]       = useState([]);
+  const [memberCounts,  setMemberCounts]  = useState({});
   const [srvLoading,    setSrvLoading]    = useState(false);
   const [srvSearch,     setSrvSearch]     = useState('');
-  const [resetResult,   setResetResult]   = useState({}); // { [serverId]: { password, copied } }
+  const [srvSort,       setSrvSort]       = useState('number'); // number | members | date
+  const [resetResult,   setResetResult]   = useState({});
   const [resetBusy,     setResetBusy]     = useState({});
+  const [deleteStep,    setDeleteStep]    = useState({}); // { [id]: 0|1|2 }
+  const [deleteTyped,   setDeleteTyped]   = useState({});
+  const [deleteBusy,    setDeleteBusy]    = useState({});
 
   function handleLogin(e) {
     e.preventDefault();
@@ -65,12 +70,25 @@ export default function SuperAdmin() {
 
   async function loadServers() {
     setSrvLoading(true);
-    const { data } = await supabase
-      .from('servers')
-      .select('id, server_number, name, created_at')
-      .order('server_number');
-    setServers(data ?? []);
+    const [{ data: srvData }, { data: mbData }] = await Promise.all([
+      supabase.from('servers').select('id, server_number, name, created_at'),
+      supabase.from('members').select('server_id'),
+    ]);
+    setServers(srvData ?? []);
+    const counts = {};
+    (mbData ?? []).forEach(m => { counts[m.server_id] = (counts[m.server_id] || 0) + 1; });
+    setMemberCounts(counts);
     setSrvLoading(false);
+  }
+
+  async function handleDeleteServer(id) {
+    setDeleteBusy(b => ({ ...b, [id]: true }));
+    await supabase.from('servers').delete().eq('id', id);
+    setDeleteBusy(b => ({ ...b, [id]: false }));
+    setDeleteStep(s => { const n = { ...s }; delete n[id]; return n; });
+    setDeleteTyped(t => { const n = { ...t }; delete n[id]; return n; });
+    setResetResult(r => { const n = { ...r }; delete n[id]; return n; });
+    loadServers();
   }
 
   async function handleApprove(r) {
@@ -129,10 +147,16 @@ export default function SuperAdmin() {
   const approved = requests.filter(r => r.status === 'approved');
   const other    = requests.filter(r => r.status !== 'pending' && r.status !== 'approved');
 
-  const filteredServers = servers.filter(s =>
-    s.server_number.includes(srvSearch) ||
-    s.name.toLowerCase().includes(srvSearch.toLowerCase())
-  );
+  const filteredServers = servers
+    .filter(s =>
+      s.server_number.includes(srvSearch) ||
+      s.name.toLowerCase().includes(srvSearch.toLowerCase())
+    )
+    .sort((a, b) => {
+      if (srvSort === 'members') return (memberCounts[b.id] || 0) - (memberCounts[a.id] || 0);
+      if (srvSort === 'date')    return new Date(b.created_at) - new Date(a.created_at);
+      return a.server_number.localeCompare(b.server_number, undefined, { numeric: true });
+    });
 
   const S = styles;
 
@@ -292,18 +316,28 @@ export default function SuperAdmin() {
         {/* ── SERVERS TAB ── */}
         {tab === 'servers' && (
           <div>
-            <div style={{ position: 'relative', marginBottom: 16 }}>
-              <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#3a5878', pointerEvents: 'none' }} />
-              <input
-                placeholder="Search by server number or name…"
-                value={srvSearch}
-                onChange={e => setSrvSearch(e.target.value)}
-                style={{ ...S.input, paddingLeft: 34, marginBottom: 0 }}
-              />
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+              <div style={{ position: 'relative', flex: 1, minWidth: 180 }}>
+                <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#3a5878', pointerEvents: 'none' }} />
+                <input
+                  placeholder="Search by number or name…"
+                  value={srvSearch}
+                  onChange={e => setSrvSearch(e.target.value)}
+                  style={{ ...S.input, paddingLeft: 34, marginBottom: 0 }}
+                />
+              </div>
+              <select
+                value={srvSort}
+                onChange={e => setSrvSort(e.target.value)}
+                style={{ background: '#0d1520', border: '1px solid #1e3550', color: '#7a9bb8', padding: '10px 12px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, outline: 'none' }}
+              >
+                <option value="number">Sort: Server #</option>
+                <option value="members">Sort: Most Members</option>
+                <option value="date">Sort: Newest</option>
+              </select>
             </div>
 
             {srvLoading && <p style={{ color: '#3a5878', fontSize: 13 }}>Loading…</p>}
-
             {filteredServers.length === 0 && !srvLoading && (
               <p style={{ color: '#3a5878', fontSize: 13, textAlign: 'center', padding: 32 }}>
                 {srvSearch ? 'No servers match your search.' : 'No servers yet.'}
@@ -312,31 +346,40 @@ export default function SuperAdmin() {
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {filteredServers.map(s => {
-                const result = resetResult[s.id];
-                const busy   = resetBusy[s.id];
+                const result  = resetResult[s.id];
+                const busy    = resetBusy[s.id];
+                const count   = memberCounts[s.id] || 0;
+                const dStep   = deleteStep[s.id] || 0;
+                const dTyped  = deleteTyped[s.id] || '';
+                const dBusy   = deleteBusy[s.id] || false;
                 return (
                   <div key={s.id} style={S.card}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
                       <div>
                         <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 16, color: '#d0e4f4' }}>
                           Server {s.server_number} — {s.name}
                         </div>
-                        <div style={{ fontSize: 11, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace", marginTop: 3 }}>
-                          Created {new Date(s.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        <div style={{ fontSize: 11, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace", marginTop: 3, display: 'flex', gap: 12 }}>
+                          <span>Created {new Date(s.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          <span style={{ color: count > 0 ? '#00c8ff' : '#3a5878' }}>👥 {count} member{count !== 1 ? 's' : ''}</span>
                         </div>
                       </div>
-                      {!result && (
-                        <button
-                          style={S.resetBtn}
-                          onClick={() => handleResetPassword(s)}
-                          disabled={busy}
-                        >
-                          {busy ? 'RESETTING…' : 'RESET PASSWORD'}
-                        </button>
+                      {dStep === 0 && (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          {!result && (
+                            <button style={S.resetBtn} onClick={() => handleResetPassword(s)} disabled={busy}>
+                              {busy ? 'RESETTING…' : 'RESET PWD'}
+                            </button>
+                          )}
+                          <button style={S.deleteBtn} onClick={() => setDeleteStep(d => ({ ...d, [s.id]: 1 }))}>
+                            DELETE
+                          </button>
+                        </div>
                       )}
                     </div>
 
-                    {result && (
+                    {/* Password reset result */}
+                    {result && dStep === 0 && (
                       <div style={{ marginTop: 12, background: 'rgba(0,232,122,0.04)', border: '1px solid rgba(0,232,122,0.2)', padding: '12px 14px' }}>
                         <div style={S.codeLabel}>NEW ADMIN PASSWORD — copy and send to the server admin</div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6 }}>
@@ -348,13 +391,47 @@ export default function SuperAdmin() {
                           </button>
                         </div>
                         <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-                          <button style={S.ghostBtn} onClick={() => handleResetPassword(s)}>
-                            GENERATE ANOTHER
-                          </button>
+                          <button style={S.ghostBtn} onClick={() => handleResetPassword(s)}>GENERATE ANOTHER</button>
                           <button style={{ ...S.ghostBtn, color: '#ff4060', borderColor: 'rgba(255,64,96,0.3)' }}
                             onClick={() => setResetResult(r => { const n = { ...r }; delete n[s.id]; return n; })}>
                             DISMISS
                           </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Delete flow */}
+                    {dStep === 1 && (
+                      <div style={{ marginTop: 12, background: 'rgba(255,64,96,0.04)', border: '1px solid rgba(255,64,96,0.2)', padding: '12px 14px' }}>
+                        <p style={{ color: '#ff4060', fontSize: 13, marginBottom: 10 }}>
+                          This will permanently delete <strong>Server {s.server_number}</strong> and all its alliances, members, and data. This cannot be undone.
+                        </p>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button style={S.rejectBtn} onClick={() => setDeleteStep(d => ({ ...d, [s.id]: 2 }))}>YES, CONTINUE</button>
+                          <button style={S.ghostBtn} onClick={() => setDeleteStep(d => ({ ...d, [s.id]: 0 }))}>CANCEL</button>
+                        </div>
+                      </div>
+                    )}
+                    {dStep === 2 && (
+                      <div style={{ marginTop: 12, background: 'rgba(255,64,96,0.04)', border: '1px solid rgba(255,64,96,0.3)', padding: '12px 14px' }}>
+                        <p style={{ color: '#ff4060', fontSize: 12, marginBottom: 8 }}>
+                          Type <strong style={{ fontFamily: "'Share Tech Mono',monospace" }}>DELETE</strong> to confirm.
+                        </p>
+                        <input
+                          value={dTyped}
+                          onChange={e => setDeleteTyped(t => ({ ...t, [s.id]: e.target.value }))}
+                          placeholder="Type DELETE"
+                          style={{ ...S.input, marginBottom: 10, maxWidth: 200, borderColor: 'rgba(255,64,96,0.4)' }}
+                        />
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button
+                            style={{ ...S.rejectBtn, background: dTyped === 'DELETE' ? '#ff4060' : 'rgba(255,64,96,0.07)', color: '#fff', opacity: dBusy ? 0.6 : 1 }}
+                            disabled={dTyped !== 'DELETE' || dBusy}
+                            onClick={() => handleDeleteServer(s.id)}
+                          >
+                            {dBusy ? 'DELETING…' : 'PERMANENTLY DELETE →'}
+                          </button>
+                          <button style={S.ghostBtn} onClick={() => { setDeleteStep(d => ({ ...d, [s.id]: 0 })); setDeleteTyped(t => ({ ...t, [s.id]: '' })); }}>CANCEL</button>
                         </div>
                       </div>
                     )}
@@ -406,7 +483,8 @@ const styles = {
   primaryBtn: { width: '100%', background: '#ff4060', color: '#fff', border: 'none', padding: '12px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: '1.5px', cursor: 'pointer' },
   approveBtn: { background: 'rgba(0,232,122,0.08)', border: '1px solid rgba(0,232,122,0.35)', color: '#00e87a', padding: '8px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' },
   rejectBtn: { background: 'rgba(255,64,96,0.07)', border: '1px solid rgba(255,64,96,0.35)', color: '#ff4060', padding: '8px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' },
-  resetBtn: { background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.3)', color: '#f0a500', padding: '8px 16px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', flexShrink: 0 },
+  resetBtn:  { background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.3)', color: '#f0a500', padding: '8px 16px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', flexShrink: 0 },
+  deleteBtn: { background: 'rgba(255,64,96,0.07)', border: '1px solid rgba(255,64,96,0.3)', color: '#ff4060', padding: '8px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', flexShrink: 0 },
   ghostBtn: { display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: '1px solid #1e3550', color: '#3a5878', padding: '8px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' },
   card: { background: 'rgba(8,13,20,0.8)', border: '1px solid #1e3550', padding: '16px', marginBottom: 8 },
   tabBtn: { background: 'none', border: '1px solid #1e3550', color: '#3a5878', padding: '8px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 },

@@ -602,6 +602,7 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
 function MyProfilePanel({ memberId, members, showToast, onReload }) {
   const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [pwdForm, setPwdForm] = useState({ open: false, current: '', next: '', confirm: '', busy: false, msg: '' });
   const member = members.find(m => m.id === memberId) || null;
 
   async function handleSave(dbData) {
@@ -610,6 +611,24 @@ function MyProfilePanel({ memberId, members, showToast, onReload }) {
     setSaving(false);
     if (error) { showToast('Save failed: ' + error.message, true); return; }
     showToast('Profile saved!');
+    onReload();
+  }
+
+  async function handlePwdChange(e) {
+    e.preventDefault();
+    if (!pwdForm.current.trim()) { setPwdForm(p => ({ ...p, msg: 'error:Enter your current password.' })); return; }
+    if (!pwdForm.next.trim())    { setPwdForm(p => ({ ...p, msg: 'error:Enter a new password.' })); return; }
+    if (pwdForm.next !== pwdForm.confirm) { setPwdForm(p => ({ ...p, msg: 'error:Passwords do not match.' })); return; }
+    setPwdForm(p => ({ ...p, busy: true, msg: '' }));
+    const currentHash = await hashPassword(pwdForm.current);
+    if (currentHash !== member.password) {
+      setPwdForm(p => ({ ...p, busy: false, msg: 'error:Current password is incorrect.' })); return;
+    }
+    const newHash = await hashPassword(pwdForm.next);
+    const { error } = await supabase.from('members').update({ password: newHash }).eq('id', memberId);
+    if (error) { setPwdForm(p => ({ ...p, busy: false, msg: 'error:' + error.message })); return; }
+    setPwdForm({ open: false, current: '', next: '', confirm: '', busy: false, msg: '' });
+    showToast('Password changed successfully.');
     onReload();
   }
 
@@ -639,6 +658,38 @@ function MyProfilePanel({ memberId, members, showToast, onReload }) {
             onSave={handleSave}
             saving={saving}
           />
+
+          {/* Change own password */}
+          <div style={{ marginTop: 20, borderTop: '1px solid #1e3550', paddingTop: 16 }}>
+            {!pwdForm.open ? (
+              <button className="btn-cancel-sm" onClick={() => setPwdForm(p => ({ ...p, open: true }))}>
+                CHANGE MY PASSWORD
+              </button>
+            ) : (
+              <form onSubmit={handlePwdChange}>
+                <div style={{ marginBottom: 10, fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', color: '#3a5878' }}>
+                  CHANGE PASSWORD
+                </div>
+                <PwdField label="CURRENT PASSWORD" value={pwdForm.current} onChange={v => setPwdForm(p => ({ ...p, current: v }))} />
+                <PwdField label="NEW PASSWORD"     value={pwdForm.next}    onChange={v => setPwdForm(p => ({ ...p, next: v }))} />
+                <PwdField label="CONFIRM PASSWORD" value={pwdForm.confirm} onChange={v => setPwdForm(p => ({ ...p, confirm: v }))} />
+                {pwdForm.msg && (
+                  <p style={{ fontSize: 12, margin: '0 0 10px', color: pwdForm.msg.startsWith('ok:') ? '#00e87a' : '#ff4060' }}>
+                    {pwdForm.msg.replace(/^(ok|error):/, '')}
+                  </p>
+                )}
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button type="submit" className="btn-primary" disabled={pwdForm.busy}>
+                    {pwdForm.busy ? 'SAVING…' : 'UPDATE PASSWORD →'}
+                  </button>
+                  <button type="button" className="btn-cancel-sm"
+                    onClick={() => setPwdForm({ open: false, current: '', next: '', confirm: '', busy: false, msg: '' })}>
+                    CANCEL
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
         </div>
       )}
     </div>
