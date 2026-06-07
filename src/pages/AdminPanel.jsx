@@ -243,12 +243,6 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
 function MembersTab({ members, setMembers, alliances, serverId }) {
   const [filter, setFilter] = useState('');
 
-  async function handleDelete(id) {
-    if (!confirm('Remove this member?')) return;
-    await supabase.from('members').delete().eq('id', id);
-    setMembers(prev => prev.filter(m => m.id !== id));
-  }
-
   async function handleReassign(memberId, newAllianceId) {
     await supabase.from('members').update({ alliance_id: newAllianceId || null }).eq('id', memberId);
     setMembers(prev => prev.map(m => m.id === memberId
@@ -262,6 +256,13 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
     (m.in_game_name ?? '').toLowerCase().includes(filter.toLowerCase())
   );
 
+  // Group by alliance
+  const grouped = alliances.map(a => ({
+    alliance: a,
+    members: filtered.filter(m => m.alliance_id === a.id),
+  })).filter(g => g.members.length > 0);
+  const unassigned = filtered.filter(m => !m.alliance_id);
+
   const S = styles;
 
   return (
@@ -272,39 +273,81 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
           <div style={S.tabSub}>{members.length} members on this server</div>
         </div>
       </div>
+
+      <div style={{ background: 'rgba(240,165,0,0.05)', border: '1px solid rgba(240,165,0,0.2)', padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#7a9bb8', lineHeight: 1.6 }}>
+        ℹ To remove a member, contact their alliance owner — only the alliance owner can delete members from their roster.
+        You can reassign a member to a different alliance using the dropdown below.
+      </div>
+
       <input
         placeholder="Search by username or in-game name…"
         value={filter} onChange={e => setFilter(e.target.value)}
-        style={{ ...S.searchInput, marginBottom: 16 }}
+        style={{ ...S.searchInput, marginBottom: 20 }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {filtered.length === 0 && <div style={S.empty}>No members found.</div>}
-        {filtered.map(m => (
-          <div key={m.id} style={S.row}>
-            <div style={{ flex: 1 }}>
-              <div style={S.rowTitle}>
-                {m.username}
-                {m.in_game_name && m.in_game_name !== m.username &&
-                  <span style={S.tag}>{m.in_game_name}</span>}
-              </div>
-              <div style={S.rowSub}>
-                Alliance:&nbsp;
-                <select
-                  value={m.alliance_id ?? ''}
-                  onChange={e => handleReassign(m.id, e.target.value)}
-                  style={S.inlineSelect}
-                >
-                  <option value="">— No alliance —</option>
-                  {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-            </div>
-            <IconBtn title="Remove member" danger onClick={() => handleDelete(m.id)}>
-              <Trash2 size={14} />
-            </IconBtn>
+
+      {filtered.length === 0 && <div style={S.empty}>No members found.</div>}
+
+      {/* Grouped by alliance */}
+      {grouped.map(({ alliance, members: allianceMembers }) => (
+        <div key={alliance.id} style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: alliance.color, flexShrink: 0 }} />
+            <span style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, color: alliance.color, letterSpacing: '1px' }}>
+              {alliance.name}
+            </span>
+            {alliance.tag && <span style={S.tag}>{alliance.tag}</span>}
+            <span style={{ fontSize: 11, color: '#3a5878', marginLeft: 'auto' }}>{allianceMembers.length} members</span>
           </div>
-        ))}
-      </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {allianceMembers.map(m => (
+              <div key={m.id} style={S.row}>
+                <div style={{ flex: 1 }}>
+                  <div style={S.rowTitle}>
+                    {m.in_game_name || m.username}
+                    {m.in_game_name && m.in_game_name !== m.username && <span style={S.tag}>@{m.username}</span>}
+                    {m.alliance_role === 'alliance_admin' && <span style={{ ...S.tag, color: '#f0a500', borderColor: 'rgba(240,165,0,0.4)' }}>ADMIN</span>}
+                  </div>
+                  <div style={S.rowSub}>
+                    Reassign:&nbsp;
+                    <select value={m.alliance_id ?? ''} onChange={e => handleReassign(m.id, e.target.value)} style={S.inlineSelect}>
+                      <option value="">— No alliance —</option>
+                      {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Unassigned */}
+      {unassigned.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 11, color: '#3a5878', letterSpacing: '1.5px', fontWeight: 700, marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>
+            NO ALLIANCE — {unassigned.length} members
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {unassigned.map(m => (
+              <div key={m.id} style={S.row}>
+                <div style={{ flex: 1 }}>
+                  <div style={S.rowTitle}>
+                    {m.in_game_name || m.username}
+                    {m.in_game_name && m.in_game_name !== m.username && <span style={S.tag}>@{m.username}</span>}
+                  </div>
+                  <div style={S.rowSub}>
+                    Assign to:&nbsp;
+                    <select value="" onChange={e => handleReassign(m.id, e.target.value)} style={S.inlineSelect}>
+                      <option value="">— Select alliance —</option>
+                      {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -321,8 +364,6 @@ const SEASON_LABELS = {
 
 // ── Server Tab ────────────────────────────────────────────────
 function ServerTab({ server, setServer, serverId }) {
-  const navigate    = useNavigate();
-  const { logout }  = useAuth();
   const [copied,    setCopied]    = useState(false);
   const [form,      setForm]      = useState({ newPassword: '', confirmPassword: '' });
   const [busy,      setBusy]      = useState(false);
@@ -334,12 +375,6 @@ function ServerTab({ server, setServer, serverId }) {
   const [seasonBusy, setSeasonBusy] = useState(false);
   const [seasonMsg,  setSeasonMsg]  = useState('');
 
-  // Delete server state
-  const [deleteStep,    setDeleteStep]    = useState(0); // 0=idle 1=confirm 2=type
-  const [deleteConfirm, setDeleteConfirm] = useState('');
-  const [deleteBusy,    setDeleteBusy]    = useState(false);
-  const [deleteError,   setDeleteError]   = useState('');
-
   async function handleSeasonSave() {
     setSeasonBusy(true); setSeasonMsg('');
     const { error: err } = await supabase.from('servers').update({ current_season: season }).eq('id', serverId);
@@ -348,15 +383,6 @@ function ServerTab({ server, setServer, serverId }) {
     setServer(s => ({ ...s, current_season: season }));
     setSeasonMsg('Season updated.');
     setTimeout(() => setSeasonMsg(''), 3000);
-  }
-
-  async function handleDeleteServer() {
-    if (deleteConfirm !== 'DELETE') { setDeleteError('Type DELETE exactly.'); return; }
-    setDeleteBusy(true);
-    const { error: err } = await supabase.from('servers').delete().eq('id', serverId);
-    if (err) { setDeleteError(err.message); setDeleteBusy(false); return; }
-    logout();
-    navigate('/');
   }
 
   async function copyServerInvite() {
@@ -396,7 +422,7 @@ function ServerTab({ server, setServer, serverId }) {
         'Each alliance has its own separate invite link managed by the alliance owner.',
         'Set the active season so all alliances show the correct map and member fields.',
         'You can change the admin password below — all admins will need the new password next login.',
-        'Deleting the server permanently removes all alliances, members, and data. Use with caution.',
+        'To delete a server, contact the super admin.',
       ]} />
 
       {/* Server invite link */}
@@ -449,62 +475,6 @@ function ServerTab({ server, setServer, serverId }) {
         )}
       </div>
 
-      {/* Delete server */}
-      <div style={{ ...S.settingsCard, borderColor: 'rgba(255,64,96,0.25)', marginTop: 32 }}>
-        <div style={{ ...S.settingsLabel, color: '#ff4060' }}>DANGER ZONE</div>
-        <div style={S.settingsSub}>Permanently delete this server and all its data. This cannot be undone.</div>
-
-        {deleteStep === 0 && (
-          <button
-            style={{ background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.4)', color: '#ff4060', padding: '9px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' }}
-            onClick={() => { setDeleteStep(1); setDeleteError(''); }}
-          >
-            DELETE THIS SERVER
-          </button>
-        )}
-
-        {deleteStep === 1 && (
-          <div>
-            <p style={{ color: '#ff4060', fontSize: 13, marginBottom: 16 }}>
-              Are you sure? This will delete <strong>all alliances, members, territories and settings</strong> for Server {server.server_number}.
-            </p>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                style={{ background: 'rgba(255,64,96,0.12)', border: '1px solid #ff4060', color: '#ff4060', padding: '9px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' }}
-                onClick={() => { setDeleteStep(2); setDeleteError(''); setDeleteConfirm(''); }}
-              >
-                YES, CONTINUE
-              </button>
-              <button style={S.cancelBtn} onClick={() => setDeleteStep(0)}>CANCEL</button>
-            </div>
-          </div>
-        )}
-
-        {deleteStep === 2 && (
-          <div>
-            <p style={{ color: '#ff4060', fontSize: 13, marginBottom: 12 }}>
-              Type <strong style={{ fontFamily: "'Share Tech Mono',monospace" }}>DELETE</strong> to confirm permanent deletion.
-            </p>
-            <input
-              value={deleteConfirm}
-              onChange={e => setDeleteConfirm(e.target.value)}
-              placeholder="Type DELETE here"
-              style={{ ...S.input, marginBottom: 12, borderColor: 'rgba(255,64,96,0.4)', maxWidth: 280 }}
-            />
-            {deleteError && <p style={S.error}>{deleteError}</p>}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                style={{ background: '#ff4060', color: '#fff', border: 'none', padding: '9px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: deleteBusy ? 'default' : 'pointer', opacity: deleteBusy ? 0.6 : 1 }}
-                onClick={handleDeleteServer}
-                disabled={deleteBusy}
-              >
-                {deleteBusy ? 'DELETING…' : 'PERMANENTLY DELETE →'}
-              </button>
-              <button style={S.cancelBtn} onClick={() => { setDeleteStep(0); setDeleteConfirm(''); setDeleteError(''); }}>CANCEL</button>
-            </div>
-          </div>
-        )}
-      </div>
     </div>
   );
 }
