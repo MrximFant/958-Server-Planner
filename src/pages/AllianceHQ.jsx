@@ -26,6 +26,18 @@ function tierClass(v) {
   return 'tier-none';
 }
 
+// Normalise power: if stored as full int (>1000), convert to millions display
+function normPower(v) {
+  if (v == null || v === '') return null;
+  const n = parseFloat(v);
+  if (isNaN(n) || n === 0) return null;
+  return n > 1000 ? +(n / 1000000).toFixed(2) : +n.toFixed(2);
+}
+function displayPower(v) {
+  const n = normPower(v);
+  return n == null ? null : n + 'M';
+}
+
 const EMPTY_FORM = {
   inGameName: '', power1: '', power2: '', power3: '',
   hasSquad4: false, troop1: '', troop2: '', troop3: '',
@@ -38,9 +50,9 @@ function memberToForm(m) {
   if (!m) return { ...EMPTY_FORM };
   return {
     inGameName:  m.in_game_name || '',
-    power1:      m.power1 != null ? String(m.power1) : '',
-    power2:      m.power2 != null ? String(m.power2) : '',
-    power3:      m.power3 != null ? String(m.power3) : '',
+    power1:      m.power1 != null ? String(normPower(m.power1) ?? '') : '',
+    power2:      m.power2 != null ? String(normPower(m.power2) ?? '') : '',
+    power3:      m.power3 != null ? String(normPower(m.power3) ?? '') : '',
     hasSquad4:   !!m.has_squad4,
     troop1:      m.troop1 || '',
     troop2:      m.troop2 || '',
@@ -155,52 +167,64 @@ function MemberForm({ initialData, onSave, onCancel, saving }) {
           <input className="form-control" placeholder="As shown in Last War" value={form.inGameName} onChange={e => set('inGameName', e.target.value)} />
         </div>
 
-        <div className="section-div sd-squads">Squad Powers</div>
+        <div className="section-div sd-squads">Squad Powers — enter in millions (e.g. 55.5 = 55.5M)</div>
+
+        <div className="form-group fg-full">
+          <div style={{ background: 'rgba(0,200,255,0.04)', border: '1px solid rgba(0,200,255,0.12)', padding: '8px 12px', fontSize: 11, color: '#3a5878', lineHeight: 1.7, marginBottom: 8 }}>
+            💡 Enter power as millions. Example: if your squad power is 55,432,000 → enter <strong style={{color:'#7a9bb8'}}>55.5</strong>. T1 is your primary squad. T2 and T3 are optional but help leadership plan battle assignments.
+          </div>
+        </div>
 
         <div className="form-group">
-          <label className="form-label">T1 Power</label>
-          <input type="number" className="form-control" step="0.01" min="0" value={form.power1} onChange={e => set('power1', e.target.value)} />
+          <label className="form-label">T1 Power (M) <span className="opt">primary</span></label>
+          <input type="number" className="form-control" step="0.1" min="0" max="999" placeholder="e.g. 55.5" value={form.power1} onChange={e => set('power1', e.target.value)} />
         </div>
         <div className="form-group">
           <label className="form-label">T1 Troop Type</label>
           <select className="form-control" value={form.troop1} onChange={e => set('troop1', e.target.value)}>
-            <option value="">—</option>
-            <option value="Tank">Tank</option>
-            <option value="Air">Air</option>
-            <option value="Missile">Missile</option>
+            <option value="">— select —</option>
+            <option value="Tank">🛡 Tank</option>
+            <option value="Air">✈ Air</option>
+            <option value="Missile">🚀 Missile</option>
           </select>
         </div>
         <div className="form-group">
-          <label className="form-label">T2 Power <span className="opt">(opt)</span></label>
-          <input type="number" className="form-control" step="0.01" min="0" value={form.power2} onChange={e => set('power2', e.target.value)} />
+          <label className="form-label">T2 Power (M) <span className="opt">optional</span></label>
+          <input type="number" className="form-control" step="0.1" min="0" max="999" placeholder="e.g. 32.0" value={form.power2} onChange={e => set('power2', e.target.value)} />
         </div>
         <div className="form-group">
           <label className="form-label">T2 Troop Type</label>
           <select className="form-control" value={form.troop2} onChange={e => set('troop2', e.target.value)}>
-            <option value="">—</option>
-            <option value="Tank">Tank</option>
-            <option value="Air">Air</option>
-            <option value="Missile">Missile</option>
+            <option value="">— select —</option>
+            <option value="Tank">🛡 Tank</option>
+            <option value="Air">✈ Air</option>
+            <option value="Missile">🚀 Missile</option>
           </select>
         </div>
         <div className="form-group">
-          <label className="form-label">T3 Power <span className="opt">(opt)</span></label>
-          <input type="number" className="form-control" step="0.01" min="0" value={form.power3} onChange={e => set('power3', e.target.value)} />
+          <label className="form-label">T3 Power (M) <span className="opt">optional</span></label>
+          <input type="number" className="form-control" step="0.1" min="0" max="999" placeholder="e.g. 18.0" value={form.power3} onChange={e => set('power3', e.target.value)} />
         </div>
         <div className="form-group">
           <label className="form-label">T3 Troop Type</label>
           <select className="form-control" value={form.troop3} onChange={e => set('troop3', e.target.value)}>
-            <option value="">—</option>
-            <option value="Tank">Tank</option>
-            <option value="Air">Air</option>
-            <option value="Missile">Missile</option>
+            <option value="">— select —</option>
+            <option value="Tank">🛡 Tank</option>
+            <option value="Air">✈ Air</option>
+            <option value="Missile">🚀 Missile</option>
           </select>
         </div>
         <div className="form-group fg-full">
-          <CheckBox checked={form.hasSquad4} onChange={v => set('hasSquad4', v)} label={<b>Squad 4 unlocked</b>} />
+          <CheckBox checked={form.hasSquad4} onChange={v => set('hasSquad4', v)} label={<b>Squad 4 unlocked</b>} sub="Check if you have a 4th squad slot available" />
         </div>
 
-        <div className="section-div sd-events">Event Wishes</div>
+        <div className="section-div sd-events">Event Teams — Canyon Storm &amp; Desert Storm</div>
+
+        <div className="form-group fg-full">
+          <div style={{ background: 'rgba(240,165,0,0.04)', border: '1px solid rgba(240,165,0,0.12)', padding: '8px 12px', fontSize: 11, color: '#3a5878', lineHeight: 1.7, marginBottom: 8 }}>
+            💡 Select which team slot you prefer for each event, or "Flexible" if you can play any time. Check "Substitute" if you're available as a backup. Leadership uses this to build balanced teams.
+          </div>
+        </div>
 
         <div className="form-group">
           <label className="form-label">Canyon Storm Team</label>
@@ -849,7 +873,6 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
 // ── Panel 3: My Profile ──────────────────────────────────────────
 
 function MyProfilePanel({ memberId, members, showToast, onReload }) {
-  const [open, setOpen] = useState(true);
   const [saving, setSaving] = useState(false);
   const [pwdForm, setPwdForm] = useState({ open: false, current: '', next: '', confirm: '', busy: false, msg: '' });
   const member = members.find(m => m.id === memberId) || null;
@@ -883,24 +906,19 @@ function MyProfilePanel({ memberId, members, showToast, onReload }) {
 
   return (
     <div className="ahq-panel">
-      <div
-        className="ahq-panel-header"
-        style={{ cursor: 'pointer', borderColor: 'rgba(0,200,255,0.3)', color: '#00c8ff' }}
-        onClick={() => setOpen(o => !o)}
-      >
+      <div className="ahq-panel-header" style={{ borderColor: 'rgba(0,200,255,0.3)', color: '#00c8ff' }}>
         <span>👤 MY PROFILE</span>
-        <span style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
-          {member?.in_game_name && <span style={{ fontSize: 12, color: '#7a9bb8', fontWeight: 400 }}>{member.in_game_name}</span>}
-          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-        </span>
+        {member?.in_game_name && <span style={{ fontSize: 12, color: '#7a9bb8', fontWeight: 400, marginLeft: 8 }}>{member.in_game_name}</span>}
       </div>
-      {open && (
-        <div style={{ padding: '16px 20px 20px' }}>
+      <div style={{ padding: '16px 20px 20px' }}>
           <HelpCard title="ABOUT YOUR PROFILE" lines={[
-            'Keep your T1 power and troop type up to date — alliance leaders use this for Canyon Storm and Desert Storm planning.',
-            'Set your Canyon and Desert Storm team preference so the owner can build balanced teams.',
-            'Resistance and coffee buff affect your total resistance shown to leadership.',
-            'Only you can edit this panel. Your alliance owner or admin can also edit your stats if needed.',
+            'Power: Enter in millions. If your in-game power shows 55,432,000 → type 55.5. T1 is your main squad, T2 and T3 are optional.',
+            'Troop Type: Select Tank, Air, or Missile for each squad. This helps leadership assign the right players to each battle.',
+            'Canyon Storm / Desert Storm: Pick Team A or Team B based on the time slot you can make. Check "Sub" if you can fill in when someone is absent.',
+            'Garrison & Quickstride: Select "yes" if you have this building fully built. Important for territory defense planning.',
+            'Resistance: Enter your base resistance stat (without coffee buff — that is a separate field).',
+            'Coffee Buff: Select the resistance bonus from your coffee buff if you use one regularly.',
+            'Notes: Any extra info for leadership — e.g. schedule constraints, special roles, availability.',
           ]} />
           <MemberForm
             initialData={member}
@@ -940,15 +958,117 @@ function MyProfilePanel({ memberId, members, showToast, onReload }) {
             )}
           </div>
         </div>
-      )}
+    </div>
+  );
+}
+
+// ── Train Week Summary ──────────────────────────────────────────
+
+function TrainWeekSummary({ allianceId, serverId, navigate, canManage }) {
+  const [schedule, setSchedule] = useState(null);
+  const [slots,    setSlots]    = useState([]);
+  const [members,  setMembers]  = useState({});
+  const [loading,  setLoading]  = useState(true);
+
+  const DAYS = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+
+  useEffect(() => {
+    async function load() {
+      const { data: sched } = await supabase
+        .from('train_schedules').select('*').eq('alliance_id', allianceId).maybeSingle();
+      if (!sched) { setLoading(false); return; }
+      setSchedule(sched);
+
+      const { data: slotRows } = await supabase
+        .from('train_slots').select('*').eq('schedule_id', sched.id);
+      setSlots(slotRows ?? []);
+
+      const memberIds = [...new Set((slotRows ?? []).map(s => s.member_id).filter(Boolean))];
+      if (memberIds.length > 0) {
+        const { data: mems } = await supabase
+          .from('members').select('id, username, in_game_name').in('id', memberIds);
+        const map = {};
+        (mems ?? []).forEach(m => { map[m.id] = m; });
+        setMembers(map);
+      }
+      setLoading(false);
+    }
+    load();
+  }, [allianceId]);
+
+  if (loading) return null;
+
+  const slotMap = {};
+  slots.forEach(s => { slotMap[`${s.day_of_week}-${s.role}`] = s; });
+
+  const hasAny = slots.some(s => s.member_id);
+
+  return (
+    <div className="ahq-panel">
+      <div className="ahq-panel-header" style={{ borderColor: 'rgba(240,165,0,0.3)', color: '#f0a500' }}>
+        <span>🚂 TRAIN SCHEDULE — {schedule?.week_label ?? 'Current Week'}</span>
+        {canManage && (
+          <button className="btn-secondary-sm" onClick={() => navigate(`/server/${serverId}/train`)}>
+            EDIT →
+          </button>
+        )}
+      </div>
+      <div style={{ padding: '12px 20px 16px' }}>
+        {!schedule || !hasAny ? (
+          <div style={{ fontSize: 12, color: '#3a5878', padding: '12px 0' }}>
+            No train schedule set yet.
+            {canManage && <span> Click EDIT → to set up the week's rotation.</span>}
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 480 }}>
+              <thead>
+                <tr>
+                  <th style={{ width: 80, padding: '4px 8px', textAlign: 'left', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', borderBottom: '1px solid #1e3550' }}></th>
+                  {DAYS.map(d => (
+                    <th key={d} style={{ padding: '4px 6px', textAlign: 'center', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#d0e4f4', borderBottom: '1px solid #1e3550' }}>{d}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[
+                  { role: 'driver', label: '🚂 DRIVER', color: '#f0a500' },
+                  { role: 'vip',    label: '⭐ VIP',    color: '#c87aff' },
+                ].map(({ role, label, color }) => (
+                  <tr key={role}>
+                    <td style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color, whiteSpace: 'nowrap' }}>{label}</td>
+                    {DAYS.map((_, d) => {
+                      const slot = slotMap[`${d}-${role}`];
+                      const m = slot?.member_id ? members[slot.member_id] : null;
+                      return (
+                        <td key={d} style={{ padding: '4px 3px', textAlign: 'center' }}>
+                          <div style={{
+                            padding: '4px 6px', minHeight: 32,
+                            background: m ? `${color}0d` : 'transparent',
+                            border: `1px solid ${m ? `${color}30` : '#1e3550'}`,
+                            fontSize: 10, fontWeight: 700, color: m ? color : '#2a4058',
+                            whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                          }}>
+                            {m ? (m.in_game_name || m.username) : '—'}
+                          </div>
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
 
 // ── Panel 4: Roster View ─────────────────────────────────────────
 
-function RosterView({ members, alliance, myMemberId, showPower }) {
-  const [tab, setTab] = useState('roster');
+function RosterView({ members, alliance, myMemberId, showPower, defaultTab = 'roster' }) {
+  const [tab, setTab] = useState(defaultTab);
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState('power1');
   const [sortDir, setSortDir] = useState(-1);
@@ -968,7 +1088,7 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
     return String(av || '').localeCompare(String(bv || '')) * sortDir;
   });
 
-  const maxP = Math.max(...members.map(p => parseFloat(p.power1) || 0), 1);
+  const maxP = Math.max(...members.map(p => normPower(p.power1) || 0), 1);
 
   function PwrCell({ pow, troop }) {
     if (!pow || pow == 0) return <td><span style={{ color: 'var(--text3)' }}>—</span></td>;
@@ -976,8 +1096,8 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
       <td>
         <div className={`pwr-badge ${tierClass(pow)}`}>
           <div className="pwr-bar-wrap">
-            <span className="pwr-val">{parseFloat(pow).toFixed(1)}</span>
-            <div className="pwr-track"><div className="pwr-fill" style={{ width: `${Math.round((parseFloat(pow) / maxP) * 100)}%` }} /></div>
+            <span className="pwr-val">{(normPower(pow) ?? 0).toFixed(1)}M</span>
+            <div className="pwr-track"><div className="pwr-fill" style={{ width: `${Math.round(((normPower(pow) ?? 0) / maxP) * 100)}%` }} /></div>
           </div>
           {troop && <span className={`trp trp-${troop}`}>{troop[0]}</span>}
         </div>
@@ -1018,7 +1138,7 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
                         {p.id === myMemberId && <span className="me-badge" style={{ marginLeft: 5 }}>ME</span>}
                       </span>
                       {p.troop1 && <span className={`trp trp-${p.troop1}`}>{p.troop1[0]}</span>}
-                      {showPower && p.power1 != null && <span className="tp-pwr">{parseFloat(p.power1).toFixed(1)}</span>}
+                      {showPower && p.power1 != null && <span className="tp-pwr">{(normPower(p.power1) ?? 0).toFixed(1)}M</span>}
                     </div>
                   ))
                 }
@@ -1145,6 +1265,7 @@ export default function AllianceHQ() {
   const [members,         setMembers]         = useState([]);
   const [loading,         setLoading]         = useState(true);
   const [viewAllianceId,  setViewAllianceId]  = useState(null);
+  const [mainTab, setMainTab] = useState('home');
 
   const effectiveAllianceId = isAdmin ? viewAllianceId : activeSession?.allianceId;
 
@@ -1215,7 +1336,41 @@ export default function AllianceHQ() {
       <div className={`ahq-toast${toast.show ? ' show' : ''}${toast.err ? ' err' : ''}`}>{toast.msg}</div>
 
       <main className="ahq-main">
-        {/* Panel 1 — Admin alliance picker */}
+
+        {/* ── Top-level tab navigation ─────────────────────────── */}
+        {effectiveAllianceId && alliance && (
+          <div style={{ borderBottom: '2px solid #1e3550', marginBottom: 0, background: 'rgba(5,10,18,0.8)', position: 'sticky', top: 0, zIndex: 30, display: 'flex', alignItems: 'stretch', gap: 0 }}>
+            {[
+              { id: 'home',    label: '🏠 HOME',       always: true },
+              { id: 'roster',  label: '📋 ROSTER',     always: true },
+              { id: 'profile', label: '👤 MY PROFILE', always: !!activeSession?.memberId },
+              { id: 'manage',  label: '⚙️ MANAGE',     always: canManage },
+            ].filter(t => t.always).map(t => (
+              <button
+                key={t.id}
+                onClick={() => setMainTab(t.id)}
+                style={{
+                  background: mainTab === t.id ? 'rgba(0,200,255,0.08)' : 'transparent',
+                  border: 'none',
+                  borderBottom: mainTab === t.id ? '3px solid #00c8ff' : '3px solid transparent',
+                  color: mainTab === t.id ? '#00c8ff' : '#3a5878',
+                  padding: '12px 22px',
+                  fontFamily: "'Rajdhani',sans-serif",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  letterSpacing: '1.5px',
+                  cursor: 'pointer',
+                  transition: 'color 0.15s, border-color 0.15s',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Admin alliance picker — always visible for admins */}
         {isAdmin && (
           <div className="ahq-panel">
             <div className="ahq-panel-header" style={{ borderColor: 'rgba(240,165,0,0.3)', color: '#f0a500' }}>
@@ -1235,38 +1390,67 @@ export default function AllianceHQ() {
                 <option value="">— Pick an alliance —</option>
                 {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
-
-              {alliance && members.length > 0 && (
-                <div style={{ marginTop: 20 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                    <span style={{ width: 10, height: 10, borderRadius: '50%', background: alliance.color, display: 'inline-block', flexShrink: 0 }} />
-                    <span style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, color: alliance.color }}>{alliance.name}</span>
-                    <span style={{ fontSize: 12, color: '#3a5878' }}>— {members.length} member{members.length !== 1 ? 's' : ''}</span>
-                  </div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                    {members.map(m => (
-                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'rgba(0,200,255,0.03)', border: '1px solid #1a2d42', fontSize: 13 }}>
-                        <span style={{ color: '#d0e4f4', fontWeight: 600 }}>{m.in_game_name || m.username}</span>
-                        {m.in_game_name && m.in_game_name !== m.username && (
-                          <span style={{ color: '#3a5878', fontSize: 11, fontFamily: "'Share Tech Mono',monospace" }}>@{m.username}</span>
-                        )}
-                        {m.alliance_role === 'alliance_admin' && <span className="role-chip admin-chip">ADMIN</span>}
-                      </div>
-                    ))}
-                  </div>
-                  <p style={{ color: '#3a5878', fontSize: 11, marginTop: 10 }}>Player stats are managed by the alliance owner and admins.</p>
-                </div>
-              )}
-
-              {alliance && members.length === 0 && (
-                <p style={{ color: '#3a5878', fontSize: 13, marginTop: 16 }}>No members in this alliance yet.</p>
-              )}
             </div>
           </div>
         )}
 
-        {/* Panel 2 — Alliance Management */}
-        {canManage && effectiveAllianceId && alliance && (
+        {/* 🏠 HOME */}
+        {(!effectiveAllianceId || mainTab === 'home') && (
+          <>
+            {effectiveAllianceId && alliance ? (
+              <>
+                <TrainWeekSummary allianceId={effectiveAllianceId} serverId={serverId} navigate={navigate} canManage={canManage} />
+                {showRoster ? (
+                  <RosterView
+                    members={members}
+                    alliance={alliance}
+                    myMemberId={activeSession?.memberId}
+                    showPower={showPowerInRoster}
+                    defaultTab="canyon"
+                  />
+                ) : (
+                  <div className="ahq-panel" style={{ textAlign: 'center', padding: 40, color: '#3a5878' }}>
+                    🔒 This alliance's roster is private.
+                  </div>
+                )}
+              </>
+            ) : !isAdmin ? (
+              <div className="ahq-panel" style={{ textAlign: 'center', padding: 48, color: '#3a5878' }}>
+                No alliance assigned to your account.
+              </div>
+            ) : null}
+          </>
+        )}
+
+        {/* 📋 ROSTER */}
+        {effectiveAllianceId && alliance && mainTab === 'roster' && (
+          showRoster ? (
+            <RosterView
+              members={members}
+              alliance={alliance}
+              myMemberId={activeSession?.memberId}
+              showPower={showPowerInRoster}
+              defaultTab="roster"
+            />
+          ) : (
+            <div className="ahq-panel" style={{ textAlign: 'center', padding: 40, color: '#3a5878' }}>
+              🔒 This alliance's roster is private.
+            </div>
+          )
+        )}
+
+        {/* 👤 MY PROFILE */}
+        {mainTab === 'profile' && activeSession?.memberId && (
+          <MyProfilePanel
+            memberId={activeSession.memberId}
+            members={members}
+            showToast={showToast}
+            onReload={loadAlliance}
+          />
+        )}
+
+        {/* ⚙️ MANAGE */}
+        {mainTab === 'manage' && canManage && effectiveAllianceId && alliance && (
           <ManagementPanel
             alliance={alliance}
             members={members}
@@ -1276,35 +1460,6 @@ export default function AllianceHQ() {
           />
         )}
 
-        {/* Panel 3 — My Profile */}
-        {activeSession?.memberId && (
-          <MyProfilePanel
-            memberId={activeSession.memberId}
-            members={members}
-            showToast={showToast}
-            onReload={loadAlliance}
-          />
-        )}
-
-        {/* Panel 4 — Roster View */}
-        {alliance && (showRoster ? (
-          <RosterView
-            members={members}
-            alliance={alliance}
-            myMemberId={activeSession?.memberId}
-            showPower={showPowerInRoster}
-          />
-        ) : (
-          <div className="ahq-panel" style={{ textAlign: 'center', padding: 40, color: '#3a5878' }}>
-            🔒 This alliance's roster is private.
-          </div>
-        ))}
-
-        {!effectiveAllianceId && !isAdmin && (
-          <div className="ahq-panel" style={{ textAlign: 'center', padding: 48, color: '#3a5878' }}>
-            No alliance assigned to your account.
-          </div>
-        )}
       </main>
 
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Exo+2:wght@400;600&display=swap');`}</style>
