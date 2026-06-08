@@ -2,10 +2,16 @@ import { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { hashPassword, generateInviteCode } from '../lib/auth';
-import { Server, Plus, LogIn, Zap, Key, Eye, EyeOff } from 'lucide-react';
+import { Server, Plus, LogIn, Zap, Key, Eye, EyeOff, ChevronDown, ChevronUp, Info } from 'lucide-react';
 
 const DISCORD_WEBHOOK = import.meta.env.VITE_DISCORD_WEBHOOK;
 const DISCORD_INVITE  = import.meta.env.VITE_DISCORD_INVITE;
+
+const SEASON_LABELS = {
+  0: 'Pre-Season',
+  1: 'Season 1', 2: 'Season 2', 3: 'Season 3',
+  4: 'Season 4',  5: 'Season 5',  6: 'Season 6',
+};
 
 async function sendDiscordNotification(r) {
   if (!DISCORD_WEBHOOK) return;
@@ -20,7 +26,7 @@ async function sendDiscordNotification(r) {
           fields: [
             { name: 'Server Number', value: r.server_number, inline: true },
             { name: 'Workspace Name', value: r.name, inline: true },
-            { name: 'Contact', value: r.contact_name, inline: true },
+            { name: 'Contact (Discord)', value: r.contact_name, inline: true },
             { name: 'Message', value: r.message || '—' },
           ],
           footer: { text: 'Review at /superadmin' },
@@ -36,7 +42,7 @@ export default function ServerSelect() {
   const canvasRef = useRef(null);
   const [servers,  setServers]  = useState([]);
   const [loading,  setLoading]  = useState(true);
-  const [view,     setView]     = useState('list'); // list | request | activate
+  const [view,     setView]     = useState('list'); // list | request | activate | how
 
   // Request form
   const [reqForm,    setReqForm]    = useState({ serverNumber: '', name: '', contactName: '', message: '' });
@@ -98,8 +104,10 @@ export default function ServerSelect() {
   }, []);
 
   useEffect(() => {
-    supabase.from('servers').select('id, server_number, name, created_at')
-      .order('created_at', { ascending: false })
+    supabase
+      .from('servers')
+      .select('id, server_number, name, current_season, created_at')
+      .order('server_number', { ascending: true })
       .then(({ data }) => { setServers(data ?? []); setLoading(false); });
   }, []);
 
@@ -108,7 +116,7 @@ export default function ServerSelect() {
     setReqError('');
     const { serverNumber, name, contactName } = reqForm;
     if (!serverNumber.trim() || !name.trim() || !contactName.trim()) {
-      setReqError('Server number, workspace name, and your name are required.'); return;
+      setReqError('Server number, workspace name, and your Discord handle are required.'); return;
     }
     setReqBusy(true);
     const { data, error } = await supabase.from('server_requests').insert({
@@ -179,13 +187,16 @@ export default function ServerSelect() {
           <Zap size={10} fill="currentColor" />
         </div>
         <h1 style={S.title}>SELECT SERVER</h1>
-        <p style={S.sub}>Choose your game server or request a new workspace.</p>
+        <p style={S.sub}>Choose your game server workspace or set up a new one.</p>
 
         <div style={S.tabs}>
-          <button style={{ ...S.tab, ...(view === 'list' ? S.tabActive : {}) }} onClick={() => { setView('list'); }}>
+          <button style={{ ...S.tab, ...(view === 'list'     ? S.tabActive : {}) }} onClick={() => setView('list')}>
             <LogIn size={14} /> SERVERS
           </button>
-          <button style={{ ...S.tab, ...(view === 'request' ? S.tabActive : {}) }} onClick={() => { setView('request'); setReqSuccess(false); setReqError(''); }}>
+          <button style={{ ...S.tab, ...(view === 'how'      ? S.tabActive : {}) }} onClick={() => setView('how')}>
+            <Info size={14} /> HOW IT WORKS
+          </button>
+          <button style={{ ...S.tab, ...(view === 'request'  ? S.tabActive : {}) }} onClick={() => { setView('request'); setReqSuccess(false); setReqError(''); }}>
             <Plus size={14} /> REQUEST ACCESS
           </button>
           <button style={{ ...S.tab, ...(view === 'activate' ? S.tabActive : {}) }} onClick={() => { setView('activate'); setActError(''); }}>
@@ -198,17 +209,64 @@ export default function ServerSelect() {
           <div style={S.card}>
             {loading && <p style={S.dim}>Loading servers…</p>}
             {!loading && servers.length === 0 && (
-              <p style={S.dim}>No servers yet.</p>
+              <div style={{ textAlign: 'center', padding: '20px 0' }}>
+                <p style={S.dim}>No servers yet.</p>
+                <button style={{ ...S.btn, marginTop: 12 }} onClick={() => setView('request')}>
+                  REQUEST A SERVER →
+                </button>
+              </div>
             )}
             {servers.map(s => (
               <button key={s.id} style={S.serverRow} onClick={() => navigate(`/server/${s.id}`)}>
                 <div style={S.serverIcon}><Server size={18} /></div>
-                <div>
+                <div style={{ flex: 1 }}>
                   <div style={S.serverName}>Server {s.server_number} — {s.name}</div>
-                  <div style={S.serverSub}>Created {new Date(s.created_at).toLocaleDateString()}</div>
+                  <div style={S.serverSub}>
+                    {SEASON_LABELS[s.current_season ?? 0] ?? `Season ${s.current_season}`}
+                    {' · '}
+                    Since {new Date(s.created_at).toLocaleDateString()}
+                  </div>
+                </div>
+                <div style={S.seasonBadge}>
+                  S{s.current_season ?? 0}
                 </div>
               </button>
             ))}
+            {!loading && servers.length > 0 && (
+              <p style={{ color: '#3a5878', fontSize: 11, marginTop: 16, textAlign: 'center' }}>
+                Click a server to view its dashboard. Log in with your alliance credentials once inside.
+              </p>
+            )}
+          </div>
+        )}
+
+        {/* HOW IT WORKS */}
+        {view === 'how' && (
+          <div style={S.card}>
+            <div style={S.howTitle}>FOR MEMBERS</div>
+            <div style={S.howSteps}>
+              <HowStep n="1" title="Find your server above" text="Click your server number in the SERVERS list to open its dashboard." />
+              <HowStep n="2" title="Log in via your alliance" text="On the server dashboard, select your alliance and log in with your member credentials." />
+              <HowStep n="3" title="Join via invite link" text="First time? You need your alliance's invite link — ask your R5 or alliance leader for it." />
+            </div>
+
+            <div style={{ ...S.howTitle, marginTop: 24 }}>FOR ALLIANCE LEADERS (R5)</div>
+            <div style={S.howSteps}>
+              <HowStep n="1" title="Get your server set up" text="A server workspace must be requested and approved first (see REQUEST ACCESS)." />
+              <HowStep n="2" title="Create your alliance" text="The server admin creates alliances from the admin panel. You'll receive an alliance invite link." />
+              <HowStep n="3" title="Invite your members" text="Share your alliance invite link with your members so they can register and log in." />
+            </div>
+
+            <div style={{ ...S.howTitle, marginTop: 24 }}>FOR SERVER ADMINS</div>
+            <div style={S.howSteps}>
+              <HowStep n="1" title="Request a workspace" text="Submit a request with your Discord handle as your contact name. The platform admin will verify you." />
+              <HowStep n="2" title="Activate with your code" text="Once approved, you'll receive an activation code via Discord. Use the ACTIVATE tab to create your server." />
+              <HowStep n="3" title="Set up alliances" text="After activation, log into the admin panel at /server/[id]/admin to create alliances and invite R5 leaders." />
+            </div>
+
+            <button style={{ ...S.btn, marginTop: 20 }} onClick={() => setView('request')}>
+              REQUEST A SERVER →
+            </button>
           </div>
         )}
 
@@ -220,7 +278,7 @@ export default function ServerSelect() {
                 <div style={{ fontSize: 32, marginBottom: 12 }}>✓</div>
                 <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 18, color: '#00e87a', marginBottom: 8 }}>REQUEST SUBMITTED</div>
                 <p style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6 }}>
-                  Your request has been received. The platform admin will review it and send you an activation code to complete setup.
+                  Your request has been received. The platform admin will review it and send you an activation code via Discord.
                 </p>
                 {DISCORD_INVITE && (
                   <div style={{ margin: '18px 0', background: 'rgba(88,101,242,0.08)', border: '1px solid rgba(88,101,242,0.3)', padding: '14px 16px' }}>
@@ -247,14 +305,17 @@ export default function ServerSelect() {
               </div>
             ) : (
               <form onSubmit={handleRequest}>
-                <p style={{ color: '#7a9bb8', fontSize: 12, marginBottom: 18, lineHeight: 1.6 }}>
+                <p style={{ color: '#7a9bb8', fontSize: 12, marginBottom: 6, lineHeight: 1.6 }}>
                   Servers are approved by the platform admin. Fill in your details and your request will be reviewed shortly.
                 </p>
+                <div style={{ background: 'rgba(240,165,0,0.07)', border: '1px solid rgba(240,165,0,0.25)', padding: '10px 14px', marginBottom: 18, fontSize: 12, color: '#f0a500', lineHeight: 1.6 }}>
+                  <strong>Important:</strong> Use your <strong>Discord handle</strong> as your contact name. The platform admin will verify your identity via Discord before approving.
+                </div>
                 <Field label="SERVER NUMBER" placeholder="e.g. 958"
                   value={reqForm.serverNumber} onChange={v => setReqForm(f => ({ ...f, serverNumber: v }))} />
                 <Field label="WORKSPACE NAME" placeholder="e.g. 958 Mastermind"
                   value={reqForm.name} onChange={v => setReqForm(f => ({ ...f, name: v }))} />
-                <Field label="YOUR NAME / CONTACT" placeholder="Your in-game name or Discord handle"
+                <Field label="YOUR DISCORD HANDLE" placeholder="e.g. YourName#1234 or @yourname"
                   value={reqForm.contactName} onChange={v => setReqForm(f => ({ ...f, contactName: v }))} />
                 <div style={{ marginBottom: 16 }}>
                   <div style={S.label}>MESSAGE (optional)</div>
@@ -302,6 +363,20 @@ export default function ServerSelect() {
   );
 }
 
+function HowStep({ n, title, text }) {
+  return (
+    <div style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
+      <div style={{ width: 24, height: 24, background: 'rgba(0,200,255,0.1)', border: '1px solid rgba(0,200,255,0.3)', color: '#00c8ff', fontFamily: "'Share Tech Mono',monospace", fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+        {n}
+      </div>
+      <div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 14, color: '#d0e4f4', marginBottom: 2 }}>{title}</div>
+        <div style={{ fontSize: 12, color: '#7a9bb8', lineHeight: 1.6 }}>{text}</div>
+      </div>
+    </div>
+  );
+}
+
 function Field({ label, placeholder, type = 'text', value, onChange, style: extraStyle }) {
   const S = styles;
   return (
@@ -343,7 +418,7 @@ const styles = {
   root: { minHeight: '100vh', background: '#080d14', color: '#d0e4f4', fontFamily: "'Rajdhani', sans-serif", display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', position: 'relative' },
   canvas: { position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' },
   grid: { position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: 'linear-gradient(rgba(0,200,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,.025) 1px,transparent 1px)', backgroundSize: '44px 44px' },
-  center: { position: 'relative', zIndex: 1, width: '100%', maxWidth: 520, textAlign: 'center' },
+  center: { position: 'relative', zIndex: 1, width: '100%', maxWidth: 540, textAlign: 'center' },
   badge: { display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', padding: '5px 16px', color: '#00c8ff', fontWeight: 700, fontSize: 11, letterSpacing: '2px', marginBottom: 24 },
   title: { fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 'clamp(36px, 8vw, 64px)', color: '#fff', letterSpacing: '-1px', margin: '0 0 8px', textShadow: '0 0 40px rgba(0,200,255,0.4)' },
   sub: { color: '#7a9bb8', fontSize: 14, marginBottom: 32 },
@@ -355,6 +430,9 @@ const styles = {
   serverIcon: { width: 40, height: 40, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00c8ff', flexShrink: 0 },
   serverName: { fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 16, color: '#d0e4f4' },
   serverSub: { fontSize: 11, color: '#3a5878', fontFamily: "'Share Tech Mono', monospace", marginTop: 2 },
+  seasonBadge: { background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', color: '#00c8ff', fontFamily: "'Share Tech Mono',monospace", fontSize: 11, padding: '3px 8px', flexShrink: 0 },
+  howTitle: { fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 12 },
+  howSteps: { borderLeft: '1px solid #1e3550', paddingLeft: 16 },
   label: { fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 6 },
   input: { width: '100%', background: 'rgba(0,200,255,0.04)', border: '1px solid #1e3550', color: '#d0e4f4', padding: '10px 14px', fontFamily: "'Rajdhani', sans-serif", fontSize: 15, outline: 'none', boxSizing: 'border-box' },
   btn: { width: '100%', background: '#00c8ff', color: '#080d14', border: 'none', padding: '13px', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: '2px', cursor: 'pointer', marginTop: 4 },

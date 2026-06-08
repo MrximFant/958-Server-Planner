@@ -3,24 +3,25 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword, generateInviteCode } from '../lib/auth';
-import { Plus, Trash2, Copy, Check, ArrowLeft, Users, Shield, Link, Settings, Edit2, X, Eye, EyeOff } from 'lucide-react';
+import { Plus, Trash2, Copy, Check, ArrowLeft, Users, Shield, Link, Settings, Edit2, X, Eye, EyeOff, GitMerge } from 'lucide-react';
 
-const TABS = ['ALLIANCES', 'MEMBERS', 'SERVER'];
+const TABS = ['ALLIANCES', 'MEMBERS', 'HANDSHAKES', 'SERVER'];
 
 export default function AdminPanel() {
   const { serverId } = useParams();
   const navigate     = useNavigate();
   const { session }  = useAuth();
 
-  const [tab,        setTab]       = useState('ALLIANCES');
+  const isHelper = session?.role === 'helper';
+  const [tab,        setTab]       = useState(isHelper ? 'MEMBERS' : 'ALLIANCES');
   const [server,     setServer]    = useState(null);
   const [alliances,  setAlliances] = useState([]);
   const [members,    setMembers]   = useState([]);
   const [loading,    setLoading]   = useState(true);
 
-  // Guard — must be admin for this server
+  // Guard — must be admin or helper for this server
   useEffect(() => {
-    if (!session || session.serverId !== serverId || session.role !== 'admin') {
+    if (!session || session.serverId !== serverId || (session.role !== 'admin' && session.role !== 'helper')) {
       navigate(`/server/${serverId}`);
     }
   }, [session, serverId, navigate]);
@@ -56,18 +57,19 @@ export default function AdminPanel() {
         </button>
         <div style={S.topTitle}>
           <Shield size={14} style={{ color: '#00c8ff' }} />
-          ADMIN PANEL — SERVER {server.server_number}
+          {isHelper ? 'HELPER PANEL' : 'ADMIN PANEL'} — SERVER {server.server_number}
         </div>
       </div>
 
       <div style={S.layout} className="ap-layout">
         {/* Sidebar tabs */}
         <div style={S.sidebar} className="ap-sidebar">
-          {TABS.map(t => (
+          {TABS.filter(t => !isHelper || t === 'MEMBERS').map(t => (
             <button key={t} style={{ ...S.sideTab, ...(tab === t ? S.sideTabActive : {}) }} className="ap-tab" onClick={() => setTab(t)}>
-              {t === 'ALLIANCES' && <Users size={14} />}
-              {t === 'MEMBERS'   && <Shield size={14} />}
-              {t === 'SERVER'    && <Settings size={14} />}
+              {t === 'ALLIANCES'  && <Users size={14} />}
+              {t === 'MEMBERS'    && <Shield size={14} />}
+              {t === 'HANDSHAKES' && <GitMerge size={14} />}
+              {t === 'SERVER'     && <Settings size={14} />}
               {t}
             </button>
           ))}
@@ -88,7 +90,11 @@ export default function AdminPanel() {
               setMembers={setMembers}
               alliances={alliances}
               serverId={serverId}
+              isHelper={isHelper}
             />
+          )}
+          {tab === 'HANDSHAKES' && (
+            <HandshakesTab serverId={serverId} serverNumber={server.server_number} />
           )}
           {tab === 'SERVER' && (
             <ServerTab server={server} setServer={setServer} serverId={serverId} />
@@ -240,14 +246,8 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
 }
 
 // ── Members Tab ───────────────────────────────────────────────
-function MembersTab({ members, setMembers, alliances, serverId }) {
+function MembersTab({ members, setMembers, alliances, serverId, isHelper }) {
   const [filter, setFilter] = useState('');
-
-  async function handleDelete(id) {
-    if (!confirm('Remove this member?')) return;
-    await supabase.from('members').delete().eq('id', id);
-    setMembers(prev => prev.filter(m => m.id !== id));
-  }
 
   async function handleReassign(memberId, newAllianceId) {
     await supabase.from('members').update({ alliance_id: newAllianceId || null }).eq('id', memberId);
@@ -257,10 +257,23 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
     ));
   }
 
+  async function handleToggleHelper(member) {
+    const newRole = member.server_role === 'helper' ? null : 'helper';
+    await supabase.from('members').update({ server_role: newRole }).eq('id', member.id);
+    setMembers(prev => prev.map(m => m.id === member.id ? { ...m, server_role: newRole } : m));
+  }
+
   const filtered = members.filter(m =>
     m.username.toLowerCase().includes(filter.toLowerCase()) ||
     (m.in_game_name ?? '').toLowerCase().includes(filter.toLowerCase())
   );
+
+  // Group by alliance
+  const grouped = alliances.map(a => ({
+    alliance: a,
+    members: filtered.filter(m => m.alliance_id === a.id),
+  })).filter(g => g.members.length > 0);
+  const unassigned = filtered.filter(m => !m.alliance_id);
 
   const S = styles;
 
@@ -272,39 +285,96 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
           <div style={S.tabSub}>{members.length} members on this server</div>
         </div>
       </div>
+
+      <div style={{ background: 'rgba(240,165,0,0.05)', border: '1px solid rgba(240,165,0,0.2)', padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#7a9bb8', lineHeight: 1.6 }}>
+        ℹ To remove a member, contact their alliance owner — only the alliance owner can delete members from their roster.
+        You can reassign a member to a different alliance using the dropdown below.
+      </div>
+
       <input
         placeholder="Search by username or in-game name…"
         value={filter} onChange={e => setFilter(e.target.value)}
-        style={{ ...S.searchInput, marginBottom: 16 }}
+        style={{ ...S.searchInput, marginBottom: 20 }}
       />
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        {filtered.length === 0 && <div style={S.empty}>No members found.</div>}
-        {filtered.map(m => (
-          <div key={m.id} style={S.row}>
-            <div style={{ flex: 1 }}>
-              <div style={S.rowTitle}>
-                {m.username}
-                {m.in_game_name && m.in_game_name !== m.username &&
-                  <span style={S.tag}>{m.in_game_name}</span>}
-              </div>
-              <div style={S.rowSub}>
-                Alliance:&nbsp;
-                <select
-                  value={m.alliance_id ?? ''}
-                  onChange={e => handleReassign(m.id, e.target.value)}
-                  style={S.inlineSelect}
-                >
-                  <option value="">— No alliance —</option>
-                  {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                </select>
-              </div>
-            </div>
-            <IconBtn title="Remove member" danger onClick={() => handleDelete(m.id)}>
-              <Trash2 size={14} />
-            </IconBtn>
+
+      {filtered.length === 0 && <div style={S.empty}>No members found.</div>}
+
+      {/* Grouped by alliance */}
+      {grouped.map(({ alliance, members: allianceMembers }) => (
+        <div key={alliance.id} style={{ marginBottom: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: alliance.color, flexShrink: 0 }} />
+            <span style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, color: alliance.color, letterSpacing: '1px' }}>
+              {alliance.name}
+            </span>
+            {alliance.tag && <span style={S.tag}>{alliance.tag}</span>}
+            <span style={{ fontSize: 11, color: '#3a5878', marginLeft: 'auto' }}>{allianceMembers.length} members</span>
           </div>
-        ))}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {allianceMembers.map(m => (
+              <MemberRow key={m.id} m={m} alliances={alliances} onReassign={handleReassign} onToggleHelper={handleToggleHelper} isHelper={isHelper} S={S} />
+            ))}
+          </div>
+        </div>
+      ))}
+
+      {/* Unassigned */}
+      {unassigned.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 11, color: '#3a5878', letterSpacing: '1.5px', fontWeight: 700, marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>
+            NO ALLIANCE — {unassigned.length} members
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {unassigned.map(m => (
+              <MemberRow key={m.id} m={m} alliances={alliances} onReassign={handleReassign} onToggleHelper={handleToggleHelper} isHelper={isHelper} S={S} unassigned />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MemberRow({ m, alliances, onReassign, onToggleHelper, isHelper, S, unassigned }) {
+  const isServerHelper = m.server_role === 'helper';
+  return (
+    <div style={S.row}>
+      <div style={{ flex: 1 }}>
+        <div style={S.rowTitle}>
+          {m.in_game_name || m.username}
+          {m.in_game_name && m.in_game_name !== m.username && <span style={S.tag}>@{m.username}</span>}
+          {m.alliance_role === 'alliance_admin' && <span style={{ ...S.tag, color: '#f0a500', borderColor: 'rgba(240,165,0,0.4)' }}>ALLIANCE ADMIN</span>}
+          {isServerHelper && <span style={{ ...S.tag, color: '#00c8ff', borderColor: 'rgba(0,200,255,0.4)' }}>SERVER HELPER</span>}
+        </div>
+        <div style={S.rowSub}>
+          {unassigned ? 'Assign to:' : 'Reassign:'}&nbsp;
+          <select value={m.alliance_id ?? ''} onChange={e => onReassign(m.id, e.target.value)} style={S.inlineSelect}>
+            <option value="">{unassigned ? '— Select alliance —' : '— No alliance —'}</option>
+            {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
       </div>
+      {!isHelper && (
+        <button
+          title={isServerHelper ? 'Remove helper role' : 'Promote to server helper'}
+          onClick={() => onToggleHelper(m)}
+          style={{
+            background: isServerHelper ? 'rgba(0,200,255,0.1)' : 'transparent',
+            border: `1px solid ${isServerHelper ? 'rgba(0,200,255,0.4)' : '#1e3550'}`,
+            color: isServerHelper ? '#00c8ff' : '#3a5878',
+            padding: '4px 10px',
+            fontFamily: "'Rajdhani',sans-serif",
+            fontWeight: 700,
+            fontSize: 10,
+            letterSpacing: '1px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}
+        >
+          {isServerHelper ? '★ HELPER' : '+ HELPER'}
+        </button>
+      )}
     </div>
   );
 }
@@ -321,8 +391,6 @@ const SEASON_LABELS = {
 
 // ── Server Tab ────────────────────────────────────────────────
 function ServerTab({ server, setServer, serverId }) {
-  const navigate    = useNavigate();
-  const { logout }  = useAuth();
   const [copied,    setCopied]    = useState(false);
   const [form,      setForm]      = useState({ newPassword: '', confirmPassword: '' });
   const [busy,      setBusy]      = useState(false);
@@ -334,11 +402,21 @@ function ServerTab({ server, setServer, serverId }) {
   const [seasonBusy, setSeasonBusy] = useState(false);
   const [seasonMsg,  setSeasonMsg]  = useState('');
 
-  // Delete server state
-  const [deleteStep,    setDeleteStep]    = useState(0); // 0=idle 1=confirm 2=type
-  const [deleteConfirm, setDeleteConfirm] = useState('');
-  const [deleteBusy,    setDeleteBusy]    = useState(false);
-  const [deleteError,   setDeleteError]   = useState('');
+  // Public map toggle
+  const [publicMap,     setPublicMap]     = useState(server.public_map ?? false);
+  const [publicMapBusy, setPublicMapBusy] = useState(false);
+  const [publicMapMsg,  setPublicMapMsg]  = useState('');
+
+  async function handlePublicMapToggle(val) {
+    setPublicMapBusy(true); setPublicMapMsg('');
+    const { error: err } = await supabase.from('servers').update({ public_map: val }).eq('id', serverId);
+    setPublicMapBusy(false);
+    if (err) { setPublicMapMsg('Error: ' + err.message); return; }
+    setPublicMap(val);
+    setServer(s => ({ ...s, public_map: val }));
+    setPublicMapMsg(val ? 'Map is now publicly visible.' : 'Map is now private.');
+    setTimeout(() => setPublicMapMsg(''), 3000);
+  }
 
   async function handleSeasonSave() {
     setSeasonBusy(true); setSeasonMsg('');
@@ -348,15 +426,6 @@ function ServerTab({ server, setServer, serverId }) {
     setServer(s => ({ ...s, current_season: season }));
     setSeasonMsg('Season updated.');
     setTimeout(() => setSeasonMsg(''), 3000);
-  }
-
-  async function handleDeleteServer() {
-    if (deleteConfirm !== 'DELETE') { setDeleteError('Type DELETE exactly.'); return; }
-    setDeleteBusy(true);
-    const { error: err } = await supabase.from('servers').delete().eq('id', serverId);
-    if (err) { setDeleteError(err.message); setDeleteBusy(false); return; }
-    logout();
-    navigate('/');
   }
 
   async function copyServerInvite() {
@@ -396,7 +465,7 @@ function ServerTab({ server, setServer, serverId }) {
         'Each alliance has its own separate invite link managed by the alliance owner.',
         'Set the active season so all alliances show the correct map and member fields.',
         'You can change the admin password below — all admins will need the new password next login.',
-        'Deleting the server permanently removes all alliances, members, and data. Use with caution.',
+        'To delete a server, contact the super admin.',
       ]} />
 
       {/* Server invite link */}
@@ -449,62 +518,42 @@ function ServerTab({ server, setServer, serverId }) {
         )}
       </div>
 
-      {/* Delete server */}
-      <div style={{ ...S.settingsCard, borderColor: 'rgba(255,64,96,0.25)', marginTop: 32 }}>
-        <div style={{ ...S.settingsLabel, color: '#ff4060' }}>DANGER ZONE</div>
-        <div style={S.settingsSub}>Permanently delete this server and all its data. This cannot be undone.</div>
-
-        {deleteStep === 0 && (
+      {/* Public map visibility */}
+      <div style={S.settingsCard}>
+        <div style={S.settingsLabel}>WAR MAP VISIBILITY</div>
+        <div style={S.settingsSub}>
+          Controls whether the war map is visible to non-logged-in visitors.
+          When private, only members logged in to this server can view the map.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
           <button
-            style={{ background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.4)', color: '#ff4060', padding: '9px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' }}
-            onClick={() => { setDeleteStep(1); setDeleteError(''); }}
+            onClick={() => handlePublicMapToggle(false)}
+            disabled={publicMapBusy}
+            style={{
+              padding: '9px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: publicMapBusy ? 'default' : 'pointer',
+              background: !publicMap ? 'rgba(255,64,96,0.12)' : 'transparent',
+              border: `1px solid ${!publicMap ? 'rgba(255,64,96,0.5)' : '#1e3550'}`,
+              color: !publicMap ? '#ff6080' : '#3a5878',
+            }}
           >
-            DELETE THIS SERVER
+            🔒 PRIVATE
           </button>
-        )}
-
-        {deleteStep === 1 && (
-          <div>
-            <p style={{ color: '#ff4060', fontSize: 13, marginBottom: 16 }}>
-              Are you sure? This will delete <strong>all alliances, members, territories and settings</strong> for Server {server.server_number}.
-            </p>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                style={{ background: 'rgba(255,64,96,0.12)', border: '1px solid #ff4060', color: '#ff4060', padding: '9px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' }}
-                onClick={() => { setDeleteStep(2); setDeleteError(''); setDeleteConfirm(''); }}
-              >
-                YES, CONTINUE
-              </button>
-              <button style={S.cancelBtn} onClick={() => setDeleteStep(0)}>CANCEL</button>
-            </div>
-          </div>
-        )}
-
-        {deleteStep === 2 && (
-          <div>
-            <p style={{ color: '#ff4060', fontSize: 13, marginBottom: 12 }}>
-              Type <strong style={{ fontFamily: "'Share Tech Mono',monospace" }}>DELETE</strong> to confirm permanent deletion.
-            </p>
-            <input
-              value={deleteConfirm}
-              onChange={e => setDeleteConfirm(e.target.value)}
-              placeholder="Type DELETE here"
-              style={{ ...S.input, marginBottom: 12, borderColor: 'rgba(255,64,96,0.4)', maxWidth: 280 }}
-            />
-            {deleteError && <p style={S.error}>{deleteError}</p>}
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                style={{ background: '#ff4060', color: '#fff', border: 'none', padding: '9px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: deleteBusy ? 'default' : 'pointer', opacity: deleteBusy ? 0.6 : 1 }}
-                onClick={handleDeleteServer}
-                disabled={deleteBusy}
-              >
-                {deleteBusy ? 'DELETING…' : 'PERMANENTLY DELETE →'}
-              </button>
-              <button style={S.cancelBtn} onClick={() => { setDeleteStep(0); setDeleteConfirm(''); setDeleteError(''); }}>CANCEL</button>
-            </div>
-          </div>
-        )}
+          <button
+            onClick={() => handlePublicMapToggle(true)}
+            disabled={publicMapBusy}
+            style={{
+              padding: '9px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: publicMapBusy ? 'default' : 'pointer',
+              background: publicMap ? 'rgba(0,200,255,0.08)' : 'transparent',
+              border: `1px solid ${publicMap ? 'rgba(0,200,255,0.4)' : '#1e3550'}`,
+              color: publicMap ? '#00c8ff' : '#3a5878',
+            }}
+          >
+            🌐 PUBLIC
+          </button>
+          {publicMapMsg && <span style={{ fontSize: 12, color: '#00e87a' }}>{publicMapMsg}</span>}
+        </div>
       </div>
+
     </div>
   );
 }
@@ -570,6 +619,338 @@ function IconBtn({ children, onClick, title, danger }) {
       onMouseEnter={e => { e.currentTarget.style.borderColor = danger ? '#ff4060' : '#00c8ff'; e.currentTarget.style.color = danger ? '#ff4060' : '#00c8ff'; }}
       onMouseLeave={e => { e.currentTarget.style.borderColor = '#1e3550'; e.currentTarget.style.color = danger ? '#ff4060' : '#7a9bb8'; }}
     >{children}</button>
+  );
+}
+
+// ── Handshakes Tab ────────────────────────────────────────────
+function HandshakesTab({ serverId, serverNumber }) {
+  const [handshakes,   setHandshakes]   = useState([]);
+  const [servers,      setServers]      = useState({}); // id → server row
+  const [loading,      setLoading]      = useState(true);
+  const [acceptCode,   setAcceptCode]   = useState('');
+  const [acceptBusy,   setAcceptBusy]   = useState(false);
+  const [acceptError,  setAcceptError]  = useState('');
+  const [acceptMsg,    setAcceptMsg]    = useState('');
+  const [initBusy,     setInitBusy]     = useState(false);
+  const [newCode,      setNewCode]      = useState('');   // freshly generated code to copy
+  const [copied,       setCopied]       = useState(false);
+  const [toggleBusy,   setToggleBusy]   = useState(null);
+
+  useEffect(() => {
+    async function load() {
+      // Load all handshakes where this server is initiator or target
+      const { data: hs } = await supabase
+        .from('server_handshakes')
+        .select('*')
+        .or(`initiator_server_id.eq.${serverId},target_server_id.eq.${serverId}`)
+        .order('created_at', { ascending: false });
+
+      const rows = hs ?? [];
+      setHandshakes(rows);
+
+      // Load partner server details for display
+      const partnerIds = [...new Set(rows.map(h =>
+        h.initiator_server_id === serverId ? h.target_server_id : h.initiator_server_id
+      ).filter(Boolean))];
+
+      if (partnerIds.length > 0) {
+        const { data: srvs } = await supabase
+          .from('servers')
+          .select('id, server_number, name')
+          .in('id', partnerIds);
+        const lookup = {};
+        (srvs ?? []).forEach(s => { lookup[s.id] = s; });
+        setServers(lookup);
+      }
+      setLoading(false);
+    }
+    load();
+  }, [serverId]);
+
+  // Initiate a new handshake — generate code and insert pending row
+  async function handleInitiate() {
+    setInitBusy(true);
+    const code = generateInviteCode();
+    const { data, error } = await supabase.from('server_handshakes').insert({
+      initiator_server_id: serverId,
+      invite_code: code,
+      status: 'pending',
+      share_map: true,
+      share_roster: false,
+      share_player_info: false,
+    }).select().single();
+    setInitBusy(false);
+    if (error) return;
+    setHandshakes(prev => [data, ...prev]);
+    setNewCode(code);
+    setCopied(false);
+  }
+
+  async function copyCode(code) {
+    await navigator.clipboard.writeText(code);
+    setCopied(code);
+    setTimeout(() => setCopied(null), 2000);
+  }
+
+  // Accept a handshake sent by another server
+  async function handleAccept(e) {
+    e.preventDefault();
+    setAcceptError(''); setAcceptMsg('');
+    const code = acceptCode.trim().toLowerCase();
+    if (!code) { setAcceptError('Enter the invite code.'); return; }
+    setAcceptBusy(true);
+
+    const { data: hs, error: findErr } = await supabase
+      .from('server_handshakes')
+      .select('*')
+      .eq('invite_code', code)
+      .single();
+
+    if (findErr || !hs) { setAcceptError('Code not found.'); setAcceptBusy(false); return; }
+    if (hs.status === 'accepted') { setAcceptError('This handshake is already active.'); setAcceptBusy(false); return; }
+    if (hs.status === 'revoked')  { setAcceptError('This handshake has been revoked.'); setAcceptBusy(false); return; }
+    if (hs.initiator_server_id === serverId) { setAcceptError('You cannot accept your own handshake.'); setAcceptBusy(false); return; }
+    if (hs.target_server_id && hs.target_server_id !== serverId) { setAcceptError('This code was already accepted by another server.'); setAcceptBusy(false); return; }
+
+    const { data: updated, error: updErr } = await supabase
+      .from('server_handshakes')
+      .update({ target_server_id: serverId, status: 'accepted', accepted_at: new Date().toISOString() })
+      .eq('id', hs.id)
+      .select().single();
+
+    if (updErr) { setAcceptError(updErr.message); setAcceptBusy(false); return; }
+
+    // Load initiator server details
+    const { data: initSrv } = await supabase
+      .from('servers').select('id, server_number, name').eq('id', hs.initiator_server_id).single();
+    if (initSrv) setServers(prev => ({ ...prev, [initSrv.id]: initSrv }));
+
+    setHandshakes(prev => [updated, ...prev.filter(h => h.id !== updated.id)]);
+    setAcceptMsg('Handshake accepted! You are now connected to that server.');
+    setAcceptCode('');
+    setAcceptBusy(false);
+  }
+
+  // Toggle a sharing flag on a handshake
+  async function handleToggle(hs, field) {
+    setToggleBusy(hs.id + field);
+    const newVal = !hs[field];
+    const { error } = await supabase.from('server_handshakes').update({ [field]: newVal }).eq('id', hs.id);
+    if (!error) setHandshakes(prev => prev.map(h => h.id === hs.id ? { ...h, [field]: newVal } : h));
+    setToggleBusy(null);
+  }
+
+  // Revoke a handshake
+  async function handleRevoke(hsId) {
+    if (!confirm('Revoke this handshake? The partner server will lose access to any shared data.')) return;
+    await supabase.from('server_handshakes').update({ status: 'revoked' }).eq('id', hsId);
+    setHandshakes(prev => prev.map(h => h.id === hsId ? { ...h, status: 'revoked' } : h));
+  }
+
+  const S = styles;
+  const active  = handshakes.filter(h => h.status === 'accepted');
+  const pending = handshakes.filter(h => h.status === 'pending' && h.initiator_server_id === serverId);
+  const revoked = handshakes.filter(h => h.status === 'revoked');
+
+  function partnerName(hs) {
+    const pid = hs.initiator_server_id === serverId ? hs.target_server_id : hs.initiator_server_id;
+    const srv = servers[pid];
+    if (!srv) return pid ? `Server (${pid.slice(0, 8)}…)` : '— awaiting acceptance —';
+    return `Server ${srv.server_number} — ${srv.name}`;
+  }
+
+  return (
+    <div>
+      <div style={S.tabHeader}>
+        <div>
+          <div style={S.tabTitle}>SERVER HANDSHAKES</div>
+          <div style={S.tabSub}>{active.length} active connection{active.length !== 1 ? 's' : ''}</div>
+        </div>
+      </div>
+
+      <HelpCard title="HOW HANDSHAKES WORK" lines={[
+        'A handshake is a mutual agreement between two server admins to share data.',
+        'To connect: click INITIATE, copy the generated code, and send it to the other server\'s admin via Discord.',
+        'The other admin enters the code in their ACCEPT tab to activate the connection.',
+        'Once active, you can control what each side shares: live map, planning map, roster names, or player stats.',
+        'Either server can revoke the connection at any time.',
+        'Alliance leaders can further fine-tune sharing from their Alliance HQ settings once a handshake is active.',
+      ]} />
+
+      {/* Initiate new handshake */}
+      <div style={S.settingsCard}>
+        <div style={S.settingsLabel}>INITIATE HANDSHAKE</div>
+        <div style={S.settingsSub}>
+          Generate a one-time code to send to another server's admin. They enter it on their side to activate the connection.
+        </div>
+        <button style={S.saveBtn} onClick={handleInitiate} disabled={initBusy}>
+          {initBusy ? 'GENERATING…' : <><GitMerge size={13} style={{ marginRight: 6 }} />GENERATE CODE →</>}
+        </button>
+
+        {newCode && (
+          <div style={{ marginTop: 16, padding: '14px', background: 'rgba(0,200,255,0.05)', border: '1px solid rgba(0,200,255,0.2)' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', marginBottom: 8 }}>SHARE THIS CODE WITH THE OTHER SERVER ADMIN</div>
+            <div style={S.inviteRow}>
+              <div style={{ ...S.inviteCode, letterSpacing: '3px', fontSize: 14, color: '#00c8ff' }}>{newCode}</div>
+              <button style={S.copyBtn} onClick={() => copyCode(newCode)}>
+                {copied === newCode ? <><Check size={13} /> COPIED</> : <><Copy size={13} /> COPY</>}
+              </button>
+            </div>
+            <p style={{ fontSize: 11, color: '#3a5878', marginTop: 8 }}>
+              Send this code to the other server's admin via Discord. They enter it in their ACCEPT tab.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Accept a handshake */}
+      <div style={S.settingsCard}>
+        <div style={S.settingsLabel}>ACCEPT HANDSHAKE</div>
+        <div style={S.settingsSub}>Received a code from another server admin? Enter it here to activate the connection.</div>
+        <form onSubmit={handleAccept}>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <input
+                placeholder="Paste invite code here…"
+                value={acceptCode}
+                onChange={e => setAcceptCode(e.target.value)}
+                style={{ ...S.input, fontFamily: "'Share Tech Mono',monospace", letterSpacing: '2px' }}
+              />
+            </div>
+            <button type="submit" style={S.saveBtn} disabled={acceptBusy}>
+              {acceptBusy ? 'CHECKING…' : 'ACCEPT →'}
+            </button>
+          </div>
+          {acceptError && <p style={S.error}>{acceptError}</p>}
+          {acceptMsg  && <p style={{ color: '#00e87a', fontSize: 12, marginTop: 8 }}>{acceptMsg}</p>}
+        </form>
+      </div>
+
+      {/* Active handshakes */}
+      {active.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#00e87a', marginBottom: 10 }}>
+            ● ACTIVE CONNECTIONS — {active.length}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {active.map(hs => (
+              <HandshakeRow key={hs.id} hs={hs} partnerName={partnerName(hs)} serverId={serverId}
+                onToggle={handleToggle} onRevoke={handleRevoke} toggleBusy={toggleBusy} S={S} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Pending outgoing handshakes */}
+      {pending.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#f0a500', marginBottom: 10 }}>
+            ◌ PENDING — AWAITING ACCEPTANCE — {pending.length}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {pending.map(hs => (
+              <div key={hs.id} style={{ ...S.row, justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div>
+                  <div style={S.rowTitle}>Awaiting partner</div>
+                  <div style={S.rowSub}>Code: <span style={{ color: '#f0a500', letterSpacing: '2px' }}>{hs.invite_code}</span></div>
+                  <div style={S.rowSub}>Initiated {new Date(hs.created_at).toLocaleDateString()}</div>
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button style={S.copyBtn} onClick={() => copyCode(hs.invite_code)}>
+                    {copied === hs.invite_code ? <><Check size={12} /> COPIED</> : <><Copy size={12} /> COPY CODE</>}
+                  </button>
+                  <IconBtn danger title="Cancel" onClick={() => handleRevoke(hs.id)}><X size={14} /></IconBtn>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Revoked */}
+      {revoked.length > 0 && (
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', marginBottom: 10 }}>
+            ✕ REVOKED — {revoked.length}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {revoked.map(hs => (
+              <div key={hs.id} style={{ ...S.row, opacity: 0.45 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={S.rowTitle}>{partnerName(hs)}</div>
+                  <div style={S.rowSub}>Revoked · was {hs.initiator_server_id === serverId ? 'outgoing' : 'incoming'}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {loading && <div style={S.empty}>Loading…</div>}
+      {!loading && handshakes.length === 0 && (
+        <div style={S.empty}>No handshakes yet. Initiate one above to connect with another server.</div>
+      )}
+    </div>
+  );
+}
+
+function HandshakeRow({ hs, partnerName, serverId, onToggle, onRevoke, toggleBusy, S }) {
+  const isInitiator = hs.initiator_server_id === serverId;
+
+  function Toggle({ field, label }) {
+    const on   = hs[field];
+    const busy = toggleBusy === hs.id + field;
+    return (
+      <button
+        onClick={() => onToggle(hs, field)}
+        disabled={busy}
+        title={on ? `Sharing ${label} — click to disable` : `Not sharing ${label} — click to enable`}
+        style={{
+          padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700,
+          fontSize: 10, letterSpacing: '1px', cursor: busy ? 'default' : 'pointer',
+          background: on ? 'rgba(0,232,122,0.08)' : 'transparent',
+          border: `1px solid ${on ? 'rgba(0,232,122,0.35)' : '#1e3550'}`,
+          color: on ? '#00e87a' : '#3a5878',
+          opacity: busy ? 0.6 : 1,
+        }}
+      >
+        {on ? '✓' : '✕'} {label}
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ background: 'rgba(13,21,32,0.7)', border: '1px solid rgba(0,232,122,0.2)', padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div>
+          <div style={{ ...S.rowTitle, color: '#00e87a' }}>
+            {partnerName}
+            <span style={{ fontSize: 10, color: '#3a5878', fontWeight: 400, marginLeft: 6 }}>
+              ({isInitiator ? 'you initiated' : 'they initiated'})
+            </span>
+          </div>
+          <div style={S.rowSub}>
+            Active since {new Date(hs.accepted_at).toLocaleDateString()}
+          </div>
+        </div>
+        <IconBtn danger title="Revoke handshake" onClick={() => onRevoke(hs.id)}><X size={14} /></IconBtn>
+      </div>
+
+      {/* Sharing toggles */}
+      <div style={{ marginTop: 12 }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', marginBottom: 8 }}>
+          SHARING WITH PARTNER
+        </div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          <Toggle field="share_map"         label="LIVE MAP" />
+          <Toggle field="share_roster"      label="ROSTER NAMES" />
+          <Toggle field="share_player_info" label="PLAYER STATS" />
+        </div>
+        <p style={{ fontSize: 10, color: '#2a4058', marginTop: 8, lineHeight: 1.6 }}>
+          These are the server-level caps. Alliance owners can further control sharing from Alliance HQ once connected.
+        </p>
+      </div>
+    </div>
   );
 }
 

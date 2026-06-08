@@ -120,7 +120,8 @@ export default function ServerDashboard() {
       .single();
     if (error || !member) { setAuthError('Username or password incorrect.'); setAuthBusy(false); return; }
     const alName = alliances.find(a => a.id === member.alliance_id)?.name || '';
-    login({ serverId, serverName: server.name, role: 'member', allianceId: member.alliance_id, allianceName: alName, memberId: member.id, username: member.username, allianceRole: member.alliance_role || 'member' });
+    const memberRole = member.server_role === 'helper' ? 'helper' : 'member';
+    login({ serverId, serverName: server.name, role: memberRole, allianceId: member.alliance_id, allianceName: alName, memberId: member.id, username: member.username, allianceRole: member.alliance_role || 'member' });
     setAuthView(null); setAuthBusy(false);
   }
 
@@ -150,11 +151,11 @@ export default function ServerDashboard() {
           {activeSession ? (
             <>
               <span style={S.sessionBadge}>
-                {role === 'admin' ? '⚡ ADMIN' : role === 'owner' ? `👑 ${activeSession.allianceName}` : `👤 ${activeSession.username}`}
+                {role === 'admin' ? '⚡ ADMIN' : role === 'helper' ? `🔧 ${activeSession.username}` : role === 'owner' ? `👑 ${activeSession.allianceName}` : `👤 ${activeSession.username}`}
               </span>
-              {role === 'admin' && (
+              {(role === 'admin' || role === 'helper') && (
                 <button style={S.adminBtn} onClick={() => navigate(`/server/${serverId}/admin`)}>
-                  <Settings size={12} /> ADMIN PANEL
+                  <Settings size={12} /> {role === 'helper' ? 'HELPER PANEL' : 'ADMIN PANEL'}
                 </button>
               )}
               <button style={S.logoutBtn} onClick={logout}>
@@ -335,6 +336,16 @@ const ROLE_HELP = {
       'Promote up to 10 trusted members to Alliance Admin in the ADMINS tab — they can edit and remove members.',
       'Control who can see your roster using the visibility toggles in SETTINGS.',
       'If a member forgets their password, edit their record in the ROSTER tab to reset it.',
+    ],
+  },
+  helper: {
+    label: '🔧 SERVER HELPER QUICK START',
+    color: '#00c8ff',
+    steps: [
+      'You have been promoted to Server Helper by the admin.',
+      'Open the Helper Panel (top-right button) to view and reassign members between alliances.',
+      'You can see all members grouped by their alliance.',
+      'You cannot change server settings or manage alliances — contact the server admin for that.',
     ],
   },
   member: {

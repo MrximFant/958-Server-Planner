@@ -1,260 +1,542 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
+import { useAuth } from '../contexts/AuthContext';
 import tilesData from '../data/territories.json';
-import { Shield, Clock, Menu, X, Settings, ChevronRight, Zap, ZoomIn, ZoomOut, Lock } from 'lucide-react';
-import Navbar from '../components/Navbar';
+import { ArrowLeft, ZoomIn, ZoomOut, Menu, X, Lock, Eye, EyeOff, Map, Crosshair } from 'lucide-react';
 
-const TYPE_COLORS = { /* ... keep your existing colors ... */ };
+const CANVAS_SIZE = 3000;
 
-const SAFE_TIME_OPTIONS = [
-  { label: '04:00 - 05:00 (Early)', value: '04:00' },
-  { label: '12:00 - 13:00 (Mid)', value: '12:00' },
-  { label: '20:00 - 21:00 (Late/CEST Midnight)', value: '20:00' },
-];
+// ── Access helpers ──────────────────────────────────────────────
+// LIVE map  — shows actual claimed territory ownership
+// PLAN map  — shows each alliance's internal attack/defence planning
+//
+// Who can see LIVE:  everyone if public_map=true; logged-in members otherwise
+// Who can see PLAN:  only the alliance itself (members + owner + alliance_admin)
+//                    server admin/helper can see ALL alliances' plans
+//
+// Who can edit LIVE: alliance owner / alliance_admin (own alliance only)
+//                    server admin / helper (any alliance)
+// Who can edit PLAN: alliance owner / alliance_admin (own alliance only)
+//                    server admin / helper (any alliance)
 
-export default function Map() {
-  // --- States ---
-  const [ownership, setOwnership] = useState({});
+export default function MapPage() {
+  const { serverId } = useParams();
+  const navigate     = useNavigate();
+  const { session }  = useAuth();
+
+  const role         = session?.serverId === serverId ? session.role    : null;
+  const myAllianceId = role                            ? session.allianceId ?? null : null;
+  const allianceRole = session?.allianceRole ?? null;
+
+  const canEditAll = role === 'admin' || role === 'helper';
+  const canEditOwn = role === 'owner' || (role === 'member' && allianceRole === 'alliance_admin');
+  const canEdit    = canEditAll || canEditOwn;
+  const isLoggedIn = !!role;
+
+  // Map mode: 'live' | 'plan'
+  // Plan mode only available when logged in with an alliance (or admin/helper)
+  const canSeePlan  = isLoggedIn && (canEditAll || !!myAllianceId);
+  const [mapMode,   setMapMode]   = useState('live');
+
+  const [server,    setServer]    = useState(null);
   const [alliances, setAlliances] = useState([]);
-  const [loading, setLoading] = useState(true);
-  
-  // Navigation & UI
-  const [isSidebarOpen, setSidebarOpen] = useState(window.innerWidth > 768);
-  const [zoom, setZoom] = useState(0.4);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [showAdminLogin, setShowAdminLogin] = useState(false);
-  const [adminPassword, setAdminPassword] = useState("");
+  // live layer: tileId → { id, owner_id, last_capture_at }
+  const [liveData,  setLiveData]  = useState({});
+  // plan layer: tileId → { id (uuid), alliance_id, tile_id, notes }
+  const [planData,  setPlanData]  = useState({});
+  const [loading,   setLoading]   = useState(true);
 
-  // Selection & Editing
+  const [sidebarOpen,      setSidebarOpen]      = useState(window.innerWidth > 900);
+  const [zoom,             setZoom]             = useState(0.35);
   const [selectedAlliance, setSelectedAlliance] = useState(null);
-  const [editingAlliance, setEditingAlliance] = useState(null);
-  const [sliderHours, setSliderHours] = useState(0);
+  const [hoveredTile,      setHoveredTile]      = useState(null);
+  const [hideNames,        setHideNames]        = useState(false);
+  const [busyTile,         setBusyTile]         = useState(null);
 
-  const containerRef = useRef(null);
-  const CANVAS_SIZE = 3000;
+  const mapRef   = useRef(null);
+  const panRef   = useRef({ active: false, startX: 0, startY: 0, scrollX: 0, scrollY: 0 });
+  const pinchRef = useRef({ active: false, dist: 0 });
 
-  // --- Auth Logic ---
-  const handleAdminLogin = () => {
-    if (adminPassword === "YOUR_ADMIN_PASSWORD") { // Change this to your secret
-      setIsAdmin(true);
-      setShowAdminLogin(false);
-    } else {
-      alert("Access Denied");
-    }
-  };
-
-  // --- Alliance Management ---
-  const updateAllianceData = async (e) => {
-    e.preventDefault();
-    const { error } = await supabase
-      .from('alliances')
-      .update({
-        name: editingAlliance.name,
-        color: editingAlliance.color,
-        server: editingAlliance.server,
-        safe_time: editingAlliance.safe_time
-      })
-      .eq('id', editingAlliance.id);
-
-    if (!error) {
-      setAlliances(alliances.map(a => a.id === editingAlliance.id ? editingAlliance : a));
-      setEditingAlliance(null);
-    }
-  };
-
-  // --- Initial Load & Realtime ---
+  // ── Data loading ──────────────────────────────────────────────
   useEffect(() => {
-    fetchInitialData();
-    const channel = supabase.channel('live-map').on('postgres_changes', 
-      { event: '*', schema: 'public', table: 'territories' },
-      (payload) => setOwnership(prev => ({ ...prev, [payload.new.id]: payload.new }))
-    ).subscribe();
-    return () => supabase.removeChannel(channel);
-  }, []);
+    async function load() {
+      const [{ data: srv }, { data: als }] = await Promise.all([
+        supabase.from('servers').select('id, server_number, name, public_map').eq('id', serverId).single(),
+        supabase.from('alliances').select('id, name, tag, color').eq('server_id', serverId).order('name'),
+      ]);
 
-  async function fetchInitialData() {
-    const { data: allyData } = await supabase.from('alliances').select('*');
-    const { data: terrData } = await supabase.from('territories').select('*');
-    setAlliances(allyData || []);
-    const lookup = {};
-    terrData?.forEach(t => lookup[t.id] = t);
-    setOwnership(lookup);
-    setLoading(false);
+      const allianceIds = (als ?? []).map(a => a.id);
+
+      // Load live territory data
+      let terrRows = [];
+      if (allianceIds.length > 0) {
+        const { data } = await supabase.from('territories').select('*').in('owner_id', allianceIds);
+        terrRows = data ?? [];
+      }
+
+      // Load plan data — admins/helpers see all, others see own alliance only
+      let planRows = [];
+      if (isLoggedIn && allianceIds.length > 0) {
+        const query = supabase.from('alliance_plans').select('*');
+        if (canEditAll) {
+          query.in('alliance_id', allianceIds);
+        } else if (myAllianceId) {
+          query.eq('alliance_id', myAllianceId);
+        }
+        const { data } = await query;
+        planRows = data ?? [];
+      }
+
+      setServer(srv);
+      setAlliances(als ?? []);
+
+      const liveLookup = {};
+      terrRows.forEach(t => { liveLookup[t.id] = t; });
+      setLiveData(liveLookup);
+
+      // Plan lookup: tileId → plan row (most recent per tile, scoped by visibility)
+      // For admin: tileId → array grouped by alliance_id shown as overlay
+      // For members: tileId → single row (their own)
+      const planLookup = {};
+      planRows.forEach(p => {
+        if (!planLookup[p.tile_id]) planLookup[p.tile_id] = [];
+        planLookup[p.tile_id].push(p);
+      });
+      setPlanData(planLookup);
+
+      setLoading(false);
+    }
+    load();
+
+    // Realtime — live layer
+    const liveChannel = supabase.channel(`live-${serverId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'territories' }, p => {
+        if (p.eventType === 'DELETE') {
+          setLiveData(prev => { const n = { ...prev }; delete n[p.old.id]; return n; });
+        } else {
+          setLiveData(prev => ({ ...prev, [p.new.id]: p.new }));
+        }
+      }).subscribe();
+
+    // Realtime — plan layer
+    const planChannel = supabase.channel(`plan-${serverId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'alliance_plans' }, p => {
+        if (p.eventType === 'DELETE') {
+          setPlanData(prev => {
+            const n = { ...prev };
+            const tileId = p.old.tile_id;
+            if (n[tileId]) {
+              n[tileId] = n[tileId].filter(r => r.id !== p.old.id);
+              if (n[tileId].length === 0) delete n[tileId];
+            }
+            return n;
+          });
+        } else {
+          setPlanData(prev => {
+            const tileId = p.new.tile_id;
+            const existing = prev[tileId] ?? [];
+            const filtered = existing.filter(r => r.id !== p.new.id);
+            return { ...prev, [tileId]: [...filtered, p.new] };
+          });
+        }
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(liveChannel);
+      supabase.removeChannel(planChannel);
+    };
+  }, [serverId, isLoggedIn, canEditAll, myAllianceId]);
+
+  // ── Tile interactions ─────────────────────────────────────────
+  const handleTileClick = useCallback(async (tileId) => {
+    if (!selectedAlliance) return;
+    const targetId = selectedAlliance.id;
+    if (!canEditAll && !(canEditOwn && targetId === myAllianceId)) return;
+
+    setBusyTile(tileId);
+
+    if (mapMode === 'live') {
+      const current = liveData[tileId];
+      if (current?.owner_id === targetId) {
+        await supabase.from('territories').delete().eq('id', tileId);
+        setLiveData(prev => { const n = { ...prev }; delete n[tileId]; return n; });
+      } else {
+        const row = { id: tileId, owner_id: targetId, last_capture_at: new Date().toISOString() };
+        await supabase.from('territories').upsert(row);
+        setLiveData(prev => ({ ...prev, [tileId]: row }));
+      }
+    } else {
+      // Plan mode
+      const existing = (planData[tileId] ?? []).find(p => p.alliance_id === targetId);
+      if (existing) {
+        await supabase.from('alliance_plans').delete().eq('id', existing.id);
+        setPlanData(prev => {
+          const n = { ...prev };
+          n[tileId] = (n[tileId] ?? []).filter(p => p.id !== existing.id);
+          if (n[tileId].length === 0) delete n[tileId];
+          return n;
+        });
+      } else {
+        const { data: inserted } = await supabase.from('alliance_plans')
+          .insert({ alliance_id: targetId, tile_id: tileId })
+          .select().single();
+        if (inserted) {
+          setPlanData(prev => ({ ...prev, [tileId]: [...(prev[tileId] ?? []), inserted] }));
+        }
+      }
+    }
+
+    setBusyTile(null);
+  }, [selectedAlliance, canEditAll, canEditOwn, myAllianceId, mapMode, liveData, planData]);
+
+  // ── Pan + pinch ───────────────────────────────────────────────
+  function onMouseDown(e) {
+    if (e.button !== 0) return;
+    panRef.current = { active: true, startX: e.clientX, startY: e.clientY, scrollX: mapRef.current.scrollLeft, scrollY: mapRef.current.scrollTop };
+  }
+  function onMouseMove(e) {
+    if (!panRef.current.active) return;
+    mapRef.current.scrollLeft = panRef.current.scrollX - (e.clientX - panRef.current.startX);
+    mapRef.current.scrollTop  = panRef.current.scrollY - (e.clientY - panRef.current.startY);
+  }
+  function onMouseUp() { panRef.current.active = false; }
+
+  function dist2(touches) {
+    return Math.hypot(touches[0].clientX - touches[1].clientX, touches[0].clientY - touches[1].clientY);
+  }
+  function onTouchStart(e) {
+    if (e.touches.length === 1) {
+      panRef.current = { active: true, startX: e.touches[0].clientX, startY: e.touches[0].clientY, scrollX: mapRef.current.scrollLeft, scrollY: mapRef.current.scrollTop };
+    } else if (e.touches.length === 2) {
+      panRef.current.active = false;
+      pinchRef.current = { active: true, dist: dist2(e.touches) };
+    }
+  }
+  function onTouchMove(e) {
+    e.preventDefault();
+    if (e.touches.length === 1 && panRef.current.active) {
+      mapRef.current.scrollLeft = panRef.current.scrollX - (e.touches[0].clientX - panRef.current.startX);
+      mapRef.current.scrollTop  = panRef.current.scrollY - (e.touches[0].clientY - panRef.current.startY);
+    } else if (e.touches.length === 2 && pinchRef.current.active) {
+      const d = dist2(e.touches);
+      setZoom(z => Math.min(2, Math.max(0.1, z + (d - pinchRef.current.dist) * 0.005)));
+      pinchRef.current.dist = d;
+    }
+  }
+  function onTouchEnd() { panRef.current.active = false; pinchRef.current.active = false; }
+
+  // ── Early returns ─────────────────────────────────────────────
+  if (loading) return (
+    <div style={{ minHeight: '100vh', background: '#080d14', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3a5878', fontFamily: 'monospace' }}>
+      LOADING WAR MAP…
+    </div>
+  );
+
+  if (!isLoggedIn && !server?.public_map) return (
+    <div style={{ minHeight: '100vh', background: '#080d14', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: "'Rajdhani',sans-serif", color: '#d0e4f4', padding: 24, textAlign: 'center' }}>
+      <style>{FONT}</style>
+      <Lock size={48} style={{ opacity: 0.25, marginBottom: 16 }} />
+      <div style={{ fontWeight: 700, fontSize: 22, letterSpacing: '3px', marginBottom: 8 }}>MAP ACCESS RESTRICTED</div>
+      <p style={{ color: '#3a5878', fontSize: 14, maxWidth: 340, lineHeight: 1.7, marginBottom: 24 }}>
+        This server's war map is private. Log in with your alliance credentials to access it.
+      </p>
+      <button onClick={() => navigate(`/server/${serverId}`)} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: '1px solid #1e3550', color: '#7a9bb8', padding: '10px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: '2px', cursor: 'pointer' }}>
+        <ArrowLeft size={14} /> BACK TO SERVER
+      </button>
+    </div>
+  );
+
+  // ── Derived display data ───────────────────────────────────────
+  const allianceById = Object.fromEntries(alliances.map(a => [a.id, a]));
+
+  // In plan mode, tile colour:
+  //   - own plan tile → own alliance colour (solid)
+  //   - admin: other alliance plan tiles → their colour (slightly transparent)
+  //   - live data shown as faint ghost underneath in plan mode
+  function getTileAppearance(tileId) {
+    if (mapMode === 'live') {
+      const terr = liveData[tileId];
+      if (!terr) return { bg: '#1a2535', plans: [] };
+      const owner = allianceById[terr.owner_id];
+      return { bg: owner?.color ?? '#1a2535', liveOwner: owner, plans: [] };
+    } else {
+      // Plan mode
+      const plans = planData[tileId] ?? [];
+      const liveTerr = liveData[tileId];
+      const liveOwner = liveTerr ? allianceById[liveTerr.owner_id] : null;
+
+      if (plans.length === 0) {
+        // No plan — show live as ghost
+        return { bg: liveOwner ? liveOwner.color + '40' : '#1a2535', ghost: true, liveOwner, plans: [] };
+      }
+
+      // My own plan (or first plan visible to admin)
+      const myPlan = plans.find(p => p.alliance_id === myAllianceId) ?? plans[0];
+      const planAlliance = allianceById[myPlan.alliance_id];
+      // If admin and multiple alliances have planned this tile, show stripes conceptually — for now show the first one
+      return { bg: planAlliance?.color ?? '#1a2535', planAlliance, liveOwner, plans, ghost: false };
+    }
   }
 
-  // --- Tile Status Logic ---
-  const getTileStatus = (tileId, tileName) => {
-    const data = ownership[tileId];
-    if (!data || !data.owner_id) return { owned: false };
-    const alliance = alliances.find(a => a.id === data.owner_id);
-    return {
-      owned: true,
-      color: alliance?.color || '#333',
-      allianceName: alliance?.name,
-    };
-  };
+  const ownedCount = Object.keys(liveData).length;
+  const plannedCount = canSeePlan
+    ? (canEditAll
+        ? Object.values(planData).filter(arr => arr.length > 0).length
+        : Object.values(planData).filter(arr => arr.some(p => p.alliance_id === myAllianceId)).length)
+    : 0;
 
-  if (loading) return <div className="h-screen bg-[#0f172a] flex items-center justify-center text-blue-400 font-mono italic">BOOTING WAR ROOM...</div>;
+  const isTargetMode = selectedAlliance && canEdit && (canEditAll || selectedAlliance.id === myAllianceId);
 
   return (
-    <div className="flex h-screen bg-[#0f172a] text-slate-200 overflow-hidden">
-      <Navbar />
+    <div style={{ height: '100vh', background: '#080d14', display: 'flex', flexDirection: 'column', fontFamily: "'Rajdhani',sans-serif", overflow: 'hidden' }}>
+      <style>{FONT}</style>
 
-      {/* Admin Login Modal */}
-      {showAdminLogin && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
-          <div className="bg-slate-800 border border-slate-700 p-6 rounded-2xl w-full max-w-sm">
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Lock size={20}/> Admin Access</h2>
-            <input 
-              type="password" 
-              className="w-full bg-slate-900 border border-slate-600 p-3 rounded-lg mb-4"
-              placeholder="Enter Access Key..."
-              onChange={(e) => setAdminPassword(e.target.value)}
-            />
-            <div className="flex gap-2">
-              <button onClick={handleAdminLogin} className="flex-1 bg-blue-600 p-3 rounded-lg font-bold">Login</button>
-              <button onClick={() => setShowAdminLogin(false)} className="flex-1 bg-slate-700 p-3 rounded-lg">Cancel</button>
+      {/* ── Topbar ───────────────────────────────────────────── */}
+      <div style={{ height: 48, background: 'rgba(8,13,20,0.97)', borderBottom: '1px solid #1e3550', display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px', zIndex: 50, flexShrink: 0 }}>
+        <button onClick={() => navigate(`/server/${serverId}`)} style={S.iconBtn}><ArrowLeft size={15} /></button>
+
+        {/* Mode toggle */}
+        <div style={{ display: 'flex', gap: 4, marginLeft: 4 }}>
+          <button
+            onClick={() => { setMapMode('live'); setSelectedAlliance(null); }}
+            style={{ ...S.modeBtn, ...(mapMode === 'live' ? S.modeBtnActive('#00c8ff') : {}) }}
+            title="Live map — actual territory ownership"
+          >
+            <Map size={12} /> LIVE
+          </button>
+          {canSeePlan && (
+            <button
+              onClick={() => { setMapMode('plan'); setSelectedAlliance(null); }}
+              style={{ ...S.modeBtn, ...(mapMode === 'plan' ? S.modeBtnActive('#f0a500') : {}) }}
+              title="Planning map — your alliance's attack/defence plan"
+            >
+              <Crosshair size={12} /> PLAN
+            </button>
+          )}
+        </div>
+
+        <div style={{ flex: 1, fontWeight: 700, fontSize: 11, letterSpacing: '2px', color: mapMode === 'plan' ? '#f0a500' : '#00c8ff', marginLeft: 4 }}>
+          {mapMode === 'live' ? 'LIVE MAP' : 'PLANNING MAP'}
+          {server && <span style={{ color: '#3a5878', marginLeft: 6 }}>— S{server.server_number}</span>}
+        </div>
+
+        {/* Status badge */}
+        {!isLoggedIn && <Chip color="#ff6080" bg="rgba(255,64,96,0.08)" border="rgba(255,64,96,0.25)"><Lock size={10} /> PUBLIC</Chip>}
+        {isLoggedIn && !canEdit && <Chip color="#3a5878" bg="transparent" border="#1e3550">VIEW ONLY</Chip>}
+        {canEditOwn && !canEditAll && <Chip color="#00e87a" bg="rgba(0,232,122,0.07)" border="rgba(0,232,122,0.25)">EDIT OWN</Chip>}
+        {canEditAll && <Chip color="#f0a500" bg="rgba(240,165,0,0.07)" border="rgba(240,165,0,0.25)">EDIT ALL</Chip>}
+
+        {canEdit && (
+          <button onClick={() => setHideNames(h => !h)} style={{ ...S.iconBtn, color: hideNames ? '#3a5878' : '#00c8ff' }} title="Toggle names">
+            {hideNames ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        )}
+        <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} style={S.iconBtn}><ZoomIn size={14} /></button>
+        <button onClick={() => setZoom(z => Math.max(0.1, z - 0.1))} style={S.iconBtn}><ZoomOut size={14} /></button>
+        <button onClick={() => setSidebarOpen(o => !o)} style={{ ...S.iconBtn, color: sidebarOpen ? '#00c8ff' : '#3a5878' }}>
+          {sidebarOpen ? <X size={14} /> : <Menu size={14} />}
+        </button>
+      </div>
+
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+
+        {/* ── Sidebar ──────────────────────────────────────────── */}
+        <div style={{ width: sidebarOpen ? 240 : 0, minWidth: sidebarOpen ? 240 : 0, background: 'rgba(8,13,20,0.97)', borderRight: '1px solid #1e3550', overflow: 'hidden', transition: 'width 0.2s, min-width 0.2s', display: 'flex', flexDirection: 'column', zIndex: 40 }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 10px' }}>
+
+            {/* Mode description */}
+            <div style={{ fontSize: 11, color: '#3a5878', lineHeight: 1.6, marginBottom: 10, padding: '8px 10px', border: `1px solid ${mapMode === 'plan' ? 'rgba(240,165,0,0.2)' : '#1e3550'}`, background: mapMode === 'plan' ? 'rgba(240,165,0,0.04)' : 'transparent' }}>
+              {mapMode === 'live' && !isLoggedIn && '🔓 Public view. Log in to interact.'}
+              {mapMode === 'live' && isLoggedIn && !canEdit && '👁 Live territory ownership — view only.'}
+              {mapMode === 'live' && canEditOwn && !canEditAll && '✏ Select your alliance, click tiles to claim/release.'}
+              {mapMode === 'live' && canEditAll && '✏ Select any alliance, click to assign any tile.'}
+              {mapMode === 'plan' && !canEdit && '👁 Your alliance\'s plan — view only.'}
+              {mapMode === 'plan' && canEditOwn && !canEditAll && '✏ Mark tiles your alliance plans to target or hold.'}
+              {mapMode === 'plan' && canEditAll && '✏ View and edit all alliances\' plans.'}
+            </div>
+
+            {/* Alliance list */}
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', marginBottom: 8 }}>
+              ALLIANCES — {alliances.length}
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginBottom: 14 }}>
+              {alliances.map(a => {
+                const isSelected = selectedAlliance?.id === a.id;
+                const isOwn      = a.id === myAllianceId;
+                const selectable = canEditAll || (canEditOwn && isOwn);
+                const liveTiles  = Object.values(liveData).filter(t => t.owner_id === a.id).length;
+                const planTiles  = canSeePlan
+                  ? Object.values(planData).filter(arr => arr.some(p => p.alliance_id === a.id)).length
+                  : 0;
+
+                // In plan mode, only show alliances the user can see plans for
+                if (mapMode === 'plan' && !canEditAll && a.id !== myAllianceId) return null;
+
+                return (
+                  <button key={a.id}
+                    onClick={() => selectable ? setSelectedAlliance(isSelected ? null : a) : undefined}
+                    style={{ width: '100%', textAlign: 'left', background: isSelected ? `${a.color}18` : 'transparent', border: `1px solid ${isSelected ? a.color : '#1e3550'}`, padding: '7px 9px', cursor: selectable ? 'pointer' : 'default' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: a.color, flexShrink: 0 }} />
+                      <div style={{ flex: 1, overflow: 'hidden' }}>
+                        <div style={{ fontWeight: 700, fontSize: 12, color: isSelected ? a.color : '#d0e4f4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {hideNames && !canEditAll ? '???' : a.name}
+                          {a.tag && <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 9, color: '#3a5878', marginLeft: 4 }}>{a.tag}</span>}
+                        </div>
+                        <div style={{ fontSize: 9, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace" }}>
+                          {liveTiles} live{canSeePlan ? ` · ${planTiles} planned` : ''}
+                        </div>
+                      </div>
+                      {isOwn && <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '1px', color: '#00c8ff' }}>MINE</span>}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Stats */}
+            <div style={{ padding: '8px 10px', border: '1px solid #1e3550', fontSize: 10, color: '#3a5878', marginBottom: 10 }}>
+              {mapMode === 'live' ? (
+                <>
+                  <div style={{ marginBottom: 4 }}>{ownedCount} / {tilesData.length} tiles claimed</div>
+                  <div style={{ height: 3, background: '#1e3550', borderRadius: 2 }}>
+                    <div style={{ height: '100%', width: `${(ownedCount / tilesData.length) * 100}%`, background: '#00c8ff', borderRadius: 2 }} />
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ marginBottom: 4 }}>{plannedCount} tiles planned</div>
+                  <div style={{ fontSize: 9, color: '#2a4058', marginTop: 2 }}>
+                    LIVE map shows as ghost overlay in planning mode.
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Server time notice */}
+            <div style={{ padding: '8px 10px', border: '1px solid #1e3550', fontSize: 9, color: '#2a4058', lineHeight: 1.7 }}>
+              ⏱ <strong style={{ color: '#3a5878' }}>SERVER TIME</strong><br />
+              Capture windows and protection timers run on server time (UTC). Rules coming soon.
             </div>
           </div>
         </div>
-      )}
 
-      {/* Sidebar */}
-      <aside className={`${isSidebarOpen ? 'w-80' : 'w-0'} bg-[#1e293b] border-r border-slate-700 transition-all duration-300 relative z-50 flex flex-col pt-16`}>
-        <div className="p-6 flex flex-col h-full gap-4 overflow-y-auto">
-          <div className="flex justify-between items-center">
-            <h1 className="font-black text-lg">958 COMMAND</h1>
-            {!isAdmin && (
-              <button onClick={() => setShowAdminLogin(true)} className="p-2 hover:bg-slate-700 rounded-lg text-slate-400">
-                <Settings size={18} />
-              </button>
+        {/* ── Map ──────────────────────────────────────────────── */}
+        <div
+          ref={mapRef}
+          style={{ flex: 1, overflow: 'auto', cursor: 'grab', position: 'relative', touchAction: 'none' }}
+          onMouseDown={onMouseDown}
+          onMouseMove={onMouseMove}
+          onMouseUp={onMouseUp}
+          onMouseLeave={onMouseUp}
+          onTouchStart={onTouchStart}
+          onTouchMove={onTouchMove}
+          onTouchEnd={onTouchEnd}
+        >
+          <div style={{ width: CANVAS_SIZE * zoom, height: CANVAS_SIZE * zoom, position: 'relative' }}>
+            <div style={{ width: CANVAS_SIZE, height: CANVAS_SIZE, position: 'absolute', top: 0, left: 0, transform: `scale(${zoom})`, transformOrigin: 'top left', background: '#0a0f1e' }}>
+              {tilesData.map(tile => {
+                const { bg, liveOwner, planAlliance, ghost, plans } = getTileAppearance(tile.id);
+                const isBusy    = busyTile === tile.id;
+                const hov       = hoveredTile === tile.id;
+                const isOwnLive = liveOwner?.id === myAllianceId;
+                const isOwnPlan = plans.some(p => p.alliance_id === myAllianceId);
+                const isSel     = selectedAlliance && (
+                  mapMode === 'live' ? liveOwner?.id === selectedAlliance.id
+                                     : plans.some(p => p.alliance_id === selectedAlliance.id)
+                );
+
+                // Dashed border for planned tiles that aren't yet claimed in PLAN mode
+                const borderStyle = mapMode === 'plan' && plans.length > 0 && !liveOwner
+                  ? `2px dashed ${planAlliance?.color ?? '#f0a500'}`
+                  : isSel
+                    ? `2px solid ${(liveOwner ?? planAlliance)?.color ?? '#fff'}`
+                    : '1px solid rgba(0,0,0,0.25)';
+
+                return (
+                  <div
+                    key={tile.id}
+                    onMouseEnter={() => setHoveredTile(tile.id)}
+                    onMouseLeave={() => setHoveredTile(null)}
+                    onClick={() => handleTileClick(tile.id)}
+                    style={{
+                      position: 'absolute',
+                      left:   tile.coordinates.x,
+                      top:    tile.coordinates.y,
+                      width:  tile.coordinates.width,
+                      height: tile.coordinates.height,
+                      background: isBusy ? '#ffffff' : bg,
+                      border: borderStyle,
+                      outline: isOwnLive || (mapMode === 'plan' && isOwnPlan) ? '2px solid rgba(0,200,255,0.45)' : 'none',
+                      filter: hov && isTargetMode ? 'brightness(1.5)' : undefined,
+                      cursor: isTargetMode ? 'crosshair' : 'default',
+                      opacity: ghost ? 0.55 : 1,
+                      transition: 'background 0.08s',
+                      boxSizing: 'border-box',
+                      overflow: 'hidden',
+                    }}
+                  >
+                    {zoom > 0.65 && (
+                      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 7, fontWeight: 700, color: 'rgba(255,255,255,0.6)', pointerEvents: 'none', textAlign: 'center', padding: 2, lineHeight: 1.2 }}>
+                        {(() => {
+                          if (hideNames && !canEditAll) return tile.name || tile.id;
+                          if (mapMode === 'plan' && planAlliance) return planAlliance.name;
+                          if (liveOwner && isLoggedIn) return liveOwner.name;
+                          if (liveOwner) return '?';
+                          return tile.name || tile.id;
+                        })()}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Tooltip ──────────────────────────────────────────────── */}
+      {hoveredTile && (() => {
+        const tile     = tilesData.find(t => t.id === hoveredTile);
+        const liveTerr = liveData[hoveredTile];
+        const liveOwner = liveTerr ? allianceById[liveTerr.owner_id] : null;
+        const plans    = planData[hoveredTile] ?? [];
+        if (!tile) return null;
+        return (
+          <div style={{ position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(8,13,20,0.97)', border: '1px solid #1e3550', padding: '5px 14px', fontSize: 11, color: '#d0e4f4', fontFamily: "'Share Tech Mono',monospace", zIndex: 100, display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none', maxWidth: '90vw' }}>
+            <span style={{ color: '#3a5878' }}>{tile.id}</span>
+            {tile.name && <span>{tile.name}</span>}
+            {tile.level && <span style={{ color: '#3a5878' }}>Lv{tile.level}</span>}
+            {tile.buff && <span style={{ color: '#f0a500' }}>+{tile.buff.percentage}% {tile.buff.item}</span>}
+            <span style={{ color: '#1e3550' }}>|</span>
+            {liveOwner
+              ? <><div style={{ width: 7, height: 7, borderRadius: '50%', background: liveOwner.color }} /><span style={{ color: liveOwner.color }}>{isLoggedIn ? liveOwner.name : '???'}</span></>
+              : <span style={{ color: '#3a5878' }}>unclaimed</span>
+            }
+            {mapMode === 'plan' && plans.length > 0 && (
+              <span style={{ color: '#f0a500' }}>· {plans.length} planned</span>
             )}
           </div>
-
-          {/* Admin Alliance Editor */}
-          {isAdmin && editingAlliance && (
-            <form onSubmit={updateAllianceData} className="bg-blue-600/10 border border-blue-500/50 p-4 rounded-xl space-y-3">
-              <h3 className="text-xs font-bold text-blue-400 uppercase">Edit Alliance</h3>
-              <input 
-                className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-sm"
-                value={editingAlliance.name}
-                onChange={e => setEditingAlliance({...editingAlliance, name: e.target.value})}
-              />
-              <div className="flex gap-2">
-                <input 
-                  type="color" className="h-9 w-12 bg-transparent cursor-pointer"
-                  value={editingAlliance.color}
-                  onChange={e => setEditingAlliance({...editingAlliance, color: e.target.value})}
-                />
-                <input 
-                  placeholder="Server #" className="flex-1 bg-slate-900 border border-slate-700 p-2 rounded text-sm"
-                  value={editingAlliance.server || ""}
-                  onChange={e => setEditingAlliance({...editingAlliance, server: e.target.value})}
-                />
-              </div>
-              <select 
-                className="w-full bg-slate-900 border border-slate-700 p-2 rounded text-sm text-white"
-                value={editingAlliance.safe_time}
-                onChange={e => setEditingAlliance({...editingAlliance, safe_time: e.target.value})}
-              >
-                <option value="">Select Safe Time</option>
-                {SAFE_TIME_OPTIONS.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
-              </select>
-              <button type="submit" className="w-full bg-blue-600 text-white text-xs font-bold p-2 rounded">SAVE CHANGES</button>
-            </form>
-          )}
-
-          {/* Alliance List */}
-          <div className="space-y-2">
-             <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Database</label>
-             {alliances.map(a => (
-               <div key={a.id} className="group relative">
-                 <button
-                   onClick={() => setSelectedAlliance(a)}
-                   className={`w-full p-3 rounded-lg flex items-center gap-3 border transition-all ${selectedAlliance?.id === a.id ? 'border-blue-500 bg-blue-500/10' : 'border-slate-700 bg-slate-800/40'}`}
-                 >
-                   <div className="w-3 h-3 rounded-full" style={{ backgroundColor: a.color }} />
-                   <div className="text-left">
-                     <div className="text-sm font-bold truncate">{a.name}</div>
-                     <div className="text-[10px] text-slate-500">S:{a.server || '??'} | Safe: {a.safe_time || 'None'}</div>
-                   </div>
-                 </button>
-                 {isAdmin && (
-                   <button 
-                    onClick={() => setEditingAlliance(a)}
-                    className="absolute right-2 top-3 opacity-0 group-hover:opacity-100 bg-slate-700 p-1.5 rounded"
-                   >
-                     <Settings size={12} />
-                   </button>
-                 )}
-               </div>
-             ))}
-          </div>
-        </div>
-      </aside>
-
-      {/* Map Content */}
-      <main className="flex-1 relative overflow-hidden bg-[#0a0f1e]">
-        {/* Controls Overlay */}
-        <div className="absolute top-20 right-6 z-30 flex flex-col gap-2">
-          <button onClick={() => setZoom(prev => Math.min(prev + 0.1, 2))} className="bg-slate-800 p-3 rounded-xl border border-slate-700 hover:bg-slate-700 shadow-xl">
-            <ZoomIn size={20} />
-          </button>
-          <button onClick={() => setZoom(prev => Math.max(prev - 0.1, 0.1))} className="bg-slate-800 p-3 rounded-xl border border-slate-700 hover:bg-slate-700 shadow-xl">
-            <ZoomOut size={20} />
-          </button>
-          <button onClick={() => setSidebarOpen(!isSidebarOpen)} className="bg-blue-600 p-3 rounded-xl shadow-xl">
-            {isSidebarOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
-        </div>
-
-        {/* Scalable Map Area */}
-        <div 
-          className="w-full h-full flex items-center justify-center transition-transform duration-200"
-          style={{ cursor: 'grab' }}
-        >
-          <div 
-            style={{ 
-              transform: `scale(${zoom})`,
-              width: CANVAS_SIZE, 
-              height: CANVAS_SIZE,
-              position: 'relative',
-              transformOrigin: 'center center'
-            }}
-            className="bg-slate-900 shadow-[0_0_100px_rgba(0,0,0,0.5)] transition-all ease-out"
-          >
-            {tilesData.map(tile => {
-              const status = getTileStatus(tile.id, tile.name);
-              return (
-                <div
-                  key={tile.id}
-                  onClick={async () => {
-                    if (isAdmin && selectedAlliance) {
-                      await supabase.from('territories').upsert({
-                        id: tile.id,
-                        owner_id: selectedAlliance.id,
-                        last_capture_at: new Date().toISOString()
-                      });
-                    }
-                  }}
-                  className="absolute border border-black/20 hover:brightness-125 transition-all"
-                  style={{
-                    left: tile.coordinates.x,
-                    top: tile.coordinates.y,
-                    width: tile.coordinates.width,
-                    height: tile.coordinates.height,
-                    backgroundColor: status.owned ? status.color : '#2d3748',
-                  }}
-                >
-                  <span className="absolute inset-0 flex items-center justify-center text-[10px] font-bold opacity-10 pointer-events-none">
-                    {tile.id}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </main>
+        );
+      })()}
     </div>
   );
 }
+
+function Chip({ color, bg, border, children }) {
+  return (
+    <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: bg, border: `1px solid ${border}`, color, padding: '3px 8px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', flexShrink: 0 }}>
+      {children}
+    </div>
+  );
+}
+
+const FONT = `@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');`;
+
+const S = {
+  iconBtn: { background: 'none', border: '1px solid #1e3550', color: '#7a9bb8', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 },
+  modeBtn: { display: 'flex', alignItems: 'center', gap: 5, background: 'transparent', border: '1px solid #1e3550', color: '#3a5878', padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' },
+  modeBtnActive: (color) => ({ border: `1px solid ${color}40`, color, background: `${color}10` }),
+};
