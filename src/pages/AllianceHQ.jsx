@@ -1200,6 +1200,15 @@ export default function AllianceHQ() {
           {isOwner          && <span className="ahq-role-badge role-owner">👑 OWNER</span>}
           {!isAdmin && !isOwner && allianceRole === 'alliance_admin' && <span className="ahq-role-badge role-alladmin">🛡 ALLIANCE ADMIN</span>}
           {!isAdmin && !isOwner && allianceRole === 'member'         && <span className="ahq-role-badge role-member">👤 {activeSession.username}</span>}
+          {(isOwner || allianceRole === 'alliance_admin') && (
+            <button
+              className="btn-secondary-sm"
+              onClick={() => navigate(`/server/${serverId}/train`)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5 }}
+            >
+              🚂 TRAIN
+            </button>
+          )}
         </div>
       </div>
 

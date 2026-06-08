@@ -5,6 +5,8 @@
 -- ============================================================
 
 -- ── Clean slate ──────────────────────────────────────────────
+DROP TABLE IF EXISTS train_slots                 CASCADE;
+DROP TABLE IF EXISTS train_schedules             CASCADE;
 DROP TABLE IF EXISTS alliance_handshake_settings CASCADE;
 DROP TABLE IF EXISTS alliance_plans              CASCADE;
 DROP TABLE IF EXISTS season_map_servers          CASCADE;
@@ -176,12 +178,38 @@ CREATE TABLE alliance_handshake_settings (
   UNIQUE(handshake_id, alliance_id)
 );
 
+-- ── train_schedules ──────────────────────────────────────────
+-- One active schedule per alliance; mode_config stores mode-specific
+-- configuration as JSON (fixed driver id, pairs, queue order, etc.)
+CREATE TABLE train_schedules (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alliance_id  UUID NOT NULL REFERENCES alliances(id) ON DELETE CASCADE,
+  week_label   TEXT NOT NULL DEFAULT 'Current Week',
+  mode         TEXT NOT NULL DEFAULT 'manual',  -- manual|fixed_driver|paired|round_robin|priority
+  mode_config  JSONB DEFAULT '{}',
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(alliance_id)
+);
+
+-- ── train_slots ───────────────────────────────────────────────
+CREATE TABLE train_slots (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  schedule_id  UUID NOT NULL REFERENCES train_schedules(id) ON DELETE CASCADE,
+  day_of_week  INTEGER NOT NULL CHECK (day_of_week BETWEEN 0 AND 6),  -- 0=Mon
+  role         TEXT NOT NULL CHECK (role IN ('driver', 'vip')),
+  member_id    UUID REFERENCES members(id) ON DELETE SET NULL,
+  locked       BOOLEAN NOT NULL DEFAULT FALSE,
+  UNIQUE(schedule_id, day_of_week, role)
+);
+
 -- ============================================================
 -- Realtime subscriptions
 -- ============================================================
 ALTER PUBLICATION supabase_realtime ADD TABLE servers;
 ALTER PUBLICATION supabase_realtime ADD TABLE alliances;
 ALTER PUBLICATION supabase_realtime ADD TABLE members;
+ALTER PUBLICATION supabase_realtime ADD TABLE train_schedules;
+ALTER PUBLICATION supabase_realtime ADD TABLE train_slots;
 ALTER PUBLICATION supabase_realtime ADD TABLE territories;
 ALTER PUBLICATION supabase_realtime ADD TABLE alliance_plans;
 ALTER PUBLICATION supabase_realtime ADD TABLE season_map_servers;
@@ -203,6 +231,8 @@ ALTER TABLE season_map_servers          ENABLE ROW LEVEL SECURITY;
 ALTER TABLE server_requests             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE server_handshakes           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE alliance_handshake_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE train_schedules             ENABLE ROW LEVEL SECURITY;
+ALTER TABLE train_slots                 ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "servers_select"   ON servers   FOR SELECT USING (true);
 CREATE POLICY "servers_insert"   ON servers   FOR INSERT WITH CHECK (true);
@@ -248,3 +278,13 @@ CREATE POLICY "ahs_select" ON alliance_handshake_settings FOR SELECT USING (true
 CREATE POLICY "ahs_insert" ON alliance_handshake_settings FOR INSERT WITH CHECK (true);
 CREATE POLICY "ahs_update" ON alliance_handshake_settings FOR UPDATE USING (true);
 CREATE POLICY "ahs_delete" ON alliance_handshake_settings FOR DELETE USING (true);
+
+CREATE POLICY "train_sched_select" ON train_schedules FOR SELECT USING (true);
+CREATE POLICY "train_sched_insert" ON train_schedules FOR INSERT WITH CHECK (true);
+CREATE POLICY "train_sched_update" ON train_schedules FOR UPDATE USING (true);
+CREATE POLICY "train_sched_delete" ON train_schedules FOR DELETE USING (true);
+
+CREATE POLICY "train_slots_select" ON train_slots FOR SELECT USING (true);
+CREATE POLICY "train_slots_insert" ON train_slots FOR INSERT WITH CHECK (true);
+CREATE POLICY "train_slots_update" ON train_slots FOR UPDATE USING (true);
+CREATE POLICY "train_slots_delete" ON train_slots FOR DELETE USING (true);
