@@ -285,7 +285,7 @@ function MemberForm({ initialData, onSave, onCancel, saving }) {
 
 function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
   const TABS = isOwner
-    ? ['ROSTER', 'ADMINS', 'SETTINGS']
+    ? ['ROSTER', 'ADMINS', 'PARTNERS', 'SETTINGS']
     : ['ROSTER', 'INVITE'];
   const [tab, setTab] = useState('ROSTER');
   const [editingMember, setEditingMember] = useState(null);
@@ -309,6 +309,9 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
   const [hsServers,     setHsServers]     = useState({});   // server_id → { server_number, name }
   const [hsLoaded,      setHsLoaded]      = useState(false);
   const [hsToggleBusy,  setHsToggleBusy]  = useState(null);
+  // Partner roster: [{server, alliances: [{...alliance, members:[]}]}]
+  const [partnerRosters, setPartnerRosters] = useState([]);
+  const [partnerLoaded,  setPartnerLoaded]  = useState(false);
 
   useEffect(() => {
     if (!isOwner || !alliance) return;
@@ -347,6 +350,58 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
         }
       }
       setHsLoaded(true);
+
+      // Load partner rosters for handshakes where partner has share_roster=true
+      // and our server allows share_roster on that handshake
+      const rosterHs = rows.filter(h => h.share_roster);
+      if (rosterHs.length > 0) {
+        const rosterList = [];
+        for (const hs of rosterHs) {
+          const partnerId = hs.initiator_server_id === alliance.server_id ? hs.target_server_id : hs.initiator_server_id;
+          if (!partnerId) continue;
+
+          // Check which partner alliances have opted in to share_roster for this handshake
+          const { data: pAls } = await supabase
+            .from('alliances').select('id, name, tag, color').eq('server_id', partnerId).order('name');
+          if (!pAls?.length) continue;
+
+          const pAlIds = pAls.map(a => a.id);
+          const { data: pHsSettings } = await supabase
+            .from('alliance_handshake_settings')
+            .select('alliance_id, share_roster, share_player_info')
+            .eq('handshake_id', hs.id)
+            .in('alliance_id', pAlIds);
+
+          const pSettingsMap = {};
+          (pHsSettings ?? []).forEach(s => { pSettingsMap[s.alliance_id] = s; });
+
+          // Only include alliances that opted in
+          const sharedAlIds = pAlIds.filter(id => pSettingsMap[id]?.share_roster !== false);
+          if (!sharedAlIds.length) continue;
+
+          // Load member names (and optionally stats if share_player_info=true)
+          const membersByAlliance = {};
+          for (const alId of sharedAlIds) {
+            const showStats = hs.share_player_info && pSettingsMap[alId]?.share_player_info === true;
+            const fields = showStats
+              ? 'id, username, in_game_name, power1, troop1, profession, canyon_team, desert_team'
+              : 'id, username, in_game_name';
+            const { data: mems } = await supabase
+              .from('members').select(fields).eq('alliance_id', alId).order('username');
+            membersByAlliance[alId] = { members: mems ?? [], showStats };
+          }
+
+          const pSrv = srvLookup[partnerId] ?? { server_number: '?', name: 'Partner' };
+          rosterList.push({
+            server: pSrv,
+            alliances: pAls
+              .filter(a => sharedAlIds.includes(a.id))
+              .map(a => ({ ...a, ...membersByAlliance[a.id] })),
+          });
+        }
+        setPartnerRosters(rosterList);
+      }
+      setPartnerLoaded(true);
     }
     loadHandshakes();
   }, [isOwner, alliance]);
@@ -604,6 +659,61 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* PARTNERS TAB (owner only) */}
+        {tab === 'PARTNERS' && (
+          <div>
+            <p style={{ fontSize: 12, color: '#3a5878', marginBottom: 16, lineHeight: 1.6 }}>
+              Partner alliances that have opted in to share their roster with your server. Sharing is controlled by each alliance in their own Alliance HQ settings.
+            </p>
+            {!partnerLoaded && <p style={{ fontSize: 12, color: '#3a5878' }}>Loading…</p>}
+            {partnerLoaded && partnerRosters.length === 0 && (
+              <div className="ahq-empty">
+                No partner rosters available. Either no handshakes are active, or partner alliances haven't enabled roster sharing yet.
+              </div>
+            )}
+            {partnerLoaded && partnerRosters.map(pr => (
+              <div key={pr.server.id} style={{ marginBottom: 24 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#00c8ff', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid rgba(0,200,255,0.15)' }}>
+                  S{pr.server.server_number} — {pr.server.name}
+                </div>
+                {pr.alliances.map(al => (
+                  <div key={al.id} style={{ marginBottom: 14, border: '1px solid #1e3550', background: 'rgba(0,0,0,0.2)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderBottom: '1px solid #1e3550' }}>
+                      <div style={{ width: 9, height: 9, borderRadius: '50%', background: al.color, flexShrink: 0 }} />
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#d0e4f4' }}>
+                        {al.name}
+                        {al.tag && <span style={{ fontSize: 10, color: '#3a5878', marginLeft: 6, fontFamily: "'Share Tech Mono',monospace" }}>{al.tag}</span>}
+                      </div>
+                      <div style={{ fontSize: 10, color: '#3a5878', marginLeft: 'auto', fontFamily: "'Share Tech Mono',monospace" }}>
+                        {al.members.length} members
+                      </div>
+                    </div>
+                    {al.members.length === 0 && (
+                      <div style={{ padding: '10px 12px', fontSize: 12, color: '#3a5878' }}>No members listed.</div>
+                    )}
+                    {al.members.map(m => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '6px 12px', borderBottom: '1px solid rgba(30,53,80,0.5)' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: '#d0e4f4' }}>{m.in_game_name || m.username}</div>
+                          {m.in_game_name && <div style={{ fontSize: 10, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace" }}>@{m.username}</div>}
+                        </div>
+                        {al.showStats && (
+                          <div style={{ display: 'flex', gap: 8, fontSize: 10, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace", flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                            {m.power1 && <span style={{ color: '#7a9bb8' }}>{m.power1}B</span>}
+                            {m.troop1 && <span>{m.troop1}</span>}
+                            {m.profession && <span style={{ color: '#f0a500' }}>{m.profession}</span>}
+                            {m.canyon_team && <span>Canyon {m.canyon_team}</span>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
         )}
 
