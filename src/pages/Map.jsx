@@ -45,6 +45,12 @@ export default function MapPage() {
   const [liveData,  setLiveData]  = useState({});
   // plan layer: tileId → { id (uuid), alliance_id, tile_id, notes }
   const [planData,  setPlanData]  = useState({});
+  // partner data from handshakes: [{serverNumber, name, alliances}]
+  const [partnerServers,  setPartnerServers]  = useState([]);
+  // partnerLiveData: tileId → { owner_id, serverNumber, alliance }
+  const [partnerLiveData, setPartnerLiveData] = useState({});
+  // partnerPlanData: tileId → [{ alliance_id, serverNumber, alliance }]
+  const [partnerPlanData, setPartnerPlanData] = useState({});
   const [loading,   setLoading]   = useState(true);
 
   const [sidebarOpen,      setSidebarOpen]      = useState(window.innerWidth > 900);
@@ -95,15 +101,98 @@ export default function MapPage() {
       terrRows.forEach(t => { liveLookup[t.id] = t; });
       setLiveData(liveLookup);
 
-      // Plan lookup: tileId → plan row (most recent per tile, scoped by visibility)
-      // For admin: tileId → array grouped by alliance_id shown as overlay
-      // For members: tileId → single row (their own)
       const planLookup = {};
       planRows.forEach(p => {
         if (!planLookup[p.tile_id]) planLookup[p.tile_id] = [];
         planLookup[p.tile_id].push(p);
       });
       setPlanData(planLookup);
+
+      // ── Partner server data via handshakes ────────────────────
+      // Only load if logged in (partner data is not public)
+      if (isLoggedIn && srv) {
+        const { data: handshakes } = await supabase
+          .from('server_handshakes')
+          .select('*')
+          .or(`initiator_server_id.eq.${serverId},target_server_id.eq.${serverId}`)
+          .eq('status', 'accepted');
+
+        const acceptedHs = handshakes ?? [];
+        const pServerMap = {}; // partnerId → { serverNumber, name, alliances, liveSharedIds, planSharedIds }
+
+        for (const hs of acceptedHs) {
+          if (!hs.share_map && !hs.share_roster) continue;
+          const partnerId = hs.initiator_server_id === serverId ? hs.target_server_id : hs.initiator_server_id;
+          if (!partnerId) continue;
+
+          // Load partner server info + alliances
+          const [{ data: pSrv }, { data: pAls }] = await Promise.all([
+            supabase.from('servers').select('id, server_number, name').eq('id', partnerId).single(),
+            supabase.from('alliances').select('id, name, tag, color').eq('server_id', partnerId).order('name'),
+          ]);
+          if (!pSrv) continue;
+
+          const partnerAllianceIds = (pAls ?? []).map(a => a.id);
+
+          // Load partner's alliance_handshake_settings for THIS handshake
+          const { data: hsSettings } = await supabase
+            .from('alliance_handshake_settings')
+            .select('alliance_id, share_live_map, share_plan_map')
+            .eq('handshake_id', hs.id)
+            .in('alliance_id', partnerAllianceIds.length > 0 ? partnerAllianceIds : ['none']);
+
+          const settingsMap = {};
+          (hsSettings ?? []).forEach(s => { settingsMap[s.alliance_id] = s; });
+
+          // Alliances that opted in to share live map (server cap must also allow share_map)
+          const liveShareIds = hs.share_map
+            ? partnerAllianceIds.filter(id => settingsMap[id]?.share_live_map !== false)
+            : [];
+
+          // Alliances that opted in to share plan map
+          const planShareIds = hs.share_map
+            ? partnerAllianceIds.filter(id => settingsMap[id]?.share_plan_map === true)
+            : [];
+
+          if (!pServerMap[partnerId]) {
+            pServerMap[partnerId] = { ...pSrv, alliances: pAls ?? [], liveShareIds, planShareIds };
+          } else {
+            // merge if multiple handshakes with same server (edge case)
+            pServerMap[partnerId].liveShareIds = [...new Set([...pServerMap[partnerId].liveShareIds, ...liveShareIds])];
+            pServerMap[partnerId].planShareIds = [...new Set([...pServerMap[partnerId].planShareIds, ...planShareIds])];
+          }
+        }
+
+        // Load partner territories
+        const newPartnerLive = {};
+        const newPartnerPlan = {};
+        const partnerServersList = Object.values(pServerMap);
+
+        for (const ps of partnerServersList) {
+          const alByIdP = Object.fromEntries(ps.alliances.map(a => [a.id, a]));
+
+          if (ps.liveShareIds.length > 0) {
+            const { data: pTerr } = await supabase
+              .from('territories').select('*').in('owner_id', ps.liveShareIds);
+            (pTerr ?? []).forEach(t => {
+              newPartnerLive[t.id] = { ...t, serverNumber: ps.server_number, alliance: alByIdP[t.owner_id] };
+            });
+          }
+
+          if (ps.planShareIds.length > 0) {
+            const { data: pPlans } = await supabase
+              .from('alliance_plans').select('*').in('alliance_id', ps.planShareIds);
+            (pPlans ?? []).forEach(p => {
+              if (!newPartnerPlan[p.tile_id]) newPartnerPlan[p.tile_id] = [];
+              newPartnerPlan[p.tile_id].push({ ...p, serverNumber: ps.server_number, alliance: alByIdP[p.alliance_id] });
+            });
+          }
+        }
+
+        setPartnerServers(partnerServersList);
+        setPartnerLiveData(newPartnerLive);
+        setPartnerPlanData(newPartnerPlan);
+      }
 
       setLoading(false);
     }
@@ -255,27 +344,33 @@ export default function MapPage() {
   //   - admin: other alliance plan tiles → their colour (slightly transparent)
   //   - live data shown as faint ghost underneath in plan mode
   function getTileAppearance(tileId) {
+    const partnerLive = partnerLiveData[tileId];
+    const partnerPlans = partnerPlanData[tileId] ?? [];
+
     if (mapMode === 'live') {
       const terr = liveData[tileId];
-      if (!terr) return { bg: '#1a2535', plans: [] };
+      if (!terr) {
+        // Show partner territory as semi-transparent if no own territory
+        if (partnerLive) return { bg: (partnerLive.alliance?.color ?? '#888') + '60', liveOwner: null, partnerLive, plans: [] };
+        return { bg: '#1a2535', plans: [] };
+      }
       const owner = allianceById[terr.owner_id];
-      return { bg: owner?.color ?? '#1a2535', liveOwner: owner, plans: [] };
+      return { bg: owner?.color ?? '#1a2535', liveOwner: owner, partnerLive: partnerLive ?? null, plans: [] };
     } else {
-      // Plan mode
       const plans = planData[tileId] ?? [];
       const liveTerr = liveData[tileId];
       const liveOwner = liveTerr ? allianceById[liveTerr.owner_id] : null;
 
       if (plans.length === 0) {
-        // No plan — show live as ghost
+        // Check partner plans
+        const pp = partnerPlans[0];
+        if (pp) return { bg: (pp.alliance?.color ?? '#888') + '50', ghost: true, liveOwner, plans: [], partnerPlans };
         return { bg: liveOwner ? liveOwner.color + '40' : '#1a2535', ghost: true, liveOwner, plans: [] };
       }
 
-      // My own plan (or first plan visible to admin)
       const myPlan = plans.find(p => p.alliance_id === myAllianceId) ?? plans[0];
       const planAlliance = allianceById[myPlan.alliance_id];
-      // If admin and multiple alliances have planned this tile, show stripes conceptually — for now show the first one
-      return { bg: planAlliance?.color ?? '#1a2535', planAlliance, liveOwner, plans, ghost: false };
+      return { bg: planAlliance?.color ?? '#1a2535', planAlliance, liveOwner, plans, partnerPlans, ghost: false };
     }
   }
 
@@ -396,6 +491,36 @@ export default function MapPage() {
               })}
             </div>
 
+            {/* Partner servers */}
+            {partnerServers.length > 0 && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', marginBottom: 8 }}>
+                  PARTNER SERVERS — {partnerServers.length}
+                </div>
+                {partnerServers.map(ps => {
+                  const psLiveTiles = Object.values(partnerLiveData).filter(t => t.serverNumber === ps.server_number).length;
+                  const psPlanTiles = Object.values(partnerPlanData).filter(arr => arr.some(p => p.serverNumber === ps.server_number)).length;
+                  const sharesLive = ps.liveShareIds.length > 0;
+                  const sharesPlan = ps.planShareIds.length > 0;
+                  return (
+                    <div key={ps.id} style={{ border: '1px solid #1e3550', padding: '7px 9px', marginBottom: 3, background: 'rgba(0,200,255,0.03)' }}>
+                      <div style={{ fontWeight: 700, fontSize: 12, color: '#7a9bb8', marginBottom: 2 }}>
+                        S{ps.server_number} · {ps.name}
+                      </div>
+                      <div style={{ fontSize: 9, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace" }}>
+                        {sharesLive ? `${psLiveTiles} live tiles` : 'no live map'}
+                        {sharesPlan ? ` · ${psPlanTiles} plans` : ''}
+                      </div>
+                      <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                        {sharesLive && <span style={{ fontSize: 8, color: '#00c8ff', border: '1px solid rgba(0,200,255,0.2)', padding: '1px 5px' }}>LIVE</span>}
+                        {sharesPlan && <span style={{ fontSize: 8, color: '#f0a500', border: '1px solid rgba(240,165,0,0.2)', padding: '1px 5px' }}>PLAN</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
             {/* Stats */}
             <div style={{ padding: '8px 10px', border: '1px solid #1e3550', fontSize: 10, color: '#3a5878', marginBottom: 10 }}>
               {mapMode === 'live' ? (
@@ -438,7 +563,7 @@ export default function MapPage() {
           <div style={{ width: CANVAS_SIZE * zoom, height: CANVAS_SIZE * zoom, position: 'relative' }}>
             <div style={{ width: CANVAS_SIZE, height: CANVAS_SIZE, position: 'absolute', top: 0, left: 0, transform: `scale(${zoom})`, transformOrigin: 'top left', background: '#0a0f1e' }}>
               {tilesData.map(tile => {
-                const { bg, liveOwner, planAlliance, ghost, plans } = getTileAppearance(tile.id);
+                const { bg, liveOwner, planAlliance, ghost, plans, partnerLive, partnerPlans } = getTileAppearance(tile.id);
                 const isBusy    = busyTile === tile.id;
                 const hov       = hoveredTile === tile.id;
                 const isOwnLive = liveOwner?.id === myAllianceId;
@@ -454,6 +579,8 @@ export default function MapPage() {
                   : isSel
                     ? `2px solid ${(liveOwner ?? planAlliance)?.color ?? '#fff'}`
                     : '1px solid rgba(0,0,0,0.25)';
+
+                const hasPartner = mapMode === 'live' ? !!partnerLive : (partnerPlans?.length > 0);
 
                 return (
                   <div
@@ -485,8 +612,15 @@ export default function MapPage() {
                           if (mapMode === 'plan' && planAlliance) return planAlliance.name;
                           if (liveOwner && isLoggedIn) return liveOwner.name;
                           if (liveOwner) return '?';
+                          if (mapMode === 'live' && partnerLive?.alliance) return `S${partnerLive.serverNumber}`;
                           return tile.name || tile.id;
                         })()}
+                      </span>
+                    )}
+                    {/* Partner server corner badge */}
+                    {hasPartner && zoom > 0.5 && (
+                      <span style={{ position: 'absolute', top: 1, right: 1, fontSize: 5, fontWeight: 700, color: 'rgba(255,255,255,0.55)', background: 'rgba(0,0,0,0.45)', padding: '0 2px', pointerEvents: 'none', lineHeight: 1.5 }}>
+                        S{mapMode === 'live' ? partnerLive?.serverNumber : partnerPlans?.[0]?.serverNumber}
                       </span>
                     )}
                   </div>
@@ -499,10 +633,12 @@ export default function MapPage() {
 
       {/* ── Tooltip ──────────────────────────────────────────────── */}
       {hoveredTile && (() => {
-        const tile     = tilesData.find(t => t.id === hoveredTile);
-        const liveTerr = liveData[hoveredTile];
+        const tile      = tilesData.find(t => t.id === hoveredTile);
+        const liveTerr  = liveData[hoveredTile];
         const liveOwner = liveTerr ? allianceById[liveTerr.owner_id] : null;
-        const plans    = planData[hoveredTile] ?? [];
+        const plans     = planData[hoveredTile] ?? [];
+        const pLive     = partnerLiveData[hoveredTile];
+        const pPlans    = partnerPlanData[hoveredTile] ?? [];
         if (!tile) return null;
         return (
           <div style={{ position: 'fixed', bottom: 14, left: '50%', transform: 'translateX(-50%)', background: 'rgba(8,13,20,0.97)', border: '1px solid #1e3550', padding: '5px 14px', fontSize: 11, color: '#d0e4f4', fontFamily: "'Share Tech Mono',monospace", zIndex: 100, display: 'flex', alignItems: 'center', gap: 8, pointerEvents: 'none', maxWidth: '90vw' }}>
@@ -515,8 +651,14 @@ export default function MapPage() {
               ? <><div style={{ width: 7, height: 7, borderRadius: '50%', background: liveOwner.color }} /><span style={{ color: liveOwner.color }}>{isLoggedIn ? liveOwner.name : '???'}</span></>
               : <span style={{ color: '#3a5878' }}>unclaimed</span>
             }
+            {pLive?.alliance && (
+              <span style={{ color: '#7a9bb8' }}>· S{pLive.serverNumber}: <span style={{ color: pLive.alliance.color }}>{pLive.alliance.name}</span></span>
+            )}
             {mapMode === 'plan' && plans.length > 0 && (
               <span style={{ color: '#f0a500' }}>· {plans.length} planned</span>
+            )}
+            {mapMode === 'plan' && pPlans.length > 0 && (
+              <span style={{ color: '#7a9bb8' }}>· {pPlans.length} partner plans</span>
             )}
           </div>
         );
