@@ -21,12 +21,19 @@ export function generateInviteCode() {
 // ── Session ───────────────────────────────────────────────────
 // Shape:
 // {
-//   serverId:   string,
-//   serverName: string,
-//   role:       'admin' | 'owner' | 'member',
-//   allianceId: string | null,   // owner or member
-//   memberId:   string | null,   // member only
-//   username:   string | null,   // member only
+//   serverId:     string,          // server UUID
+//   serverName:   string,
+//   role:         'admin'          // logged in with server admin password
+//               | 'helper'         // member promoted to server helper
+//               | 'owner'          // logged in with alliance owner password
+//               | 'member',        // logged in as a regular member
+//   allianceId:   string | null,   // set for owner / member / helper
+//   allianceName: string | null,   // set for owner / member / helper
+//   memberId:     string | null,   // set for member / helper
+//   username:     string | null,   // set for member / helper
+//   allianceRole: 'alliance_admin' // member promoted to alliance admin (up to 10)
+//               | 'member'         // regular alliance member
+//               | null,            // not a member (admin / owner)
 // }
 
 export function getSession() {
