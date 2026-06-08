@@ -398,6 +398,22 @@ function ServerTab({ server, setServer, serverId }) {
   const [seasonBusy, setSeasonBusy] = useState(false);
   const [seasonMsg,  setSeasonMsg]  = useState('');
 
+  // Public map toggle
+  const [publicMap,     setPublicMap]     = useState(server.public_map ?? false);
+  const [publicMapBusy, setPublicMapBusy] = useState(false);
+  const [publicMapMsg,  setPublicMapMsg]  = useState('');
+
+  async function handlePublicMapToggle(val) {
+    setPublicMapBusy(true); setPublicMapMsg('');
+    const { error: err } = await supabase.from('servers').update({ public_map: val }).eq('id', serverId);
+    setPublicMapBusy(false);
+    if (err) { setPublicMapMsg('Error: ' + err.message); return; }
+    setPublicMap(val);
+    setServer(s => ({ ...s, public_map: val }));
+    setPublicMapMsg(val ? 'Map is now publicly visible.' : 'Map is now private.');
+    setTimeout(() => setPublicMapMsg(''), 3000);
+  }
+
   async function handleSeasonSave() {
     setSeasonBusy(true); setSeasonMsg('');
     const { error: err } = await supabase.from('servers').update({ current_season: season }).eq('id', serverId);
@@ -496,6 +512,42 @@ function ServerTab({ server, setServer, serverId }) {
         {seasonMsg && (
           <p style={{ color: '#00e87a', fontSize: 12, marginTop: 10, marginBottom: 0 }}>{seasonMsg}</p>
         )}
+      </div>
+
+      {/* Public map visibility */}
+      <div style={S.settingsCard}>
+        <div style={S.settingsLabel}>WAR MAP VISIBILITY</div>
+        <div style={S.settingsSub}>
+          Controls whether the war map is visible to non-logged-in visitors.
+          When private, only members logged in to this server can view the map.
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <button
+            onClick={() => handlePublicMapToggle(false)}
+            disabled={publicMapBusy}
+            style={{
+              padding: '9px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: publicMapBusy ? 'default' : 'pointer',
+              background: !publicMap ? 'rgba(255,64,96,0.12)' : 'transparent',
+              border: `1px solid ${!publicMap ? 'rgba(255,64,96,0.5)' : '#1e3550'}`,
+              color: !publicMap ? '#ff6080' : '#3a5878',
+            }}
+          >
+            🔒 PRIVATE
+          </button>
+          <button
+            onClick={() => handlePublicMapToggle(true)}
+            disabled={publicMapBusy}
+            style={{
+              padding: '9px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: publicMapBusy ? 'default' : 'pointer',
+              background: publicMap ? 'rgba(0,200,255,0.08)' : 'transparent',
+              border: `1px solid ${publicMap ? 'rgba(0,200,255,0.4)' : '#1e3550'}`,
+              color: publicMap ? '#00c8ff' : '#3a5878',
+            }}
+          >
+            🌐 PUBLIC
+          </button>
+          {publicMapMsg && <span style={{ fontSize: 12, color: '#00e87a' }}>{publicMapMsg}</span>}
+        </div>
       </div>
 
     </div>
