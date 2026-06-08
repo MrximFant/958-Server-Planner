@@ -303,6 +303,75 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
   const [showPower, setShowPower] = useState(alliance?.roster_show_power ?? true);
   const [visibilityBusy, setVisibilityBusy] = useState(false);
 
+  // Handshake sharing settings (owner only)
+  const [handshakes,    setHandshakes]    = useState([]);   // active server handshakes
+  const [hsSettings,    setHsSettings]    = useState({});   // handshake_id → ahs row
+  const [hsServers,     setHsServers]     = useState({});   // server_id → { server_number, name }
+  const [hsLoaded,      setHsLoaded]      = useState(false);
+  const [hsToggleBusy,  setHsToggleBusy]  = useState(null);
+
+  useEffect(() => {
+    if (!isOwner || !alliance) return;
+    async function loadHandshakes() {
+      const { data: hs } = await supabase
+        .from('server_handshakes')
+        .select('*')
+        .or(`initiator_server_id.eq.${alliance.server_id},target_server_id.eq.${alliance.server_id}`)
+        .eq('status', 'accepted');
+
+      const rows = hs ?? [];
+      setHandshakes(rows);
+
+      // Load per-alliance sharing settings
+      if (rows.length > 0) {
+        const { data: settings } = await supabase
+          .from('alliance_handshake_settings')
+          .select('*')
+          .eq('alliance_id', alliance.id)
+          .in('handshake_id', rows.map(h => h.id));
+
+        const lookup = {};
+        (settings ?? []).forEach(s => { lookup[s.handshake_id] = s; });
+        setHsSettings(lookup);
+
+        // Load partner server names
+        const partnerIds = [...new Set(rows.map(h =>
+          h.initiator_server_id === alliance.server_id ? h.target_server_id : h.initiator_server_id
+        ).filter(Boolean))];
+        if (partnerIds.length > 0) {
+          const { data: srvs } = await supabase
+            .from('servers').select('id, server_number, name').in('id', partnerIds);
+          const srvLookup = {};
+          (srvs ?? []).forEach(s => { srvLookup[s.id] = s; });
+          setHsServers(srvLookup);
+        }
+      }
+      setHsLoaded(true);
+    }
+    loadHandshakes();
+  }, [isOwner, alliance]);
+
+  async function handleHsToggle(hs, field) {
+    const current = hsSettings[hs.id];
+    const newVal  = !(current?.[field] ?? (field === 'share_live_map'));
+    setHsToggleBusy(hs.id + field);
+
+    if (current) {
+      const { data } = await supabase
+        .from('alliance_handshake_settings')
+        .update({ [field]: newVal, updated_at: new Date().toISOString() })
+        .eq('id', current.id).select().single();
+      if (data) setHsSettings(prev => ({ ...prev, [hs.id]: data }));
+    } else {
+      const { data } = await supabase
+        .from('alliance_handshake_settings')
+        .insert({ handshake_id: hs.id, alliance_id: alliance.id, [field]: newVal })
+        .select().single();
+      if (data) setHsSettings(prev => ({ ...prev, [hs.id]: data }));
+    }
+    setHsToggleBusy(null);
+  }
+
   async function handleEditSave(dbData) {
     setSaving(true);
     const { error } = await supabase.from('members').update(dbData).eq('id', editingMember.id);
@@ -589,6 +658,76 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
                   {pwdBusy ? 'SAVING…' : 'UPDATE PASSWORD →'}
                 </button>
               </form>
+            </div>
+
+            {/* Handshake sharing */}
+            <div className="settings-card">
+              <div className="settings-label">SERVER CONNECTIONS — SHARING</div>
+              <p style={{ fontSize: 12, color: '#3a5878', marginBottom: 14, lineHeight: 1.6 }}>
+                Control what your alliance shares with each connected server. Your server admin must have an active handshake with that server first.
+                You can only share within the limits set by your server admin.
+              </p>
+
+              {!hsLoaded && <p style={{ fontSize: 12, color: '#3a5878' }}>Loading…</p>}
+
+              {hsLoaded && handshakes.length === 0 && (
+                <p style={{ fontSize: 12, color: '#3a5878' }}>
+                  No active server connections. Ask your server admin to set up a handshake with another server.
+                </p>
+              )}
+
+              {hsLoaded && handshakes.map(hs => {
+                const partnerId  = hs.initiator_server_id === alliance.server_id ? hs.target_server_id : hs.initiator_server_id;
+                const partner    = hsServers[partnerId];
+                const settings   = hsSettings[hs.id];
+                // Defaults: live map on, rest off — unless already saved
+                const shareLive  = settings ? settings.share_live_map    : true;
+                const sharePlan  = settings ? settings.share_plan_map    : false;
+                const shareRost  = settings ? settings.share_roster      : false;
+                const shareStats = settings ? settings.share_player_info : false;
+
+                function HsToggle({ field, label, value, serverAllows }) {
+                  const busy = hsToggleBusy === hs.id + field;
+                  if (!serverAllows) {
+                    return (
+                      <div style={{ padding: '4px 10px', fontSize: 10, color: '#2a4058', border: '1px solid #1e3550', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, letterSpacing: '1px' }}>
+                        ✕ {label} <span style={{ fontWeight: 400 }}>(not permitted by server)</span>
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      onClick={() => handleHsToggle(hs, field)}
+                      disabled={busy}
+                      style={{
+                        padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700,
+                        fontSize: 10, letterSpacing: '1px', cursor: busy ? 'default' : 'pointer',
+                        background: value ? 'rgba(0,232,122,0.08)' : 'transparent',
+                        border: `1px solid ${value ? 'rgba(0,232,122,0.35)' : '#1e3550'}`,
+                        color: value ? '#00e87a' : '#3a5878',
+                        opacity: busy ? 0.6 : 1,
+                      }}
+                    >
+                      {value ? '✓' : '○'} {label}
+                    </button>
+                  );
+                }
+
+                return (
+                  <div key={hs.id} style={{ marginBottom: 16, padding: '12px', border: '1px solid #1e3550', background: 'rgba(0,200,255,0.02)' }}>
+                    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 14, color: '#d0e4f4', marginBottom: 4 }}>
+                      {partner ? `Server ${partner.server_number} — ${partner.name}` : 'Partner server'}
+                    </div>
+                    <p style={{ fontSize: 11, color: '#3a5878', marginBottom: 10 }}>What to share with this server's members:</p>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                      <HsToggle field="share_live_map"    label="LIVE MAP"      value={shareLive}  serverAllows={hs.share_map} />
+                      <HsToggle field="share_plan_map"    label="PLAN MAP"      value={sharePlan}  serverAllows={hs.share_map} />
+                      <HsToggle field="share_roster"      label="ROSTER NAMES"  value={shareRost}  serverAllows={hs.share_roster} />
+                      <HsToggle field="share_player_info" label="PLAYER STATS"  value={shareStats} serverAllows={hs.share_player_info} />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
