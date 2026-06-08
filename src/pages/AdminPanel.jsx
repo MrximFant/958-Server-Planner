@@ -12,15 +12,16 @@ export default function AdminPanel() {
   const navigate     = useNavigate();
   const { session }  = useAuth();
 
-  const [tab,        setTab]       = useState('ALLIANCES');
+  const isHelper = session?.role === 'helper';
+  const [tab,        setTab]       = useState(isHelper ? 'MEMBERS' : 'ALLIANCES');
   const [server,     setServer]    = useState(null);
   const [alliances,  setAlliances] = useState([]);
   const [members,    setMembers]   = useState([]);
   const [loading,    setLoading]   = useState(true);
 
-  // Guard — must be admin for this server
+  // Guard — must be admin or helper for this server
   useEffect(() => {
-    if (!session || session.serverId !== serverId || session.role !== 'admin') {
+    if (!session || session.serverId !== serverId || (session.role !== 'admin' && session.role !== 'helper')) {
       navigate(`/server/${serverId}`);
     }
   }, [session, serverId, navigate]);
@@ -56,14 +57,14 @@ export default function AdminPanel() {
         </button>
         <div style={S.topTitle}>
           <Shield size={14} style={{ color: '#00c8ff' }} />
-          ADMIN PANEL — SERVER {server.server_number}
+          {isHelper ? 'HELPER PANEL' : 'ADMIN PANEL'} — SERVER {server.server_number}
         </div>
       </div>
 
       <div style={S.layout} className="ap-layout">
         {/* Sidebar tabs */}
         <div style={S.sidebar} className="ap-sidebar">
-          {TABS.map(t => (
+          {TABS.filter(t => !isHelper || t === 'MEMBERS').map(t => (
             <button key={t} style={{ ...S.sideTab, ...(tab === t ? S.sideTabActive : {}) }} className="ap-tab" onClick={() => setTab(t)}>
               {t === 'ALLIANCES' && <Users size={14} />}
               {t === 'MEMBERS'   && <Shield size={14} />}
@@ -88,6 +89,7 @@ export default function AdminPanel() {
               setMembers={setMembers}
               alliances={alliances}
               serverId={serverId}
+              isHelper={isHelper}
             />
           )}
           {tab === 'SERVER' && (
@@ -240,7 +242,7 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
 }
 
 // ── Members Tab ───────────────────────────────────────────────
-function MembersTab({ members, setMembers, alliances, serverId }) {
+function MembersTab({ members, setMembers, alliances, serverId, isHelper }) {
   const [filter, setFilter] = useState('');
 
   async function handleReassign(memberId, newAllianceId) {
@@ -249,6 +251,12 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
       ? { ...m, alliance_id: newAllianceId, alliances: alliances.find(a => a.id === newAllianceId) }
       : m
     ));
+  }
+
+  async function handleToggleHelper(member) {
+    const newRole = member.server_role === 'helper' ? null : 'helper';
+    await supabase.from('members').update({ server_role: newRole }).eq('id', member.id);
+    setMembers(prev => prev.map(m => m.id === member.id ? { ...m, server_role: newRole } : m));
   }
 
   const filtered = members.filter(m =>
@@ -300,22 +308,7 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {allianceMembers.map(m => (
-              <div key={m.id} style={S.row}>
-                <div style={{ flex: 1 }}>
-                  <div style={S.rowTitle}>
-                    {m.in_game_name || m.username}
-                    {m.in_game_name && m.in_game_name !== m.username && <span style={S.tag}>@{m.username}</span>}
-                    {m.alliance_role === 'alliance_admin' && <span style={{ ...S.tag, color: '#f0a500', borderColor: 'rgba(240,165,0,0.4)' }}>ADMIN</span>}
-                  </div>
-                  <div style={S.rowSub}>
-                    Reassign:&nbsp;
-                    <select value={m.alliance_id ?? ''} onChange={e => handleReassign(m.id, e.target.value)} style={S.inlineSelect}>
-                      <option value="">— No alliance —</option>
-                      {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
+              <MemberRow key={m.id} m={m} alliances={alliances} onReassign={handleReassign} onToggleHelper={handleToggleHelper} isHelper={isHelper} S={S} />
             ))}
           </div>
         </div>
@@ -329,24 +322,54 @@ function MembersTab({ members, setMembers, alliances, serverId }) {
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             {unassigned.map(m => (
-              <div key={m.id} style={S.row}>
-                <div style={{ flex: 1 }}>
-                  <div style={S.rowTitle}>
-                    {m.in_game_name || m.username}
-                    {m.in_game_name && m.in_game_name !== m.username && <span style={S.tag}>@{m.username}</span>}
-                  </div>
-                  <div style={S.rowSub}>
-                    Assign to:&nbsp;
-                    <select value="" onChange={e => handleReassign(m.id, e.target.value)} style={S.inlineSelect}>
-                      <option value="">— Select alliance —</option>
-                      {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
+              <MemberRow key={m.id} m={m} alliances={alliances} onReassign={handleReassign} onToggleHelper={handleToggleHelper} isHelper={isHelper} S={S} unassigned />
             ))}
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function MemberRow({ m, alliances, onReassign, onToggleHelper, isHelper, S, unassigned }) {
+  const isServerHelper = m.server_role === 'helper';
+  return (
+    <div style={S.row}>
+      <div style={{ flex: 1 }}>
+        <div style={S.rowTitle}>
+          {m.in_game_name || m.username}
+          {m.in_game_name && m.in_game_name !== m.username && <span style={S.tag}>@{m.username}</span>}
+          {m.alliance_role === 'alliance_admin' && <span style={{ ...S.tag, color: '#f0a500', borderColor: 'rgba(240,165,0,0.4)' }}>ALLIANCE ADMIN</span>}
+          {isServerHelper && <span style={{ ...S.tag, color: '#00c8ff', borderColor: 'rgba(0,200,255,0.4)' }}>SERVER HELPER</span>}
+        </div>
+        <div style={S.rowSub}>
+          {unassigned ? 'Assign to:' : 'Reassign:'}&nbsp;
+          <select value={m.alliance_id ?? ''} onChange={e => onReassign(m.id, e.target.value)} style={S.inlineSelect}>
+            <option value="">{unassigned ? '— Select alliance —' : '— No alliance —'}</option>
+            {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+      </div>
+      {!isHelper && (
+        <button
+          title={isServerHelper ? 'Remove helper role' : 'Promote to server helper'}
+          onClick={() => onToggleHelper(m)}
+          style={{
+            background: isServerHelper ? 'rgba(0,200,255,0.1)' : 'transparent',
+            border: `1px solid ${isServerHelper ? 'rgba(0,200,255,0.4)' : '#1e3550'}`,
+            color: isServerHelper ? '#00c8ff' : '#3a5878',
+            padding: '4px 10px',
+            fontFamily: "'Rajdhani',sans-serif",
+            fontWeight: 700,
+            fontSize: 10,
+            letterSpacing: '1px',
+            cursor: 'pointer',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
+          }}
+        >
+          {isServerHelper ? '★ HELPER' : '+ HELPER'}
+        </button>
       )}
     </div>
   );
