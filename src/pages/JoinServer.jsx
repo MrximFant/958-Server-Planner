@@ -23,6 +23,14 @@ export default function JoinServer() {
         return;
       }
 
+      // Owner invite → register as alliance owner
+      const { data: ownerAlliance } = await supabase
+        .from('alliances').select('id, server_id').eq('owner_invite_code', inviteCode).single();
+      if (ownerAlliance) {
+        navigate(`/server/${ownerAlliance.server_id}/register/${ownerAlliance.id}?role=owner&ownerCode=${inviteCode}`);
+        return;
+      }
+
       // Handshake invite (Phase 4)
       const { data: shake } = await supabase
         .from('server_handshakes').select('id').eq('invite_code', inviteCode).eq('status', 'pending').single();

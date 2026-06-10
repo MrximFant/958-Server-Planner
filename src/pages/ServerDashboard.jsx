@@ -15,11 +15,12 @@ export default function ServerDashboard() {
   const [loading,  setLoading] = useState(true);
 
   // Auth modal
-  const [authView,    setAuthView]    = useState(null); // null | 'admin' | 'member'
-  const [authForm,    setAuthForm]    = useState({ password: '', username: '', allianceId: '' });
+  const [authView,    setAuthView]    = useState(null); // null | 'login' | 'emergency'
+  const [authForm,    setAuthForm]    = useState({ password: '', username: '' });
   const [authError,   setAuthError]   = useState('');
   const [authBusy,    setAuthBusy]    = useState(false);
   const [alliances,   setAlliances]   = useState([]);
+  const [showEmergency, setShowEmergency] = useState(false);
 
   // Particle bg
   useEffect(() => {
@@ -79,49 +80,32 @@ export default function ServerDashboard() {
   // If session is for a different server, clear it
   const activeSession = session?.serverId === serverId ? session : null;
 
-  async function handleAdminLogin(e) {
+  async function handleUnifiedLogin(e) {
+    e.preventDefault();
+    setAuthError(''); setAuthBusy(true);
+    if (!authForm.username.trim()) { setAuthError('Username is required.'); setAuthBusy(false); return; }
+    const hash = await hashPassword(authForm.password);
+    const { data: member, error } = await supabase.from('members')
+      .select('*, alliances(name)')
+      .eq('server_id', serverId)
+      .eq('username', authForm.username.trim())
+      .eq('password', hash)
+      .single();
+    if (error || !member) { setAuthError('Username or password incorrect.'); setAuthBusy(false); return; }
+    const alName = member.alliances?.name || alliances.find(a => a.id === member.alliance_id)?.name || '';
+    const serverRole = member.server_role === 'admin' ? 'admin' : member.server_role === 'helper' ? 'helper' : 'member';
+    login({ serverId, serverName: server.name, role: serverRole, allianceId: member.alliance_id, allianceName: alName, memberId: member.id, username: member.username, allianceRole: member.alliance_role || 'member' });
+    setAuthView(null); setAuthBusy(false);
+  }
+
+  async function handleEmergencyAdminLogin(e) {
     e.preventDefault();
     setAuthError(''); setAuthBusy(true);
     const hash = await hashPassword(authForm.password);
     if (hash !== server.admin_password) {
       setAuthError('Incorrect admin password.'); setAuthBusy(false); return;
     }
-    login({ serverId, serverName: server.name, role: 'admin', allianceId: null, memberId: null, username: null });
-    setAuthView(null); setAuthBusy(false);
-  }
-
-  async function handleOwnerLogin(e) {
-    e.preventDefault();
-    setAuthError(''); setAuthBusy(true);
-    if (!authForm.allianceId) { setAuthError('Select an alliance.'); setAuthBusy(false); return; }
-    const hash = await hashPassword(authForm.password);
-    const { data: al } = await supabase.from('alliances')
-      .select('id, name, owner_password')
-      .eq('id', authForm.allianceId)
-      .single();
-    if (!al || hash !== al.owner_password) {
-      setAuthError('Incorrect owner password.'); setAuthBusy(false); return;
-    }
-    login({ serverId, serverName: server.name, role: 'owner', allianceId: al.id, allianceName: al.name, memberId: null, username: null, allianceRole: null });
-    setAuthView(null); setAuthBusy(false);
-  }
-
-  async function handleMemberLogin(e) {
-    e.preventDefault();
-    setAuthError(''); setAuthBusy(true);
-    if (!authForm.allianceId) { setAuthError('Select an alliance.'); setAuthBusy(false); return; }
-    const hash = await hashPassword(authForm.password);
-    const { data: member, error } = await supabase.from('members')
-      .select('*')
-      .eq('server_id', serverId)
-      .eq('alliance_id', authForm.allianceId)
-      .eq('username', authForm.username.trim())
-      .eq('password', hash)
-      .single();
-    if (error || !member) { setAuthError('Username or password incorrect.'); setAuthBusy(false); return; }
-    const alName = alliances.find(a => a.id === member.alliance_id)?.name || '';
-    const memberRole = member.server_role === 'helper' ? 'helper' : 'member';
-    login({ serverId, serverName: server.name, role: memberRole, allianceId: member.alliance_id, allianceName: alName, memberId: member.id, username: member.username, allianceRole: member.alliance_role || 'member' });
+    login({ serverId, serverName: server.name, role: 'admin', allianceId: null, memberId: null, username: 'Admin' });
     setAuthView(null); setAuthBusy(false);
   }
 
@@ -162,17 +146,9 @@ export default function ServerDashboard() {
               </button>
             </>
           ) : (
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button style={S.loginBtn} onClick={() => { setAuthView('admin'); setAuthError(''); setAuthForm({ password: '', username: '', allianceId: '' }); }}>
-                <Shield size={12} /> ADMIN
-              </button>
-              <button style={{ ...S.loginBtn, color: '#f0a500', borderColor: 'rgba(240,165,0,0.3)' }} onClick={() => { setAuthView('owner'); setAuthError(''); setAuthForm({ password: '', username: '', allianceId: '' }); }}>
-                👑 OWNER
-              </button>
-              <button style={S.loginBtn} onClick={() => { setAuthView('member'); setAuthError(''); setAuthForm({ password: '', username: '', allianceId: '' }); }}>
-                <LogIn size={12} /> MEMBER
-              </button>
-            </div>
+            <button style={S.loginBtn} onClick={() => { setAuthView('login'); setAuthError(''); setAuthForm({ password: '', username: '' }); setShowEmergency(false); }}>
+              <LogIn size={12} /> LOGIN
+            </button>
           )}
         </div>
       </div>
@@ -188,7 +164,7 @@ export default function ServerDashboard() {
           {activeSession ? (
             <button style={S.btnPrimary} onClick={() => navigate(`/server/${serverId}/alliance`)}>ALLIANCE HQ →</button>
           ) : (
-            <button style={S.btnPrimary} onClick={() => { setAuthView('member'); setAuthError(''); setAuthForm({ password: '', username: '', allianceId: '' }); }}>MEMBER LOGIN →</button>
+            <button style={S.btnPrimary} onClick={() => { setAuthView('login'); setAuthError(''); setAuthForm({ password: '', username: '' }); setShowEmergency(false); }}>LOGIN →</button>
           )}
         </div>
       </section>
@@ -215,54 +191,38 @@ export default function ServerDashboard() {
       {authView && (
         <div style={S.overlay} onClick={() => setAuthView(null)}>
           <div style={S.modal} onClick={e => e.stopPropagation()}>
-            <div style={S.modalTitle}>
-              {authView === 'admin' ? '⚡ ADMIN LOGIN' : authView === 'owner' ? '👑 OWNER LOGIN' : '👤 MEMBER LOGIN'}
-            </div>
+            <div style={S.modalTitle}>🔐 LOGIN</div>
 
-            {authView === 'admin' && (
-              <form onSubmit={handleAdminLogin}>
-                <Field label="ADMIN PASSWORD" type="password" value={authForm.password} onChange={v => setAuthForm(f => ({ ...f, password: v }))} />
-                {authError && <p style={S.error}>{authError}</p>}
-                <button type="submit" style={S.modalBtn} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'LOGIN →'}</button>
-              </form>
-            )}
+            <form onSubmit={handleUnifiedLogin}>
+              <Field label="USERNAME" value={authForm.username} onChange={v => setAuthForm(f => ({ ...f, username: v }))} />
+              <Field label="PASSWORD" type="password" value={authForm.password} onChange={v => setAuthForm(f => ({ ...f, password: v }))} />
+              <p style={{ color: '#3a5878', fontSize: 11, marginTop: -8, marginBottom: 14 }}>
+                Forgot your password? Contact your alliance owner or server admin.
+              </p>
+              {authError && <p style={S.error}>{authError}</p>}
+              <button type="submit" style={S.modalBtn} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'LOGIN →'}</button>
+            </form>
 
-            {authView === 'owner' && (
-              <form onSubmit={handleOwnerLogin}>
-                <div style={{ marginBottom: 14 }}>
-                  <div style={S.label}>ALLIANCE</div>
-                  <select value={authForm.allianceId} onChange={e => setAuthForm(f => ({ ...f, allianceId: e.target.value }))} style={S.select}>
-                    <option value="">— Select your alliance —</option>
-                    {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
-                </div>
-                <Field label="OWNER PASSWORD" type="password" value={authForm.password} onChange={v => setAuthForm(f => ({ ...f, password: v }))} />
-                {authError && <p style={S.error}>{authError}</p>}
-                <button type="submit" style={{ ...S.modalBtn, background: '#f0a500' }} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'LOGIN →'}</button>
-              </form>
-            )}
-
-            {authView === 'member' && (
-              <form onSubmit={handleMemberLogin}>
-                <div style={{ marginBottom: 14 }}>
-                  <div style={S.label}>ALLIANCE</div>
-                  <select value={authForm.allianceId} onChange={e => setAuthForm(f => ({ ...f, allianceId: e.target.value }))} style={S.select}>
-                    <option value="">— Select your alliance —</option>
-                    {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-                  </select>
-                  <p style={{ color: '#3a5878', fontSize: 11, marginTop: 5 }}>
-                    Not sure which alliance? Ask your R5 or alliance leader.
+            {/* Emergency admin access */}
+            <div style={{ marginTop: 20, borderTop: '1px solid #1e3550', paddingTop: 14 }}>
+              <button
+                type="button"
+                onClick={() => { setShowEmergency(e => !e); setAuthError(''); setAuthForm(f => ({ ...f, password: '' })); }}
+                style={{ background: 'none', border: 'none', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', padding: 0 }}
+              >
+                {showEmergency ? '▲' : '▼'} EMERGENCY ADMIN ACCESS
+              </button>
+              {showEmergency && (
+                <form onSubmit={handleEmergencyAdminLogin} style={{ marginTop: 12 }}>
+                  <p style={{ color: '#3a5878', fontSize: 11, marginBottom: 10, lineHeight: 1.5 }}>
+                    Use this only if you cannot log in as an admin member. Requires the server admin password set during activation.
                   </p>
-                </div>
-                <Field label="USERNAME" value={authForm.username} onChange={v => setAuthForm(f => ({ ...f, username: v }))} />
-                <Field label="PASSWORD" type="password" value={authForm.password} onChange={v => setAuthForm(f => ({ ...f, password: v }))} />
-                <p style={{ color: '#3a5878', fontSize: 11, marginTop: -8, marginBottom: 12 }}>
-                  Forgot your password? Contact your alliance owner or admin.
-                </p>
-                {authError && <p style={S.error}>{authError}</p>}
-                <button type="submit" style={S.modalBtn} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'LOGIN →'}</button>
-              </form>
-            )}
+                  <Field label="SERVER ADMIN PASSWORD" type="password" value={authForm.password} onChange={v => setAuthForm(f => ({ ...f, password: v }))} />
+                  {authError && <p style={S.error}>{authError}</p>}
+                  <button type="submit" style={{ ...S.modalBtn, background: '#f0a500', color: '#080d14' }} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'EMERGENCY LOGIN →'}</button>
+                </form>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -317,23 +277,22 @@ const ROLE_HELP = {
     color: '#f0a500',
     steps: [
       'Go to Admin Panel (top-right button) to create and manage alliances.',
-      'When creating an alliance, set an owner password and give it directly to the alliance leader.',
-      'The alliance leader logs in as OWNER from this page using that password.',
-      'To invite players: the owner copies the invite link from Alliance HQ → Settings → shares it with members.',
+      'When you create an alliance, two invite links are generated: an OWNER invite (one-time) and a MEMBER invite (reusable).',
+      'Send the OWNER INVITE link to each alliance\'s R5 leader. They click it, create an account, and automatically get owner access.',
+      'To invite players: the owner shares the MEMBER INVITE link from Alliance HQ → Settings with their members.',
       'Players self-register via the invite link — no manual entry needed.',
-      'Set the active season in Admin Panel → SERVER tab to control which map and fields are shown.',
+      'Everyone logs in with just username + password using the LOGIN button.',
     ],
   },
   owner: {
     label: '👑 ALLIANCE OWNER QUICK START',
     color: '#f0a500',
     steps: [
-      'Go to Alliance HQ to manage your roster.',
-      'In the SETTINGS tab, copy your alliance invite link and share it with your players.',
-      'Players click the link, register, and appear in your ROSTER tab automatically.',
-      'Promote up to 10 trusted members to Alliance Admin in the ADMINS tab — they can edit and remove members.',
-      'Control who can see your roster using the visibility toggles in SETTINGS.',
-      'If a member forgets their password, edit their record in the ROSTER tab to reset it.',
+      'Go to Alliance HQ to manage your roster — you\'re already logged in.',
+      'In the SETTINGS tab, copy your MEMBER INVITE link and share it with your players.',
+      'Players click the link, register a username and password, and appear in your ROSTER automatically.',
+      'Promote up to 10 trusted members to Alliance Admin in the MANAGE → ADMINS tab.',
+      'If a member forgets their password, edit their record in MANAGE → ROSTER to reset it.',
     ],
   },
   helper: {

@@ -150,11 +150,12 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
       if (err) { setError(err.message); setBusy(false); return; }
       setAlliances(prev => prev.map(a => a.id === editing.id ? { ...a, ...update } : a));
     } else {
-      if (!form.ownerPassword.trim()) { setError('Owner password is required.'); setBusy(false); return; }
-      const hash = await hashPassword(form.ownerPassword);
+      const hash = form.ownerPassword.trim() ? await hashPassword(form.ownerPassword) : await hashPassword(generateInviteCode());
       const { data, error: err } = await supabase.from('alliances').insert({
         server_id: serverId, name: form.name.trim(), tag: form.tag.trim(),
-        color: form.color, owner_password: hash, invite_code: generateInviteCode(),
+        color: form.color, owner_password: hash,
+        invite_code: generateInviteCode(),
+        owner_invite_code: generateInviteCode(),
       }).select().single();
       if (err) { setError(err.message); setBusy(false); return; }
       setAlliances(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)));
@@ -188,11 +189,11 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
       </div>
 
       <HelpCard title="HOW ALLIANCES WORK" lines={[
-        'Create each alliance here — give it a name, tag, colour, and an owner password.',
-        'The owner password is the shared login for that alliance\'s leader (R5). Give it directly to them.',
-        'Once the alliance exists, the owner logs in as OWNER from the server dashboard.',
-        'To invite players: the alliance owner copies the invite link from Alliance HQ → Settings and shares it with their members.',
-        'Players click the link, choose a username and password, and join automatically.',
+        'Create each alliance here — give it a name, tag, and colour.',
+        'Each alliance gets two invite links: an OWNER INVITE (one-time use) for the R5 leader, and a MEMBER INVITE (reusable) for all players.',
+        'Send the OWNER INVITE link to your alliance leader. They click it, create an account, and get owner permissions automatically.',
+        'The owner then shares the MEMBER INVITE link with their players so they can register and log in.',
+        'Everyone — including the owner — logs in with just username + password on the server dashboard.',
         'You can reassign or remove members at any time from the MEMBERS tab.',
       ]} />
 
@@ -229,10 +230,21 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
             <div style={{ ...S.colorDot, background: a.color }} />
             <div style={{ flex: 1 }}>
               <div style={S.rowTitle}>{a.name} {a.tag && <span style={S.tag}>{a.tag}</span>}</div>
-              <div style={S.rowSub}>Invite: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.invite_code}</span></div>
+              {a.owner_invite_code && (
+                <div style={{ ...S.rowSub, color: '#f0a500', marginBottom: 2 }}>
+                  👑 Owner invite: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.owner_invite_code}</span>
+                  {' '}
+                  <button onClick={() => copyInviteLink(a.owner_invite_code)} style={{ background: 'none', border: 'none', color: '#f0a500', cursor: 'pointer', padding: '0 2px', verticalAlign: 'middle' }}>
+                    {copied === a.owner_invite_code ? <Check size={11} style={{ color: '#00e87a' }} /> : <Copy size={11} />}
+                  </button>
+                </div>
+              )}
+              <div style={S.rowSub}>
+                👥 Member invite: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.invite_code}</span>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
-              <IconBtn title="Copy invite link" onClick={() => copyInviteLink(a.invite_code)}>
+              <IconBtn title="Copy member invite link" onClick={() => copyInviteLink(a.invite_code)}>
                 {copied === a.invite_code ? <Check size={14} style={{ color: '#00e87a' }} /> : <Copy size={14} />}
               </IconBtn>
               <IconBtn title="Edit" onClick={() => openEdit(a)}><Edit2 size={14} /></IconBtn>

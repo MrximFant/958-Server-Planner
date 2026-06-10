@@ -51,12 +51,13 @@ export default function ServerSelect() {
   const [reqSuccess, setReqSuccess] = useState(false);
 
   // Activate form
-  const [actCode,    setActCode]    = useState('');
-  const [actPwd,     setActPwd]     = useState('');
-  const [actConfirm, setActConfirm] = useState('');
-  const [actBusy,    setActBusy]    = useState(false);
-  const [actError,   setActError]   = useState('');
-  const [showPwd,    setShowPwd]    = useState(false);
+  const [actCode,     setActCode]    = useState('');
+  const [actUsername, setActUsername] = useState('');
+  const [actPwd,      setActPwd]     = useState('');
+  const [actConfirm,  setActConfirm] = useState('');
+  const [actBusy,     setActBusy]    = useState(false);
+  const [actError,    setActError]   = useState('');
+  const [showPwd,     setShowPwd]    = useState(false);
 
   // Particle background
   useEffect(() => {
@@ -137,7 +138,8 @@ export default function ServerSelect() {
     setActError('');
     const code = actCode.trim().toUpperCase();
     if (!code) { setActError('Enter your activation code.'); return; }
-    if (!actPwd.trim()) { setActError('Set an admin password.'); return; }
+    if (!actUsername.trim()) { setActError('Enter a username for your admin account.'); return; }
+    if (!actPwd.trim()) { setActError('Set a password.'); return; }
     if (actPwd !== actConfirm) { setActError('Passwords do not match.'); return; }
 
     setActBusy(true);
@@ -167,6 +169,15 @@ export default function ServerSelect() {
     }).select().single();
 
     if (createErr) { setActError(createErr.message); setActBusy(false); return; }
+
+    // Create admin member account so admin can log in with username+password
+    await supabase.from('members').insert({
+      server_id:   server.id,
+      alliance_id: null,
+      username:    actUsername.trim(),
+      password:    hash,
+      server_role: 'admin',
+    });
 
     await supabase.from('server_requests').update({ activation_used: true }).eq('id', req.id);
 
@@ -346,13 +357,16 @@ export default function ServerSelect() {
         {view === 'activate' && (
           <form style={S.card} onSubmit={handleActivate}>
             <p style={{ color: '#7a9bb8', fontSize: 12, marginBottom: 18, lineHeight: 1.6 }}>
-              Enter the activation code you received from the platform admin, then set your admin password to create your server.
+              Enter the activation code you received, then create your admin account. You'll use this username and password to log in as server admin.
             </p>
             <Field label="ACTIVATION CODE" placeholder="e.g. A3F7K2P9"
               value={actCode} onChange={v => setActCode(v.toUpperCase())}
               style={{ fontFamily: "'Share Tech Mono',monospace", letterSpacing: '4px' }}
             />
-            <PwdField label="SET ADMIN PASSWORD" value={actPwd} onChange={setActPwd}
+            <Field label="ADMIN USERNAME" placeholder="Your login name (e.g. ServerAdmin958)"
+              value={actUsername} onChange={v => setActUsername(v)}
+            />
+            <PwdField label="SET PASSWORD" value={actPwd} onChange={setActPwd}
               show={showPwd} onToggle={() => setShowPwd(s => !s)} />
             <PwdField label="CONFIRM PASSWORD" value={actConfirm} onChange={setActConfirm}
               show={showPwd} onToggle={() => setShowPwd(s => !s)} />

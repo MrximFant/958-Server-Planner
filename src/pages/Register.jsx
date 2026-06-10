@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword } from '../lib/auth';
@@ -8,6 +8,9 @@ import { Zap, Shield, CheckCircle, Eye, EyeOff } from 'lucide-react';
 export default function Register() {
   const { serverId, allianceId } = useParams();
   const navigate                 = useNavigate();
+  const [searchParams]           = useSearchParams();
+  const isOwnerInvite            = searchParams.get('role') === 'owner';
+  const ownerCode                = searchParams.get('ownerCode');
   const { session, login }       = useAuth();
   const canvasRef                = useRef(null);
 
@@ -97,24 +100,34 @@ export default function Register() {
     if (existing) { setError('That username is already taken on this server.'); setBusy(false); return; }
 
     const hash = await hashPassword(form.password);
-    const { data: member, error: err } = await supabase.from('members').insert({
+    const insertData = {
       server_id:    serverId,
       alliance_id:  allianceId,
       username:     form.username.trim(),
       password:     hash,
       in_game_name: form.inGameName.trim() || form.username.trim(),
-    }).select().single();
+    };
+    if (isOwnerInvite) insertData.alliance_role = 'owner';
+
+    const { data: member, error: err } = await supabase.from('members').insert(insertData).select().single();
 
     if (err) { setError(err.message); setBusy(false); return; }
+
+    // Burn the owner invite code (one-time use)
+    if (isOwnerInvite && ownerCode) {
+      await supabase.from('alliances').update({ owner_invite_code: null }).eq('owner_invite_code', ownerCode);
+    }
 
     // Auto-login
     login({
       serverId,
-      serverName: server.name,
-      role:       'member',
+      serverName:   server.name,
+      role:         'member',
       allianceId,
-      memberId:   member.id,
-      username:   member.username,
+      allianceName: alliance.name,
+      memberId:     member.id,
+      username:     member.username,
+      allianceRole: isOwnerInvite ? 'owner' : 'member',
     });
 
     setStep('success');
@@ -144,7 +157,7 @@ export default function Register() {
               <Zap size={10} fill="currentColor" />
             </div>
 
-            <h1 style={S.title}>JOIN ALLIANCE</h1>
+            <h1 style={S.title}>{isOwnerInvite ? 'JOIN AS OWNER' : 'JOIN ALLIANCE'}</h1>
 
             {/* Alliance card */}
             <div style={{ ...S.allianceCard, borderColor: alliance.color }}>
@@ -253,17 +266,6 @@ function Field({ label, placeholder = '', type = 'text', value, onChange }) {
           </button>
         )}
       </div>
-      <input
-        type={type}
-        placeholder={placeholder}
-        value={value}
-        onChange={e => onChange(e.target.value)}
-        style={{
-          width: '100%', background: 'rgba(0,200,255,0.04)', border: '1px solid #1e3550',
-          color: '#d0e4f4', padding: '10px 14px', fontFamily: "'Rajdhani',sans-serif",
-          fontSize: 15, outline: 'none', boxSizing: 'border-box',
-        }}
-      />
     </div>
   );
 }

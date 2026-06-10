@@ -37,8 +37,9 @@ CREATE TABLE alliances (
   name             TEXT NOT NULL,
   tag              TEXT,                          -- short tag e.g. "[958]"
   color            TEXT NOT NULL DEFAULT '#00c8ff',
-  owner_password   TEXT NOT NULL,                -- SHA-256 hex
-  invite_code      TEXT UNIQUE NOT NULL,          -- for member self-registration
+  owner_password   TEXT NOT NULL,                -- SHA-256 hex (legacy emergency access)
+  invite_code      TEXT UNIQUE NOT NULL,          -- reusable member self-registration link
+  owner_invite_code TEXT UNIQUE,                  -- one-time owner registration link
   created_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
