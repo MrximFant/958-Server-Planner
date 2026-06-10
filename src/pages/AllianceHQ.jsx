@@ -1321,6 +1321,16 @@ export default function AllianceHQ() {
           {isOwner          && <span className="ahq-role-badge role-owner">👑 OWNER</span>}
           {!isAdmin && !isOwner && allianceRole === 'alliance_admin' && <span className="ahq-role-badge role-alladmin">🛡 ALLIANCE ADMIN</span>}
           {!isAdmin && !isOwner && allianceRole === 'member'         && <span className="ahq-role-badge role-member">👤 {activeSession.username}</span>}
+          {effectiveAllianceId && (
+            <button
+              className="btn-secondary-sm"
+              onClick={() => navigate(`/server/${serverId}/map`)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.75 }}
+              title="War Map — work in progress"
+            >
+              🗺 MAP <span style={{ fontSize: 9, color: '#f0a500', marginLeft: 2 }}>WIP</span>
+            </button>
+          )}
           {(isOwner || allianceRole === 'alliance_admin') && (
             <button
               className="btn-secondary-sm"

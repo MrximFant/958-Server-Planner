@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword } from '../lib/auth';
-import { Map, Users, BookOpen, Trophy, Clock, Zap, Shield, LogOut, Settings, ChevronRight, Lock, Plus, Eye, EyeOff } from 'lucide-react';
+import { Users, BookOpen, Trophy, Clock, Zap, Shield, LogOut, Settings, ChevronRight, Lock, Plus, Eye, EyeOff } from 'lucide-react';
 
 export default function ServerDashboard() {
   const { serverId }          = useParams();
@@ -132,8 +132,7 @@ export default function ServerDashboard() {
   const role = activeSession?.role;
 
   const FEATURES = [
-    { to: `/server/${serverId}/map`, icon: Map, color: '#00c8ff', glow: 'rgba(0,200,255,0.15)', border: 'rgba(0,200,255,0.3)', label: 'WAR MAP', title: 'Territory Planner', desc: 'Live map of every tile. Assign ownership, project vulnerabilities, and plan your next attack in real time.', tag: 'LIVE', locked: false },
-    { to: `/server/${serverId}/alliance`, icon: Users, color: '#f0a500', glow: 'rgba(240,165,0,0.15)', border: 'rgba(240,165,0,0.3)', label: 'ALLIANCE HQ', title: 'Member Roster', desc: 'Alliance roster with squad powers, troop types, Canyon Storm & Desert Storm preferences.', tag: 'COMMAND', locked: !activeSession },
+    { to: `/server/${serverId}/alliance`, icon: Users, color: '#f0a500', glow: 'rgba(240,165,0,0.15)', border: 'rgba(240,165,0,0.3)', label: 'ALLIANCE HQ', title: 'Member Roster & Planning', desc: 'Alliance roster, squad powers, event teams, train rotation, and war map access.', tag: 'COMMAND', locked: !activeSession },
     { to: null, icon: Trophy, color: '#a040d0', glow: 'rgba(160,64,208,0.15)', border: 'rgba(160,64,208,0.3)', label: 'LEADERBOARD', title: 'Season Rankings', desc: 'Alliance influence totals, city counts and crystal gold rates.', tag: 'SOON', disabled: true },
     { to: `/server/${serverId}/rules`, icon: BookOpen, color: '#00e87a', glow: 'rgba(0,232,122,0.15)', border: 'rgba(0,232,122,0.3)', label: 'RULES', title: 'Game Guide', desc: 'Complete rulebook for territory warfare, attack windows, and capture limits.', tag: 'GUIDE', locked: false },
     { to: null, icon: Clock, color: '#ff4060', glow: 'rgba(255,64,96,0.15)', border: 'rgba(255,64,96,0.3)', label: 'SEASONS', title: 'Season History', desc: 'Past season outcomes and alliance performance trends.', tag: 'SOON', disabled: true },
@@ -184,13 +183,12 @@ export default function ServerDashboard() {
         <h1 style={S.h1}>SERVER {server.server_number}</h1>
         <h2 style={S.h2}>{server.name.toUpperCase()}</h2>
         <div style={S.seasonBadge}><Zap size={12} fill="currentColor" /> LAST WAR: SURVIVAL <Zap size={12} fill="currentColor" /></div>
-        <p style={S.heroSub}>Your alliance's command center. Plan territory warfare, coordinate your roster, and dominate the map every season.</p>
+        <p style={S.heroSub}>Your alliance's command center. Coordinate your roster, plan train rotations, and access the war map.</p>
         <div style={S.heroBtns}>
-          <button style={S.btnPrimary} onClick={() => navigate(`/server/${serverId}/map`)}>ENTER WAR MAP →</button>
           {activeSession ? (
-            <button style={S.btnSecondary} onClick={() => navigate(`/server/${serverId}/alliance`)}>ALLIANCE HQ</button>
+            <button style={S.btnPrimary} onClick={() => navigate(`/server/${serverId}/alliance`)}>ALLIANCE HQ →</button>
           ) : (
-            <button style={S.btnSecondary} onClick={() => { setAuthView('member'); setAuthError(''); setAuthForm({ password: '', username: '', allianceId: '' }); }}>MEMBER LOGIN</button>
+            <button style={S.btnPrimary} onClick={() => { setAuthView('member'); setAuthError(''); setAuthForm({ password: '', username: '', allianceId: '' }); }}>MEMBER LOGIN →</button>
           )}
         </div>
       </section>
