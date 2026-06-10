@@ -331,8 +331,11 @@ export default function ServerSelect() {
                   value={reqForm.contactName} onChange={v => setReqForm(f => ({ ...f, contactName: v }))} />
                 <Field label="YOUR DISCORD USER ID" placeholder="e.g. 123456789012345678"
                   value={reqForm.discordUserId} onChange={v => setReqForm(f => ({ ...f, discordUserId: v }))} />
-                <div style={{ background: 'rgba(0,200,255,0.05)', border: '1px solid rgba(0,200,255,0.15)', padding: '8px 12px', marginBottom: 16, fontSize: 11, color: '#3a5878', lineHeight: 1.7 }}>
-                  💡 <strong style={{ color: '#7a9bb8' }}>How to find your Discord User ID:</strong> In Discord, go to Settings → Advanced → enable Developer Mode. Then right-click your name anywhere and click <em>Copy User ID</em>.
+                <div style={{ background: 'rgba(0,200,255,0.05)', border: '1px solid rgba(0,200,255,0.15)', padding: '10px 14px', marginBottom: 16, fontSize: 11, color: '#3a5878', lineHeight: 1.8 }}>
+                  💡 <strong style={{ color: '#7a9bb8' }}>How to find your Discord User ID:</strong><br />
+                  1. Open Discord → <strong style={{ color: '#7a9bb8' }}>Settings</strong> (gear icon) → <strong style={{ color: '#7a9bb8' }}>Advanced</strong> → enable <strong style={{ color: '#7a9bb8' }}>Developer Mode</strong><br />
+                  2. Click your own username or avatar anywhere → <strong style={{ color: '#7a9bb8' }}>Copy User ID</strong><br />
+                  You can turn Developer Mode off again straight after — it only adds "Copy ID" to right-click menus.
                 </div>
                 <div style={{ marginBottom: 16 }}>
                   <div style={S.label}>MESSAGE (optional)</div>
