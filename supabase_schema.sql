@@ -133,6 +133,7 @@ CREATE TABLE server_requests (
   server_number    TEXT NOT NULL,
   name             TEXT NOT NULL,
   contact_name     TEXT NOT NULL,                -- Discord handle of requester
+  discord_user_id  TEXT,                         -- Discord snowflake ID for DM notification
   message          TEXT,
   status           TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
   activation_code  TEXT,                         -- set by super admin on approval

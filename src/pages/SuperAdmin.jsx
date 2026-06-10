@@ -456,6 +456,11 @@ function RequestInfo({ r, statusColor }) {
         </div>
         <div style={{ fontSize: 12, color: '#7a9bb8', marginTop: 3 }}>
           From: <strong style={{ color: '#d0e4f4' }}>{r.contact_name}</strong>
+          {r.discord_user_id && (
+            <span style={{ marginLeft: 8, fontSize: 10, color: '#3a5878', fontFamily: 'monospace' }}>
+              ID: {r.discord_user_id}
+            </span>
+          )}
           &nbsp;·&nbsp;
           {new Date(r.created_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}
         </div>

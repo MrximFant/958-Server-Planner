@@ -45,7 +45,7 @@ export default function ServerSelect() {
   const [view,     setView]     = useState('list'); // list | request | activate | how
 
   // Request form
-  const [reqForm,    setReqForm]    = useState({ serverNumber: '', name: '', contactName: '', message: '' });
+  const [reqForm,    setReqForm]    = useState({ serverNumber: '', name: '', contactName: '', discordUserId: '', message: '' });
   const [reqBusy,    setReqBusy]    = useState(false);
   const [reqError,   setReqError]   = useState('');
   const [reqSuccess, setReqSuccess] = useState(false);
@@ -114,16 +114,17 @@ export default function ServerSelect() {
   async function handleRequest(e) {
     e.preventDefault();
     setReqError('');
-    const { serverNumber, name, contactName } = reqForm;
+    const { serverNumber, name, contactName, discordUserId } = reqForm;
     if (!serverNumber.trim() || !name.trim() || !contactName.trim()) {
       setReqError('Server number, workspace name, and your Discord handle are required.'); return;
     }
     setReqBusy(true);
     const { data, error } = await supabase.from('server_requests').insert({
-      server_number: serverNumber.trim(),
-      name:          name.trim(),
-      contact_name:  contactName.trim(),
-      message:       reqForm.message.trim() || null,
+      server_number:   serverNumber.trim(),
+      name:            name.trim(),
+      contact_name:    contactName.trim(),
+      discord_user_id: discordUserId.trim() || null,
+      message:         reqForm.message.trim() || null,
     }).select().single();
     if (error) { setReqError(error.message); setReqBusy(false); return; }
     await sendDiscordNotification(data);
@@ -309,14 +310,19 @@ export default function ServerSelect() {
                   Servers are approved by the platform admin. Fill in your details and your request will be reviewed shortly.
                 </p>
                 <div style={{ background: 'rgba(240,165,0,0.07)', border: '1px solid rgba(240,165,0,0.25)', padding: '10px 14px', marginBottom: 18, fontSize: 12, color: '#f0a500', lineHeight: 1.6 }}>
-                  <strong>Important:</strong> Use your <strong>Discord handle</strong> as your contact name. The platform admin will verify your identity via Discord before approving.
+                  <strong>Important:</strong> Provide your Discord handle and User ID so your activation code can be sent to you automatically via Discord DM.
                 </div>
                 <Field label="SERVER NUMBER" placeholder="e.g. 958"
                   value={reqForm.serverNumber} onChange={v => setReqForm(f => ({ ...f, serverNumber: v }))} />
                 <Field label="WORKSPACE NAME" placeholder="e.g. 958 Mastermind"
                   value={reqForm.name} onChange={v => setReqForm(f => ({ ...f, name: v }))} />
-                <Field label="YOUR DISCORD HANDLE" placeholder="e.g. YourName#1234 or @yourname"
+                <Field label="YOUR DISCORD HANDLE" placeholder="e.g. @yourname"
                   value={reqForm.contactName} onChange={v => setReqForm(f => ({ ...f, contactName: v }))} />
+                <Field label="YOUR DISCORD USER ID" placeholder="e.g. 123456789012345678"
+                  value={reqForm.discordUserId} onChange={v => setReqForm(f => ({ ...f, discordUserId: v }))} />
+                <div style={{ background: 'rgba(0,200,255,0.05)', border: '1px solid rgba(0,200,255,0.15)', padding: '8px 12px', marginBottom: 16, fontSize: 11, color: '#3a5878', lineHeight: 1.7 }}>
+                  💡 <strong style={{ color: '#7a9bb8' }}>How to find your Discord User ID:</strong> In Discord, go to Settings → Advanced → enable Developer Mode. Then right-click your name anywhere and click <em>Copy User ID</em>.
+                </div>
                 <div style={{ marginBottom: 16 }}>
                   <div style={S.label}>MESSAGE (optional)</div>
                   <textarea
