@@ -353,7 +353,7 @@ function RoleHelp({ role, serverId, navigate }) {
                 onClick={() => navigate(role === 'admin' ? `/server/${serverId}/admin` : `/server/${serverId}/alliance`)}
                 style={{ marginTop: 14, background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.3)', color: '#f0a500', padding: '7px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' }}
               >
-                {role === 'admin' ? 'OPEN ADMIN PANEL →' : 'OPEN ALLIANCE HQ →'}
+                {role === 'admin' ? 'OPEN SERVER ADMIN →' : 'OPEN ALLIANCE HQ →'}
               </button>
             )}
           </div>

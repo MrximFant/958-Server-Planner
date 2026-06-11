@@ -377,6 +377,24 @@ export default function TrainPlanner() {
     else if (dir === 1 && idx < sorted.length - 1) applySchedule(sorted[idx + 1]);
   }
 
+  async function handleDeleteWeek() {
+    if (!scheduleId) { alert('This week has not been saved yet — nothing to delete.'); return; }
+    if (!confirm('Delete this entire week\'s schedule? This cannot be undone.')) return;
+    await supabase.from('train_slots').delete().eq('schedule_id', scheduleId);
+    await supabase.from('train_schedules').delete().eq('id', scheduleId);
+    const remaining = allSchedules.filter(s => s.id !== scheduleId);
+    setAllSchedules(remaining);
+    if (remaining.length > 0) {
+      const sorted = [...remaining].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
+      applySchedule(sorted[sorted.length - 1]);
+    } else {
+      setScheduleId(null);
+      setCurrentWeekKey(toDateString(getMondayDate()));
+      setSlots(EMPTY_SLOTS());
+      setIsDirty(false);
+    }
+  }
+
   function createNewWeek() {
     const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
     let baseDate;
@@ -677,6 +695,11 @@ export default function TrainPlanner() {
               + NEW WEEK
             </button>
           )}
+          {canEdit && scheduleId && (
+            <button onClick={handleDeleteWeek} style={{ ...S.weekNavBtn, background: 'rgba(255,64,96,0.06)', border: '1px solid rgba(255,64,96,0.3)', color: '#ff4060' }} title="Delete this week's schedule from database">
+              🗑 DELETE WEEK
+            </button>
+          )}
 
           <input
             value={weekLabelOverride}
@@ -703,7 +726,7 @@ export default function TrainPlanner() {
                 return (
                   <button
                     key={m.id}
-                    onClick={() => { if (canEdit) { setMode(m.id); markDirty(); } }}
+                    onClick={() => { if (canEdit && m.id !== mode) { setMode(m.id); markDirty(); } }}
                     style={{
                       display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3,
                       padding: '8px 9px', background: active ? `${m.color}14` : 'rgba(10,18,30,0.6)',

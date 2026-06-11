@@ -1448,10 +1448,10 @@ export default function AllianceHQ() {
             <button
               className="ahq-sidebar-nav-item"
               onClick={() => { navigate(`/server/${serverId}/admin`); setMobileOpen(false); }}
-              title={sidebarCollapsed ? 'ADMIN PANEL' : undefined}
+              title={sidebarCollapsed ? 'SERVER ADMIN' : undefined}
             >
               <span className="snav-icon">⚡</span>
-              <span className="snav-label">ADMIN PANEL</span>
+              <span className="snav-label">SERVER ADMIN</span>
             </button>
           )}
         </div>

@@ -57,7 +57,7 @@ export default function AdminPanel() {
         </button>
         <div style={S.topTitle}>
           <Shield size={14} style={{ color: '#00c8ff' }} />
-          {isHelper ? 'HELPER PANEL' : 'ADMIN PANEL'} — SERVER {server.server_number}
+          {isHelper ? 'HELPER PANEL' : 'SERVER ADMIN'} — SERVER {server.server_number}
         </div>
       </div>
 
