@@ -42,7 +42,7 @@ export default function ServerSelect() {
   const canvasRef = useRef(null);
   const [servers,  setServers]  = useState([]);
   const [loading,  setLoading]  = useState(true);
-  const [view,     setView]     = useState('list'); // list | request | activate | how
+  const [view,     setView]     = useState('how'); // list | request | activate | how
 
   // Request form
   const [reqForm,    setReqForm]    = useState({ serverNumber: '', name: '', contactName: '', discordUserId: '', message: '' });
@@ -202,17 +202,17 @@ export default function ServerSelect() {
         <p style={S.sub}>Choose your game server workspace or set up a new one.</p>
 
         <div style={S.tabs}>
-          <button style={{ ...S.tab, ...(view === 'list'     ? S.tabActive : {}) }} onClick={() => setView('list')}>
-            <LogIn size={14} /> SERVERS
-          </button>
-          <button style={{ ...S.tab, ...(view === 'how'      ? S.tabActive : {}) }} onClick={() => setView('how')}>
+          <button style={{ ...S.tab, ...(view === 'how' ? S.tabActiveHow : {}) }} onClick={() => setView('how')}>
             <Info size={14} /> HOW IT WORKS
           </button>
-          <button style={{ ...S.tab, ...(view === 'request'  ? S.tabActive : {}) }} onClick={() => { setView('request'); setReqSuccess(false); setReqError(''); }}>
-            <Plus size={14} /> REQUEST ACCESS
+          <button style={{ ...S.tab, ...(view === 'list' ? S.tabActive : {}) }} onClick={() => setView('list')}>
+            <LogIn size={14} /> ENTER SERVER
+          </button>
+          <button style={{ ...S.tab, ...(view === 'request' ? S.tabActive : {}) }} onClick={() => { setView('request'); setReqSuccess(false); setReqError(''); }}>
+            <Plus size={14} /> REQUEST A SERVER
           </button>
           <button style={{ ...S.tab, ...(view === 'activate' ? S.tabActive : {}) }} onClick={() => { setView('activate'); setActError(''); }}>
-            <Key size={14} /> ACTIVATE
+            <Key size={14} /> ACTIVATE A SERVER
           </button>
         </div>
 
@@ -254,7 +254,10 @@ export default function ServerSelect() {
 
         {/* HOW IT WORKS */}
         {view === 'how' && (
-          <div style={S.card}>
+          <div style={S.cardHow}>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 18, color: '#f0a500', letterSpacing: '2px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <Info size={16} /> HOW IT WORKS
+            </div>
             <div style={S.howTitle}>FOR MEMBERS</div>
             <div style={S.howSteps}>
               <HowStep n="1" title="Find your server above" text="Click your server number in the SERVERS list to open its dashboard." />
@@ -276,9 +279,14 @@ export default function ServerSelect() {
               <HowStep n="3" title="Set up alliances" text="After activation, log into the admin panel at /server/[id]/admin to create alliances and invite R5 leaders." />
             </div>
 
-            <button style={{ ...S.btn, marginTop: 20 }} onClick={() => setView('request')}>
-              REQUEST A SERVER →
-            </button>
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
+              <button style={{ ...S.btn, flex: 1 }} onClick={() => setView('list')}>
+                ENTER SERVER →
+              </button>
+              <button style={{ ...S.btn, flex: 1, background: 'transparent', color: '#f0a500', border: '1px solid rgba(240,165,0,0.4)' }} onClick={() => { setView('request'); setReqSuccess(false); }}>
+                REQUEST A SERVER →
+              </button>
+            </div>
           </div>
         )}
 
@@ -448,14 +456,16 @@ const styles = {
   tabs: { display: 'flex', gap: 8, marginBottom: 20, justifyContent: 'center', flexWrap: 'wrap' },
   tab: { display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(13,21,32,0.6)', border: '1px solid #1e3550', color: '#7a9bb8', padding: '8px 18px', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer', transition: 'all 0.2s' },
   tabActive: { border: '1px solid rgba(0,200,255,0.5)', color: '#00c8ff', background: 'rgba(0,200,255,0.08)' },
+  tabActiveHow: { border: '1px solid rgba(240,165,0,0.6)', color: '#f0a500', background: 'rgba(240,165,0,0.1)' },
   card: { background: 'rgba(13,21,32,0.9)', border: '1px solid #1e3550', padding: '24px', textAlign: 'left' },
+  cardHow: { background: 'rgba(13,21,32,0.9)', border: '1px solid rgba(240,165,0,0.35)', padding: '24px', textAlign: 'left', boxShadow: '0 0 24px rgba(240,165,0,0.07)' },
   serverRow: { width: '100%', display: 'flex', alignItems: 'center', gap: 16, background: 'transparent', border: 'none', borderBottom: '1px solid #1a2d42', padding: '14px 0', cursor: 'pointer', color: '#d0e4f4', textAlign: 'left' },
   serverIcon: { width: 40, height: 40, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#00c8ff', flexShrink: 0 },
   serverName: { fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 16, color: '#d0e4f4' },
   serverSub: { fontSize: 11, color: '#3a5878', fontFamily: "'Share Tech Mono', monospace", marginTop: 2 },
   seasonBadge: { background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.2)', color: '#00c8ff', fontFamily: "'Share Tech Mono',monospace", fontSize: 11, padding: '3px 8px', flexShrink: 0 },
-  howTitle: { fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 12 },
-  howSteps: { borderLeft: '1px solid #1e3550', paddingLeft: 16 },
+  howTitle: { fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '2px', color: '#f0a500', marginBottom: 12, marginTop: 4, background: 'rgba(240,165,0,0.06)', border: '1px solid rgba(240,165,0,0.2)', padding: '5px 10px', display: 'inline-block' },
+  howSteps: { borderLeft: '2px solid rgba(240,165,0,0.2)', paddingLeft: 16, marginBottom: 8 },
   label: { fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 6 },
   input: { width: '100%', background: 'rgba(0,200,255,0.04)', border: '1px solid #1e3550', color: '#d0e4f4', padding: '10px 14px', fontFamily: "'Rajdhani', sans-serif", fontSize: 15, outline: 'none', boxSizing: 'border-box' },
   btn: { width: '100%', background: '#00c8ff', color: '#080d14', border: 'none', padding: '13px', fontFamily: "'Rajdhani', sans-serif", fontWeight: 700, fontSize: 14, letterSpacing: '2px', cursor: 'pointer', marginTop: 4 },
