@@ -1109,6 +1109,9 @@ function WorldClock() {
 
 function RosterView({ members, alliance, myMemberId, showPower }) {
   const [search, setSearch] = useState('');
+  const [filterTroop, setFilterTroop] = useState('');
+  const [filterCanyon, setFilterCanyon] = useState('');
+  const [filterDesert, setFilterDesert] = useState('');
   const [sortField, setSortField] = useState('power1');
   const [sortDir, setSortDir] = useState(-1);
 
@@ -1118,9 +1121,12 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
   }
 
   const filtered = [...members].filter(p => {
-    if (!search) return true;
-    return (p.in_game_name || '').toLowerCase().includes(search.toLowerCase()) ||
-           p.username.toLowerCase().includes(search.toLowerCase());
+    if (search && !(p.in_game_name || '').toLowerCase().includes(search.toLowerCase()) &&
+        !p.username.toLowerCase().includes(search.toLowerCase())) return false;
+    if (filterTroop && p.troop1 !== filterTroop) return false;
+    if (filterCanyon && p.canyon_team !== filterCanyon) return false;
+    if (filterDesert && p.desert_team !== filterDesert) return false;
+    return true;
   }).sort((a, b) => {
     const av = a[sortField], bv = b[sortField];
     if (!isNaN(parseFloat(av)) && av != null) return ((parseFloat(av) || 0) - (parseFloat(bv) || 0)) * sortDir;
@@ -1171,6 +1177,29 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
       <div style={{ padding: '0 20px 20px' }}>
         <div className="ahq-controls">
           <input className="ahq-search" placeholder="Search name…" value={search} onChange={e => setSearch(e.target.value)} />
+          <select className="ahq-sel" value={filterTroop} onChange={e => setFilterTroop(e.target.value)}>
+            <option value="">All Troops</option>
+            <option value="Tank">🛡 Tank</option>
+            <option value="Missile">🚀 Missile</option>
+            <option value="Air">✈ Air</option>
+          </select>
+          <select className="ahq-sel" value={filterCanyon} onChange={e => setFilterCanyon(e.target.value)}>
+            <option value="">All Canyon</option>
+            <option value="A">Canyon Team A</option>
+            <option value="B">Canyon Team B</option>
+            <option value="any">Canyon Flexible</option>
+          </select>
+          <select className="ahq-sel" value={filterDesert} onChange={e => setFilterDesert(e.target.value)}>
+            <option value="">All Desert</option>
+            <option value="A">Desert Team A</option>
+            <option value="B">Desert Team B</option>
+            <option value="any">Desert Flexible</option>
+          </select>
+          {(filterTroop || filterCanyon || filterDesert || search) && (
+            <button className="btn-cancel-sm" onClick={() => { setSearch(''); setFilterTroop(''); setFilterCanyon(''); setFilterDesert(''); }}>
+              CLEAR
+            </button>
+          )}
         </div>
         <div className="ahq-table-wrap">
           <table className="ahq-table">
@@ -1237,12 +1266,15 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
 
 function EventsView({ members, alliance, myMemberId, showPower }) {
   const [tab, setTab] = useState('canyon');
+  const [filterTroop, setFilterTroop] = useState('');
 
   function renderWishlist(type) {
     const tField  = type === 'canyon' ? 'canyon_team' : 'desert_team';
     const subField = type === 'canyon' ? 'canyon_sub'  : 'desert_sub';
     const isCan = type === 'canyon';
-    const sorted = [...members].sort((a, b) => (parseFloat(b.power1) || 0) - (parseFloat(a.power1) || 0));
+    const sorted = [...members]
+      .filter(p => !filterTroop || p.troop1 === filterTroop)
+      .sort((a, b) => (parseFloat(b.power1) || 0) - (parseFloat(a.power1) || 0));
     const cats = [
       { label: 'Team A', dot: 'dot-l-green',  time: isCan ? '12:00–12:30 (Server Time)' : '18:00–18:30 (Server Time)', filter: p => p[tField] === 'A' && !p[subField] },
       { label: 'Team B', dot: 'dot-l-orange', time: isCan ? '23:00–23:30 (Server Time)' : '09:00–09:30 (Server Time)', filter: p => p[tField] === 'B' && !p[subField] },
@@ -1297,6 +1329,15 @@ function EventsView({ members, alliance, myMemberId, showPower }) {
         ))}
       </div>
       <div style={{ padding: '0 20px 20px' }}>
+        <div className="ahq-controls" style={{ marginBottom: 14 }}>
+          <select className="ahq-sel" value={filterTroop} onChange={e => setFilterTroop(e.target.value)}>
+            <option value="">All Troops</option>
+            <option value="Tank">🛡 Tank</option>
+            <option value="Missile">🚀 Missile</option>
+            <option value="Air">✈ Air</option>
+          </select>
+          {filterTroop && <button className="btn-cancel-sm" onClick={() => setFilterTroop('')}>CLEAR</button>}
+        </div>
         {renderWishlist(tab)}
       </div>
     </div>

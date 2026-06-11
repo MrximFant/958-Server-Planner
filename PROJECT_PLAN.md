@@ -48,7 +48,7 @@ Emergency admin access (legacy server admin password) is hidden behind a collaps
 ## How Onboarding Works
 
 ```
-1. Server admin submits request (serverselect page)
+1. Server admin submits request (ServerSelect page)
       ↓ includes Discord handle + Discord User ID
 2. Super admin approves at /superadmin → sets activation code
       ↓
@@ -56,8 +56,9 @@ Emergency admin access (legacy server admin password) is hidden behind a collaps
       ↓
 4. Server admin clicks ACTIVATE A SERVER → enters code + creates admin account
       ↓
-5. Server admin logs in → opens Admin Panel → creates alliances
-      ↓  each alliance gets: owner invite link (one-time) + member invite link (reusable)
+5. Server admin logs in → sees ⚡ ADMIN PANEL button prominently in hero
+      ↓ opens Admin Panel → creates alliances
+      ↓ each alliance gets: owner invite link (one-time) + member invite link (reusable)
 6. Admin sends owner invite link to each R5 leader
       ↓ R5 clicks link → creates account → alliance_role = 'owner' auto-set
 7. R5 shares member invite link with their players
@@ -77,9 +78,11 @@ Emergency admin access (legacy server admin password) is hidden behind a collaps
 - Activate a Server form (activation code + admin account creation)
 
 #### Server Dashboard (`/server/:id`)
-- Particle background with server name hero
+- Particle background — 180 smooth drifting dots, gentle alpha pulse (no flares)
 - Single unified LOGIN button (username + password for all roles)
-- Role-appropriate quick-start help banner after login
+- After login: role-appropriate quick-start help banner
+- **Role-based quick-action buttons in hero**: ALLIANCE HQ for all, ⚡ ADMIN PANEL for admins, 🔧 HELPER PANEL for helpers
+- Admin panel button also in topbar (always visible after login)
 - Feature cards: Alliance HQ, Rules, Leaderboard (soon), Seasons (soon)
 
 #### Admin Panel (`/server/:id/admin`)
@@ -90,40 +93,39 @@ Emergency admin access (legacy server admin password) is hidden behind a collaps
 
 #### Alliance HQ (`/server/:id/alliance`)
 Four top-level tabs:
-- **🏠 HOME** — train rotation summary for current week
-- **📋 ROSTER** — full member list with power, troops, event roles
+- **🏠 HOME** — World Clock (Server Time UTC-2 + Local Time) → Train rotation → Roster
+- **⚔️ EVENTS** — Canyon Storm & Desert Storm team wishlists (with troop filter)
 - **👤 MY PROFILE** — edit own stats, powers (in millions), troop types, event prefs
-- **⚙️ MANAGE** — sub-tabs: ROSTER (edit/delete), ADMINS (promote officers), PARTNERS (partner rosters), SETTINGS (invite links, visibility toggles)
+- **⚙️ MANAGE** — sub-tabs: ROSTER (edit/delete/password reset), ADMINS (promote officers), PARTNERS (partner rosters), SETTINGS (invite links, visibility toggles)
 
-Topbar buttons: 🗺 MAP WIP (all members), 🚂 TRAIN (owners + alliance admins)
+Roster table columns: Player | T1 Power | T2 Power | T3 Power | Canyon | Desert | Profession | Resist | Garrison | Quickstride | Notes
+- Power badges: coloured text only (no borders), mini bar chart vs alliance max
+- Row hue tint by primary troop: Tank = red, Missile = blue, Air = green
+- Troop legend above table
+- Filters: search, troop type, canyon team, desert team + CLEAR button
+- Topbar buttons: 🗺 MAP WIP, 🚂 TRAIN (owners + admins)
+
+#### World Clock (in Alliance HQ HOME)
+- **Server Time** — fixed UTC-2, no DST, matches in-game server clock
+- **Local Time** — browser's local timezone
+- Updates every second
 
 #### Train Planner (`/server/:id/train`)
-Five scheduling modes:
-- **Manual** — drag and drop anyone into any slot
-- **Fixed Driver** — one person drives every day, VIPs rotate
-- **Paired** — driver/VIP pairs, swap roles after full cycle
-- **Round Robin** — everyone takes turns in order
-- **Priority** — specific people locked to specific days
-
+Five scheduling modes: Manual, Fixed Driver, Paired, Round Robin, Priority
 Features: drag-and-drop, click-to-assign, per-slot lock, save to Supabase
 
 #### War Map (`/server/:id/map`)
 - Territory map from territories.json tile data
-- LIVE layer — actual ownership per tile (territories table)
-- PLAN layer — per-alliance private planning map (alliance_plans table)
-- Partner layer — semi-transparent tiles from allied servers via handshakes
-- Partner server badge (e.g. S957) on shared tiles
-- Sidebar showing connected partner servers and their sharing flags
-- Public map mode (toggle per server — visible to non-logged-in visitors)
+- LIVE layer, PLAN layer, Partner layer
+- Partner server badges on shared tiles
+- Public map mode toggle
 
 #### Server Handshakes
-- Server admin creates a handshake invite link
-- Target server admin accepts via the link
 - Server-level caps: share_map, share_roster, share_player_info
 - Per-alliance opt-in via alliance_handshake_settings
 
 #### Rules Page (`/server/:id/rules`)
-- Six sections: server structure, territory ownership, war map, handshakes, member accounts, etiquette
+- Six sections: roles & permissions, server structure, territory, war map, member accounts, etiquette
 
 #### Super Admin Panel (`/superadmin`)
 - View all pending/approved/rejected server requests
@@ -131,80 +133,45 @@ Features: drag-and-drop, click-to-assign, per-slot lock, save to Supabase
 - Shows Discord User ID for DM targeting
 
 #### Discord Bot (notify-activation)
-- Supabase Edge Function triggered by database webhook on server_requests UPDATE
-- When status → 'approved': opens DM channel with requester's Discord ID, sends activation code
-- Setup documented in DISCORD_SETUP.md
+- Supabase Edge Function triggered by DB webhook on server_requests UPDATE
+- When status → 'approved': DMs activation code to requester's Discord account
 
 ---
 
 ### 🔲 Planned / In Progress
 
 #### Password Reset via Discord Bot
-- Member sends `/resetpassword` slash command to bot
-- Bot looks up Discord ID in members table
-- DMs a one-time temporary password
-- Member logs in and changes it
+- Member sends command to bot → bot DMs a one-time temp password
 - Needs: second Edge Function + slash command registration
 
-#### Canyon Storm Planner
-- Visual team slot builder for Canyon Storm event
-- Teams: A and B (or more depending on server size)
-- Slots: specific roles (tank, support, attacker etc.)
-- Members sign up or owner assigns
-- Shows power, troop type, profession per slot
-- Wishlist / signup mode vs. admin-assigned mode
-
-#### Desert Storm Planner
-- Similar visual planner to Canyon Storm
-- Different team structure and role requirements
-- Sub slots for specific day/time assignments
+#### Canyon Storm & Desert Storm Visual Planners
+- Visual team slot builder (beyond the current wishlist view)
+- Admin-assigned mode with drag-and-drop slot filling
+- Power/troop/profession breakdown per team
 
 #### Leaderboard
-- Per-season alliance rankings
-- Influence totals, territory counts, crystal gold rates
-- Historical comparison across seasons
+- Per-season alliance rankings, influence totals, territory counts
 
 #### Season History
-- Past season outcomes stored and viewable
-- Alliance performance trends over time
+- Past season outcomes, alliance performance trends
 
 #### Phase 5 — Multi-Server Season Maps
 - Schema already built (season_maps, season_map_servers tables)
 - UI not yet built
-- Warzones A–H + contested center
-- Multiple servers join a season map, each assigned a warzone
-- Combined map view showing all servers' territories
-
-#### Roster Visibility Toggles (SQL migration needed)
-- `roster_public` — show/hide roster to non-alliance members
-- `roster_show_power` — show/hide power numbers
-- Code is built, columns need adding to Supabase:
-  ```sql
-  ALTER TABLE alliances ADD COLUMN IF NOT EXISTS roster_public BOOLEAN DEFAULT TRUE;
-  ALTER TABLE alliances ADD COLUMN IF NOT EXISTS roster_show_power BOOLEAN DEFAULT TRUE;
-  ```
+- Warzones A–H, multiple servers per season map
 
 ---
 
-## Pending SQL Migrations
+## Database — Current State (2026-06-11)
 
-Run these in **Supabase → SQL Editor** if not already applied:
+All migrations applied. Schema is clean. Verified:
+- ✅ No orphaned members
+- ✅ All alliances have an owner
+- ✅ Server admin account exists (Mrxim — server_role='admin', alliance_role='owner')
+- ✅ Old `players` table is empty (safe to drop)
+- ✅ No duplicate usernames
 
-```sql
--- Owner invite link for alliances (unified login system)
-ALTER TABLE alliances ADD COLUMN IF NOT EXISTS owner_invite_code TEXT UNIQUE;
-
--- Discord User ID for auto-DM on approval
-ALTER TABLE server_requests ADD COLUMN IF NOT EXISTS discord_user_id TEXT;
-
--- Roster visibility controls
-ALTER TABLE alliances ADD COLUMN IF NOT EXISTS roster_public BOOLEAN DEFAULT TRUE;
-ALTER TABLE alliances ADD COLUMN IF NOT EXISTS roster_show_power BOOLEAN DEFAULT TRUE;
-```
-
----
-
-## Database Tables
+### Tables
 
 | Table | Purpose |
 |---|---|
@@ -221,6 +188,12 @@ ALTER TABLE alliances ADD COLUMN IF NOT EXISTS roster_show_power BOOLEAN DEFAULT
 | `train_schedules` | One active train schedule per alliance |
 | `train_slots` | Individual day/role assignments in a schedule |
 
+### Optional cleanup
+```sql
+-- Drop legacy empty table (safe — 0 rows confirmed)
+DROP TABLE public.players;
+```
+
 ---
 
 ## File Structure (key files)
@@ -229,15 +202,17 @@ ALTER TABLE alliances ADD COLUMN IF NOT EXISTS roster_show_power BOOLEAN DEFAULT
 src/
   pages/
     ServerSelect.jsx       — landing page, request + activate
-    ServerDashboard.jsx    — server home, unified login
+    ServerDashboard.jsx    — server home, unified login, role-based quick actions
     AdminPanel.jsx         — server admin tools
-    AllianceHQ.jsx         — main member area (roster, profile, manage, train summary)
+    AllianceHQ.jsx         — main member area (home, events, profile, manage)
     TrainPlanner.jsx       — train assignment planner
-    Map.jsx                — war map with live + plan + partner layers
+    Map.jsx                — war map
     Register.jsx           — member + owner registration via invite link
     JoinServer.jsx         — invite link resolver
     Rules.jsx              — game guide
     SuperAdmin.jsx         — platform-level request management
+  components/
+    ParticleBackground.jsx — shared animated star field (180 dots, no flares)
   contexts/
     AuthContext.jsx        — session management via localStorage
   lib/
@@ -249,7 +224,7 @@ supabase/
     notify-activation/
       index.ts             — Discord DM edge function
 
-supabase_schema.sql        — full schema (clean-slate recreate script)
+supabase_schema.sql        — full schema reference
 DISCORD_SETUP.md           — Discord bot setup guide
 PROJECT_PLAN.md            — this file
 ```
@@ -260,9 +235,10 @@ PROJECT_PLAN.md            — this file
 
 - **Member absence / availability flags** — mark yourself unavailable for an event week
 - **Event history log** — record which members participated in each war event
-- **In-game alliance tag colour sync** — preview the map with the actual in-game colours
+- **In-game alliance tag colour sync** — preview the map with actual in-game colours
 - **Mobile-optimised roster view** — current layout works but could be tighter on phone
 - **Notification preferences** — members opt in to Discord DMs for event reminders
 - **Alliance merge tool** — admin can bulk-move members from one alliance to another
 - **CSV export** — export roster to spreadsheet for offline use
 - **Season map builder** — drag servers into warzone slots on a visual grid
+- **Collapsible left sidebar navigation** — for Alliance HQ on desktop

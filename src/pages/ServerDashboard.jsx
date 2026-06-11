@@ -121,7 +121,17 @@ export default function ServerDashboard() {
         <p style={S.heroSub}>Your alliance's command center. Manage your roster, coordinate train rotations, and plan event teams.</p>
         <div style={S.heroBtns}>
           {activeSession ? (
-            <button style={S.btnPrimary} onClick={() => navigate(`/server/${serverId}/alliance`)}>ALLIANCE HQ →</button>
+            <>
+              <button style={S.btnPrimary} onClick={() => navigate(`/server/${serverId}/alliance`)}>ALLIANCE HQ →</button>
+              {(role === 'admin' || role === 'helper') && (
+                <button
+                  style={{ ...S.btnPrimary, background: 'transparent', border: '2px solid #f0a500', color: '#f0a500' }}
+                  onClick={() => navigate(`/server/${serverId}/admin`)}
+                >
+                  {role === 'helper' ? '🔧 HELPER PANEL →' : '⚡ ADMIN PANEL →'}
+                </button>
+              )}
+            </>
           ) : (
             <button style={S.btnPrimary} onClick={() => { setAuthView('login'); setAuthError(''); setAuthForm({ password: '', username: '' }); setShowEmergency(false); }}>LOGIN →</button>
           )}

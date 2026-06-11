@@ -132,13 +132,13 @@
 .ahq-table tbody tr.me-row.row-air     { background: rgba(32,192,96,.09); }
 .ahq-table td { padding: 9px 10px; vertical-align: middle; white-space: nowrap; }
 
-/* Power badges */
-.pwr-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border: 1px solid; min-width: 90px; background: rgba(255,255,255,.02); }
-.tier-diamond { border-color: var(--diamond); color: var(--diamond); }
-.tier-gold    { border-color: var(--gold);    color: var(--gold); }
-.tier-silver  { border-color: var(--silver);  color: var(--silver); }
-.tier-bronze  { border-color: var(--bronze);  color: var(--bronze); }
-.tier-none    { border-color: var(--border2); color: var(--text3); }
+/* Power badges — no border, colour via text only */
+.pwr-badge { display: inline-flex; align-items: center; gap: 5px; padding: 2px 4px; min-width: 72px; }
+.tier-diamond { color: var(--diamond); }
+.tier-gold    { color: var(--gold); }
+.tier-silver  { color: var(--silver); }
+.tier-bronze  { color: var(--bronze); }
+.tier-none    { color: var(--text3); }
 .pwr-val { font-family: 'Share Tech Mono', monospace; font-size: 13px; font-weight: bold; }
 .pwr-bar-wrap { display: flex; flex-direction: column; gap: 2px; }
 .pwr-track { width: 50px; height: 2px; background: var(--border); }
