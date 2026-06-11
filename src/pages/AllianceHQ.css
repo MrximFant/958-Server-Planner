@@ -5,7 +5,7 @@
   --accent:   #00c8ff; --accent2: #f0a500; --accent3: #00e87a;
   --danger:   #ff4060; --warn: #ff8c00;
   --text:     #d0e4f4; --text2: #7a9bb8; --text3: #3a5878;
-  --tank:     #e05020; --air: #2080e0; --missile: #a040d0;
+  --tank:     #e03030; --air: #20c060; --missile: #2080e0;
   --diamond:  #7df9ff; --gold: #ffd700; --silver: #c0c0c0; --bronze: #cd7f32;
 
   background: var(--bg);
@@ -124,6 +124,12 @@
 .ahq-table tbody tr { border-bottom: 1px solid rgba(30,53,80,.5); transition: background .12s; }
 .ahq-table tbody tr:hover { background: rgba(0,200,255,.035); }
 .ahq-table tbody tr.me-row { background: rgba(0,200,255,.055); }
+.ahq-table tbody tr.row-tank    { background: rgba(224,48,48,.04); }
+.ahq-table tbody tr.row-missile { background: rgba(32,128,224,.04); }
+.ahq-table tbody tr.row-air     { background: rgba(32,192,96,.04); }
+.ahq-table tbody tr.me-row.row-tank    { background: rgba(224,48,48,.09); }
+.ahq-table tbody tr.me-row.row-missile { background: rgba(32,128,224,.09); }
+.ahq-table tbody tr.me-row.row-air     { background: rgba(32,192,96,.09); }
 .ahq-table td { padding: 9px 10px; vertical-align: middle; white-space: nowrap; }
 
 /* Power badges */

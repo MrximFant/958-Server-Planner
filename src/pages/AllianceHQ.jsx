@@ -1065,10 +1065,44 @@ function TrainWeekSummary({ allianceId, serverId, navigate, canManage }) {
   );
 }
 
+// ── WorldClock ───────────────────────────────────────────────────
+
+function WorldClock() {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function fmt(d) { return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`; }
+  function fmtLocal(d) {
+    return d.toLocaleString(undefined, { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12: false });
+  }
+
+  return (
+    <div style={{ display: 'flex', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+      <div style={{ flex: 1, minWidth: 220, background: 'rgba(0,200,255,0.05)', border: '1px solid rgba(0,200,255,0.2)', padding: '10px 16px', display: 'flex', gap: 12, alignItems: 'center' }}>
+        <span style={{ fontSize: 18 }}>🌐</span>
+        <div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 2 }}>SERVER TIME (UTC+0)</div>
+          <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 16, color: '#00c8ff', letterSpacing: '1px' }}>{fmt(now)}</div>
+        </div>
+      </div>
+      <div style={{ flex: 1, minWidth: 220, background: 'rgba(0,200,255,0.02)', border: '1px solid #1e3550', padding: '10px 16px', display: 'flex', gap: 12, alignItems: 'center' }}>
+        <span style={{ fontSize: 18 }}>🕐</span>
+        <div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 2 }}>LOCAL TIME</div>
+          <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 16, color: '#d0e4f4', letterSpacing: '1px' }}>{fmtLocal(now)}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Panel 4: Roster View ─────────────────────────────────────────
 
-function RosterView({ members, alliance, myMemberId, showPower, defaultTab = 'roster' }) {
-  const [tab, setTab] = useState(defaultTab);
+function RosterView({ members, alliance, myMemberId, showPower }) {
   const [search, setSearch] = useState('');
   const [sortField, setSortField] = useState('power1');
   const [sortDir, setSortDir] = useState(-1);
@@ -1105,14 +1139,108 @@ function RosterView({ members, alliance, myMemberId, showPower, defaultTab = 'ro
     );
   }
 
+  return (
+    <div className="ahq-panel">
+      <div className="ahq-panel-header" style={{ borderColor: `${alliance.color}50`, color: alliance.color }}>
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 10, height: 10, borderRadius: '50%', background: alliance.color, display: 'inline-block' }} />
+          {alliance.name.toUpperCase()} — ROSTER
+        </span>
+        <span className="ahq-panel-sub">{members.length} members</span>
+      </div>
+
+      <div style={{ padding: '12px 20px 0' }}>
+        {/* Troop type legend */}
+        <div style={{ display: 'flex', gap: 10, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <span style={{ fontSize: 9, letterSpacing: '1.5px', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700 }}>TROOP TYPE:</span>
+          {[['Tank','🛡'],['Missile','🚀'],['Air','✈']].map(([t,icon]) => (
+            <span key={t} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span className={`trp trp-${t}`}>{t[0]}</span>
+              <span style={{ fontSize: 11, color: '#7a9bb8' }}>{icon} {t}</span>
+            </span>
+          ))}
+          <span style={{ marginLeft: 8, fontSize: 9, color: '#3a5878', fontFamily: "'Rajdhani',sans-serif" }}>— row tint matches primary troop type</span>
+        </div>
+      </div>
+
+      <div style={{ padding: '0 20px 20px' }}>
+        <div className="ahq-controls">
+          <input className="ahq-search" placeholder="Search name…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+        <div className="ahq-table-wrap">
+          <table className="ahq-table">
+            <thead>
+              <tr>
+                <th onClick={() => handleSort('in_game_name')}>Player ↕</th>
+                {showPower && <th onClick={() => handleSort('power1')}>T1 Power ↕</th>}
+                {showPower && <th onClick={() => handleSort('power2')}>T2 Power ↕</th>}
+                {showPower && <th onClick={() => handleSort('power3')}>T3 Power ↕</th>}
+                <th className="nosort">Canyon</th>
+                <th className="nosort">Desert</th>
+                <th className="nosort">Profession</th>
+                <th onClick={() => handleSort('resistance')}>Resist ↕</th>
+                <th className="nosort">Garrison</th>
+                <th className="nosort">Quickstride</th>
+                <th className="nosort">Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr className="no-data"><td colSpan={11}>No members found.</td></tr>
+              ) : filtered.map(p => {
+                const coffee = p.coffee_buff === 'none' || !p.coffee_buff ? 0 : parseInt(p.coffee_buff) || 0;
+                const totalRes = (parseInt(p.resistance) || 0) + coffee;
+                const isMe = p.id === myMemberId;
+                const troopClass = p.troop1 ? `row-${p.troop1.toLowerCase()}` : '';
+                return (
+                  <tr key={p.id} className={`${isMe ? 'me-row' : ''} ${troopClass}`}>
+                    <td>
+                      <span className="player-name">{p.in_game_name || p.username}</span>
+                      {isMe && <span className="me-badge">ME</span>}
+                      {p.alliance_role === 'alliance_admin' && <span className="role-chip admin-chip" style={{ marginLeft: 4 }}>ADMIN</span>}
+                    </td>
+                    {showPower ? <PwrCell pow={p.power1} troop={p.troop1} /> : null}
+                    {showPower ? <PwrCell pow={p.power2} troop={p.troop2} /> : null}
+                    {showPower ? <PwrCell pow={p.power3} troop={p.troop3} /> : null}
+                    <td>
+                      {p.canyon_team && p.canyon_team !== 'any'
+                        ? <span className={`team-badge team-${p.canyon_team}`}>{p.canyon_team === 'A' ? 'Team A' : 'Team B'}{p.canyon_sub && <span className="sub-tag">SUB</span>}</span>
+                        : <span className="team-badge">Flex</span>}
+                    </td>
+                    <td>
+                      {p.desert_team && p.desert_team !== 'any'
+                        ? <span className={`team-badge team-${p.desert_team}`}>{p.desert_team === 'A' ? 'Team A' : 'Team B'}{p.desert_sub && <span className="sub-tag">SUB</span>}</span>
+                        : <span className="team-badge">Flex</span>}
+                    </td>
+                    <td>{p.profession ? <span className={`prof-chip prof-${p.profession}`}>{p.profession}</span> : '—'}</td>
+                    <td>{totalRes > 0 ? <span className="resist-cell">{totalRes.toLocaleString()}</span> : <span className="resist-muted">—</span>}</td>
+                    <td><span className={p.garrison === 'yes' ? 'dot dot-yes' : 'dot dot-no'} />{p.garrison === 'yes' ? 'Yes' : 'No'}</td>
+                    <td><span className={p.quickstride === 'yes' ? 'dot dot-yes' : 'dot dot-no'} />{p.quickstride === 'yes' ? 'Yes' : 'No'}</td>
+                    <td><span className="notes-cell" title={p.notes || ''}>{p.notes || ''}</span></td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Events View (Canyon & Desert wishlists) ───────────────────────
+
+function EventsView({ members, alliance, myMemberId, showPower }) {
+  const [tab, setTab] = useState('canyon');
+
   function renderWishlist(type) {
     const tField  = type === 'canyon' ? 'canyon_team' : 'desert_team';
     const subField = type === 'canyon' ? 'canyon_sub'  : 'desert_sub';
     const isCan = type === 'canyon';
     const sorted = [...members].sort((a, b) => (parseFloat(b.power1) || 0) - (parseFloat(a.power1) || 0));
     const cats = [
-      { label: 'Team A', dot: 'dot-l-green',  time: isCan ? '12:00–12:30' : '18:00–18:30', filter: p => p[tField] === 'A' && !p[subField] },
-      { label: 'Team B', dot: 'dot-l-orange', time: isCan ? '23:00–23:30' : '09:00–09:30', filter: p => p[tField] === 'B' && !p[subField] },
+      { label: 'Team A', dot: 'dot-l-green',  time: isCan ? '12:00–12:30 (Server Time)' : '18:00–18:30 (Server Time)', filter: p => p[tField] === 'A' && !p[subField] },
+      { label: 'Team B', dot: 'dot-l-orange', time: isCan ? '23:00–23:30 (Server Time)' : '09:00–09:30 (Server Time)', filter: p => p[tField] === 'B' && !p[subField] },
       { label: 'Substitutes', dot: 'dot-l-warn', time: '', filter: p => !!p[subField] },
       { label: 'Flexible',    dot: 'dot-l-gray', time: '', filter: p => p[tField] === 'any' && !p[subField] },
     ];
@@ -1152,85 +1280,19 @@ function RosterView({ members, alliance, myMemberId, showPower, defaultTab = 'ro
 
   return (
     <div className="ahq-panel">
-      <div className="ahq-panel-header" style={{ borderColor: `${alliance.color}50`, color: alliance.color }}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ width: 10, height: 10, borderRadius: '50%', background: alliance.color, display: 'inline-block' }} />
-          {alliance.name.toUpperCase()} — ROSTER
-        </span>
+      <div className="ahq-panel-header" style={{ borderColor: 'rgba(0,232,122,0.3)', color: '#00e87a' }}>
+        <span>⚔️ EVENTS</span>
         <span className="ahq-panel-sub">{members.length} members</span>
       </div>
-
       <div className="ahq-tab-row" style={{ padding: '0 20px' }}>
-        {['roster', 'canyon', 'desert'].map(t => (
+        {['canyon', 'desert'].map(t => (
           <button key={t} className={`ahq-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
-            {t === 'roster' ? 'ROSTER' : t === 'canyon' ? 'CANYON WISHLIST' : 'DESERT WISHLIST'}
+            {t === 'canyon' ? '🏔 CANYON STORM' : '🏜 DESERT STORM'}
           </button>
         ))}
       </div>
-
       <div style={{ padding: '0 20px 20px' }}>
-        {tab === 'roster' && (
-          <>
-            <div className="ahq-controls">
-              <input className="ahq-search" placeholder="Search name…" value={search} onChange={e => setSearch(e.target.value)} />
-            </div>
-            <div className="ahq-table-wrap">
-              <table className="ahq-table">
-                <thead>
-                  <tr>
-                    <th onClick={() => handleSort('in_game_name')}>Player ↕</th>
-                    {showPower && <th onClick={() => handleSort('power1')}>T1 Power ↕</th>}
-                    <th className="nosort">T1 Troop</th>
-                    {showPower && <th onClick={() => handleSort('power2')}>T2 ↕</th>}
-                    {showPower && <th onClick={() => handleSort('power3')}>T3 ↕</th>}
-                    <th className="nosort">Canyon</th>
-                    <th className="nosort">Desert</th>
-                    <th className="nosort">Profession</th>
-                    <th onClick={() => handleSort('resistance')}>Resist ↕</th>
-                    <th className="nosort">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.length === 0 ? (
-                    <tr className="no-data"><td colSpan={10}>No members found.</td></tr>
-                  ) : filtered.map(p => {
-                    const coffee = p.coffee_buff === 'none' || !p.coffee_buff ? 0 : parseInt(p.coffee_buff) || 0;
-                    const totalRes = (parseInt(p.resistance) || 0) + coffee;
-                    const isMe = p.id === myMemberId;
-                    return (
-                      <tr key={p.id} className={isMe ? 'me-row' : ''}>
-                        <td>
-                          <span className="player-name">{p.in_game_name || p.username}</span>
-                          {isMe && <span className="me-badge">ME</span>}
-                          {p.alliance_role === 'alliance_admin' && <span className="role-chip admin-chip" style={{ marginLeft: 4 }}>ADMIN</span>}
-                        </td>
-                        {showPower ? <PwrCell pow={p.power1} troop={p.troop1} /> : null}
-                        <td>{p.troop1 ? <span className={`trp trp-${p.troop1}`}>{p.troop1}</span> : '—'}</td>
-                        {showPower ? <PwrCell pow={p.power2} troop={p.troop2} /> : null}
-                        {showPower ? <PwrCell pow={p.power3} troop={p.troop3} /> : null}
-                        <td>
-                          {p.canyon_team && p.canyon_team !== 'any'
-                            ? <span className={`team-badge team-${p.canyon_team}`}>{p.canyon_team === 'A' ? 'Team A' : 'Team B'}{p.canyon_sub && <span className="sub-tag">SUB</span>}</span>
-                            : <span className="team-badge">Flex</span>}
-                        </td>
-                        <td>
-                          {p.desert_team && p.desert_team !== 'any'
-                            ? <span className={`team-badge team-${p.desert_team}`}>{p.desert_team === 'A' ? 'Team A' : 'Team B'}{p.desert_sub && <span className="sub-tag">SUB</span>}</span>
-                            : <span className="team-badge">Flex</span>}
-                        </td>
-                        <td>{p.profession ? <span className={`prof-chip prof-${p.profession}`}>{p.profession}</span> : '—'}</td>
-                        <td>{totalRes > 0 ? <span className="resist-cell">{totalRes.toLocaleString()}</span> : <span className="resist-muted">—</span>}</td>
-                        <td><span className="notes-cell" title={p.notes || ''}>{p.notes || ''}</span></td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </>
-        )}
-
-        {(tab === 'canyon' || tab === 'desert') && renderWishlist(tab)}
+        {renderWishlist(tab)}
       </div>
     </div>
   );
@@ -1255,9 +1317,9 @@ export default function AllianceHQ() {
   const activeSession    = session?.serverId === serverId ? session : null;
   const role             = activeSession?.role;
   const isAdmin          = role === 'admin';
-  const isOwner          = role === 'owner';
   const allianceRole     = activeSession?.allianceRole;
-  const canManage        = isOwner || allianceRole === 'alliance_admin';
+  const isOwner          = allianceRole === 'owner';
+  const canManage        = isAdmin || isOwner || allianceRole === 'alliance_admin';
 
   const [server,          setServer]          = useState(null);
   const [alliance,        setAlliance]        = useState(null);
@@ -1317,8 +1379,8 @@ export default function AllianceHQ() {
             : <span>ALLIANCE HQ</span>}
         </div>
         <div className="ahq-topbar-right">
-          {isAdmin          && <span className="ahq-role-badge role-admin">⚡ ADMIN</span>}
-          {isOwner          && <span className="ahq-role-badge role-owner">👑 OWNER</span>}
+          {isAdmin                                     && <span className="ahq-role-badge role-admin">⚡ SERVER ADMIN</span>}
+          {!isAdmin && isOwner                         && <span className="ahq-role-badge role-owner">👑 ALLIANCE OWNER</span>}
           {!isAdmin && !isOwner && allianceRole === 'alliance_admin' && <span className="ahq-role-badge role-alladmin">🛡 ALLIANCE ADMIN</span>}
           {!isAdmin && !isOwner && allianceRole === 'member'         && <span className="ahq-role-badge role-member">👤 {activeSession.username}</span>}
           {effectiveAllianceId && (
@@ -1331,7 +1393,7 @@ export default function AllianceHQ() {
               🗺 MAP <span style={{ fontSize: 9, color: '#f0a500', marginLeft: 2 }}>WIP</span>
             </button>
           )}
-          {(isOwner || allianceRole === 'alliance_admin') && (
+          {canManage && (
             <button
               className="btn-secondary-sm"
               onClick={() => navigate(`/server/${serverId}/train`)}
@@ -1349,13 +1411,13 @@ export default function AllianceHQ() {
 
         {/* ── Top-level tab navigation ─────────────────────────── */}
         {effectiveAllianceId && alliance && (
-          <div style={{ borderBottom: '2px solid #1e3550', marginBottom: 0, background: 'rgba(5,10,18,0.8)', position: 'sticky', top: 0, zIndex: 30, display: 'flex', alignItems: 'stretch', gap: 0 }}>
+          <div style={{ borderBottom: '2px solid #1e3550', marginBottom: 0, background: 'rgba(5,10,18,0.8)', position: 'sticky', top: 0, zIndex: 30, display: 'flex', alignItems: 'stretch', gap: 0, overflowX: 'auto' }}>
             {[
-              { id: 'home',    label: '🏠 HOME',       always: true },
-              { id: 'roster',  label: '📋 ROSTER',     always: true },
-              { id: 'profile', label: '👤 MY PROFILE', always: !!activeSession?.memberId },
-              { id: 'manage',  label: '⚙️ MANAGE',     always: canManage },
-            ].filter(t => t.always).map(t => (
+              { id: 'home',    label: '🏠 HOME',       show: true },
+              { id: 'events',  label: '⚔️ EVENTS',     show: true },
+              { id: 'profile', label: '👤 MY PROFILE', show: !!activeSession?.memberId },
+              { id: 'manage',  label: '⚙️ MANAGE',     show: canManage },
+            ].filter(t => t.show).map(t => (
               <button
                 key={t.id}
                 onClick={() => setMainTab(t.id)}
@@ -1404,11 +1466,12 @@ export default function AllianceHQ() {
           </div>
         )}
 
-        {/* 🏠 HOME */}
+        {/* 🏠 HOME — Train schedule + Roster */}
         {(!effectiveAllianceId || mainTab === 'home') && (
           <>
             {effectiveAllianceId && alliance ? (
               <>
+                <WorldClock />
                 <TrainWeekSummary allianceId={effectiveAllianceId} serverId={serverId} navigate={navigate} canManage={canManage} />
                 {showRoster ? (
                   <RosterView
@@ -1416,7 +1479,6 @@ export default function AllianceHQ() {
                     alliance={alliance}
                     myMemberId={activeSession?.memberId}
                     showPower={showPowerInRoster}
-                    defaultTab="canyon"
                   />
                 ) : (
                   <div className="ahq-panel" style={{ textAlign: 'center', padding: 40, color: '#3a5878' }}>
@@ -1432,15 +1494,14 @@ export default function AllianceHQ() {
           </>
         )}
 
-        {/* 📋 ROSTER */}
-        {effectiveAllianceId && alliance && mainTab === 'roster' && (
+        {/* ⚔️ EVENTS — Canyon & Desert wishlists */}
+        {effectiveAllianceId && alliance && mainTab === 'events' && (
           showRoster ? (
-            <RosterView
+            <EventsView
               members={members}
               alliance={alliance}
               myMemberId={activeSession?.memberId}
               showPower={showPowerInRoster}
-              defaultTab="roster"
             />
           ) : (
             <div className="ahq-panel" style={{ textAlign: 'center', padding: 40, color: '#3a5878' }}>
