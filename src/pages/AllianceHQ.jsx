@@ -320,9 +320,6 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
   const [pwdReset, setPwdReset]   = useState({ open: false, pwd: '', confirm: '', busy: false, msg: '' });
 
   // Settings state (owner only)
-  const [pwdForm, setPwdForm] = useState({ newPwd: '', confirmPwd: '' });
-  const [pwdBusy, setPwdBusy] = useState(false);
-  const [pwdMsg, setPwdMsg] = useState('');
   const [rosterPublic, setRosterPublic] = useState(alliance?.roster_public ?? true);
   const [showPower, setShowPower] = useState(alliance?.roster_show_power ?? true);
   const [visibilityBusy, setVisibilityBusy] = useState(false);
@@ -495,20 +492,6 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
     onReload();
   }
 
-  async function handlePasswordChange(e) {
-    e.preventDefault();
-    setPwdMsg('');
-    if (!pwdForm.newPwd.trim()) { setPwdMsg('error:Password cannot be empty.'); return; }
-    if (pwdForm.newPwd !== pwdForm.confirmPwd) { setPwdMsg('error:Passwords do not match.'); return; }
-    setPwdBusy(true);
-    const hash = await hashPassword(pwdForm.newPwd);
-    const { error } = await supabase.from('alliances').update({ owner_password: hash }).eq('id', alliance.id);
-    setPwdBusy(false);
-    if (error) { setPwdMsg('error:' + error.message); return; }
-    setPwdMsg('ok:Password updated.');
-    setPwdForm({ newPwd: '', confirmPwd: '' });
-  }
-
   async function handleVisibilitySave() {
     setVisibilityBusy(true);
     await supabase.from('alliances').update({ roster_public: rosterPublic, roster_show_power: showPower }).eq('id', alliance.id);
@@ -549,7 +532,7 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
             'Alliance Admins can edit and remove members, but cannot change settings or promote others.',
             'Use Roster Visibility to control whether other alliances on the server can see your roster.',
             'If a member forgets their password, edit their profile in the ROSTER tab and set a new one.',
-            'Your owner password can be changed below — share the new one with anyone who needs access.',
+            'To change your own login password, go to MY PROFILE tab → Change My Password.',
           ]} />
         )}
         {!isOwner && tab === 'INVITE' && (
@@ -775,23 +758,6 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
               <button className="btn-primary" disabled={visibilityBusy} onClick={handleVisibilitySave}>
                 {visibilityBusy ? 'SAVING…' : 'SAVE VISIBILITY →'}
               </button>
-            </div>
-
-            {/* Change owner password */}
-            <div className="settings-card">
-              <div className="settings-label">CHANGE OWNER PASSWORD</div>
-              <form onSubmit={handlePasswordChange}>
-                <PwdField label="NEW PASSWORD" value={pwdForm.newPwd} onChange={v => setPwdForm(f => ({ ...f, newPwd: v }))} />
-                <PwdField label="CONFIRM PASSWORD" value={pwdForm.confirmPwd} onChange={v => setPwdForm(f => ({ ...f, confirmPwd: v }))} />
-                {pwdMsg && (
-                  <p style={{ fontSize: 12, margin: '0 0 10px', color: pwdMsg.startsWith('ok:') ? '#00e87a' : '#ff4060' }}>
-                    {pwdMsg.replace(/^(ok|error):/, '')}
-                  </p>
-                )}
-                <button type="submit" className="btn-primary" disabled={pwdBusy}>
-                  {pwdBusy ? 'SAVING…' : 'UPDATE PASSWORD →'}
-                </button>
-              </form>
             </div>
 
             {/* Handshake sharing */}
@@ -1369,13 +1335,11 @@ export default function AllianceHQ() {
 
   const [server,          setServer]          = useState(null);
   const [alliance,        setAlliance]        = useState(null);
-  const [alliances,       setAlliances]       = useState([]);
   const [members,         setMembers]         = useState([]);
   const [loading,         setLoading]         = useState(true);
-  const [viewAllianceId,  setViewAllianceId]  = useState(null);
   const [mainTab, setMainTab] = useState('home');
 
-  const effectiveAllianceId = isAdmin ? viewAllianceId : activeSession?.allianceId;
+  const effectiveAllianceId = activeSession?.allianceId;
 
   useEffect(() => {
     if (!activeSession) { navigate(`/server/${serverId}`); return; }
@@ -1383,14 +1347,10 @@ export default function AllianceHQ() {
     async function init() {
       const { data: srv } = await supabase.from('servers').select('id, server_number, name').eq('id', serverId).single();
       setServer(srv);
-      if (isAdmin) {
-        const { data: als } = await supabase.from('alliances').select('id, name, color').eq('server_id', serverId).order('name');
-        setAlliances(als ?? []);
-      }
       setLoading(false);
     }
     init();
-  }, [serverId, isAdmin, activeSession, navigate]);
+  }, [serverId, activeSession, navigate]);
 
   const loadAlliance = useCallback(async () => {
     if (!effectiveAllianceId) return;
@@ -1488,30 +1448,6 @@ export default function AllianceHQ() {
           </div>
         )}
 
-        {/* Admin alliance picker — always visible for admins */}
-        {isAdmin && (
-          <div className="ahq-panel">
-            <div className="ahq-panel-header" style={{ borderColor: 'rgba(240,165,0,0.3)', color: '#f0a500' }}>
-              <span>⚡ SERVER ADMIN VIEW</span>
-              <button className="btn-secondary-sm" onClick={() => navigate(`/server/${serverId}/admin`)}>
-                ADMIN PANEL →
-              </button>
-            </div>
-            <div style={{ padding: '14px 20px' }}>
-              <label className="form-label" style={{ display: 'block', marginBottom: 6 }}>SELECT ALLIANCE</label>
-              <select
-                className="ahq-sel"
-                value={viewAllianceId || ''}
-                onChange={e => setViewAllianceId(e.target.value || null)}
-                style={{ minWidth: 240 }}
-              >
-                <option value="">— Pick an alliance —</option>
-                {alliances.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-              </select>
-            </div>
-          </div>
-        )}
-
         {/* 🏠 HOME — Train schedule + Roster */}
         {(!effectiveAllianceId || mainTab === 'home') && (
           <>
@@ -1532,11 +1468,11 @@ export default function AllianceHQ() {
                   </div>
                 )}
               </>
-            ) : !isAdmin ? (
+            ) : (
               <div className="ahq-panel" style={{ textAlign: 'center', padding: 48, color: '#3a5878' }}>
-                No alliance assigned to your account.
+                No alliance assigned to your account. Ask your server admin to assign you to an alliance.
               </div>
-            ) : null}
+            )}
           </>
         )}
 

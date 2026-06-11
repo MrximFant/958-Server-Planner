@@ -119,21 +119,23 @@ export default function AdminPanel() {
 function AlliancesTab({ serverId, alliances, setAlliances }) {
   const [showForm,  setShowForm]  = useState(false);
   const [editing,   setEditing]   = useState(null);
-  const [form,      setForm]      = useState({ name: '', tag: '', color: '#00c8ff', ownerPassword: '' });
+  const [form,      setForm]      = useState({ name: '', tag: '', color: '#00c8ff' });
   const [busy,      setBusy]      = useState(false);
   const [error,     setError]     = useState('');
   const [copied,    setCopied]    = useState(null);
+  const [expandedId,      setExpandedId]      = useState(null);
+  const [allianceMembers, setAllianceMembers] = useState({});
 
   function openCreate() {
     setEditing(null);
-    setForm({ name: '', tag: '', color: '#00c8ff', ownerPassword: '' });
+    setForm({ name: '', tag: '', color: '#00c8ff' });
     setError('');
     setShowForm(true);
   }
 
   function openEdit(a) {
     setEditing(a);
-    setForm({ name: a.name, tag: a.tag ?? '', color: a.color, ownerPassword: '' });
+    setForm({ name: a.name, tag: a.tag ?? '', color: a.color });
     setError('');
     setShowForm(true);
   }
@@ -145,15 +147,13 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
 
     if (editing) {
       const update = { name: form.name.trim(), tag: form.tag.trim(), color: form.color };
-      if (form.ownerPassword.trim()) update.owner_password = await hashPassword(form.ownerPassword);
       const { error: err } = await supabase.from('alliances').update(update).eq('id', editing.id);
       if (err) { setError(err.message); setBusy(false); return; }
       setAlliances(prev => prev.map(a => a.id === editing.id ? { ...a, ...update } : a));
     } else {
-      const hash = form.ownerPassword.trim() ? await hashPassword(form.ownerPassword) : await hashPassword(generateInviteCode());
       const { data, error: err } = await supabase.from('alliances').insert({
         server_id: serverId, name: form.name.trim(), tag: form.tag.trim(),
-        color: form.color, owner_password: hash,
+        color: form.color, owner_password: await hashPassword(generateInviteCode()),
         invite_code: generateInviteCode(),
         owner_invite_code: generateInviteCode(),
       }).select().single();
@@ -167,6 +167,18 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
     if (!confirm('Delete this alliance and all its members?')) return;
     await supabase.from('alliances').delete().eq('id', id);
     setAlliances(prev => prev.filter(a => a.id !== id));
+  }
+
+  async function toggleExpand(alId) {
+    if (expandedId === alId) { setExpandedId(null); return; }
+    setExpandedId(alId);
+    if (!allianceMembers[alId]) {
+      const { data } = await supabase.from('members')
+        .select('id, username, in_game_name, alliance_role, server_role')
+        .eq('alliance_id', alId)
+        .order('in_game_name');
+      setAllianceMembers(prev => ({ ...prev, [alId]: data ?? [] }));
+    }
   }
 
   async function copyInviteLink(code) {
@@ -212,9 +224,6 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
               <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 12, color: '#7a9bb8' }}>{form.color}</span>
             </div>
           </div>
-          <Field label={editing ? 'NEW OWNER PASSWORD (leave blank to keep)' : 'OWNER PASSWORD'} type="password"
-            placeholder={editing ? 'Leave blank to keep current' : 'Share with alliance owner'}
-            value={form.ownerPassword} onChange={v => setForm(f => ({ ...f, ownerPassword: v }))} />
           {error && <p style={S.error}>{error}</p>}
           <div style={{ display: 'flex', gap: 8 }}>
             <button type="submit" style={S.saveBtn} disabled={busy}>{busy ? 'SAVING…' : 'SAVE →'}</button>
