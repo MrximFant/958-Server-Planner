@@ -299,8 +299,8 @@ function MembersTab({ members, setMembers, alliances, serverId, isHelper }) {
       </div>
 
       <div style={{ background: 'rgba(240,165,0,0.05)', border: '1px solid rgba(240,165,0,0.2)', padding: '10px 14px', marginBottom: 16, fontSize: 12, color: '#7a9bb8', lineHeight: 1.6 }}>
-        ℹ To remove a member, contact their alliance owner — only the alliance owner can delete members from their roster.
-        You can reassign a member to a different alliance using the dropdown below.
+        ℹ To remove a member from an alliance, ask their Alliance Owner — only the Alliance Owner and Alliance Admins can delete members from their roster.
+        You can reassign a member to a different alliance using the dropdown below, or remove their alliance assignment entirely.
       </div>
 
       <input
@@ -472,12 +472,12 @@ function ServerTab({ server, setServer, serverId }) {
         </div>
       </div>
 
-      <HelpCard title="SERVER ADMIN GUIDE" lines={[
-        'The server invite link lets people reach this server\'s dashboard — share it widely if you want.',
-        'Each alliance has its own separate invite link managed by the alliance owner.',
-        'Set the active season so all alliances show the correct map and member fields.',
-        'You can change the admin password below — all admins will need the new password next login.',
-        'To delete a server, contact the super admin.',
+      <HelpCard title="SERVER SETTINGS GUIDE" lines={[
+        'The server invite link takes people directly to this server\'s dashboard — share it so members can find the right server easily.',
+        'Set the active season number to match your current in-game season. This controls which fields and map layers are shown.',
+        'The Emergency Admin Password is a fallback only. Normally you log in with your admin member account (username + password).',
+        'Change the emergency password if you believe it has been compromised — it does not affect member logins.',
+        'To delete a server permanently, contact the platform super admin.',
       ]} />
 
       {/* Server invite link */}
@@ -494,8 +494,8 @@ function ServerTab({ server, setServer, serverId }) {
 
       {/* Change admin password */}
       <div style={S.settingsCard}>
-        <div style={S.settingsLabel}>CHANGE ADMIN PASSWORD</div>
-        <div style={S.settingsSub}>Update the shared admin password. All admins will need the new password.</div>
+        <div style={S.settingsLabel}>EMERGENCY ADMIN PASSWORD</div>
+        <div style={S.settingsSub}>This is the fallback password used via the hidden "Emergency Admin Access" option on the login screen. Normally you log in with your admin member account. Change this only if it has been compromised.</div>
         <form onSubmit={handlePasswordChange}>
           <Field label="NEW PASSWORD" type="password" value={form.newPassword} onChange={v => setForm(f => ({ ...f, newPassword: v }))} />
           <Field label="CONFIRM PASSWORD" type="password" value={form.confirmPassword} onChange={v => setForm(f => ({ ...f, confirmPassword: v }))} />

@@ -5,57 +5,59 @@ const FONT = `@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wgh
 
 const SECTIONS = [
   {
-    title: 'SERVER STRUCTURE',
+    title: 'ROLES & PERMISSIONS',
     color: '#00c8ff',
     items: [
-      { h: 'Seasons', b: 'Each server runs seasons 1–6. Between seasons the map resets and tile ownership starts fresh. Season 0 is pre-season / setup.' },
-      { h: 'Alliances', b: 'Each server hosts multiple alliances. An alliance is the main unit of play — members belong to exactly one alliance per server.' },
-      { h: 'Roles', b: 'Server Admin manages the server. Alliance Owner and Alliance Admins (up to 10) manage their alliance. Server Helpers assist the admin with member management.' },
+      { h: 'Server Admin', b: 'Manages the server workspace. Creates alliances, manages all members, controls season settings, and handles server handshakes. Logs in with their own username and password.' },
+      { h: 'Alliance Owner (R5)', b: 'The leader of an alliance. Manages their alliance roster, promotes officers, sets up train rotations, and shares invite links with members. Gets in via a one-time Owner Invite link from the server admin.' },
+      { h: 'Alliance Admin (Officer)', b: 'Up to 10 members per alliance can be promoted to Alliance Admin by the Alliance Owner. They can edit member profiles and manage the roster. Join the same way as regular members — via the Member Invite link.' },
+      { h: 'Server Helper', b: 'Promoted by the server admin. Can view all members across all alliances and reassign them between alliances. Cannot change server settings or manage alliances.' },
+      { h: 'Member', b: 'Regular player. Joins via the Member Invite link shared by their Alliance Owner. Logs in with their own username and password. Can view the roster and update their own profile.' },
     ],
   },
   {
-    title: 'TERRITORY & OWNERSHIP',
-    color: '#00e87a',
+    title: 'SERVER STRUCTURE',
+    color: '#3a9bff',
     items: [
-      { h: 'Claiming tiles', b: 'Alliance owners and alliance admins mark tiles as claimed on the Live map. The map reflects real in-game territory as of your last update.' },
-      { h: 'Tile levels & buffs', b: 'Tiles have a level (Lv1–Lv5) and may carry a resource or combat buff (e.g. +10% Oil, +5% Infantry ATK). Higher-level tiles grant stronger buffs.' },
-      { h: 'Server time', b: 'Capture windows and protection timers run on server time (UTC). Check the in-game clock for exact reset times.' },
+      { h: 'Seasons', b: 'Each server runs seasons 1–6. Between seasons the map resets and tile ownership starts fresh. Season 0 is pre-season / setup. The server admin sets the active season in the Admin Panel.' },
+      { h: 'Alliances', b: 'Each server hosts multiple alliances. An alliance is the main unit of play — every member belongs to exactly one alliance per server.' },
+      { h: 'Logging in', b: 'Everyone logs in with a personal username and password. There are no shared passwords. If you forget your password, ask your Alliance Owner or an Alliance Admin to reset it for you.' },
     ],
   },
   {
     title: 'THE WAR MAP',
     color: '#f0a500',
     items: [
-      { h: 'Live map', b: 'Shows actual current territory ownership. Public servers allow anyone to view it; private servers require login.' },
-      { h: 'Planning map', b: 'Private per-alliance layer. Only your alliance (and the server admin) can see your planned targets. Use it to coordinate attacks before committing.' },
-      { h: 'Map sharing', b: 'When two servers establish a handshake, they can share live map and/or plan map data. Each alliance controls whether it opts in to share with the partner server.' },
+      { h: 'Live map', b: 'Shows actual current territory ownership. Public servers allow anyone to view it; private servers require login. Alliance Owners and Alliance Admins update tile ownership after battles.' },
+      { h: 'Planning map', b: 'A private per-alliance layer only visible to your own alliance. Use it to mark attack targets and coordinate before committing on the live map.' },
+      { h: 'Map sharing', b: 'When two servers establish a handshake, they can share live map and/or planning map data. Each alliance controls its own opt-in — you can share your live map without sharing your plan map.' },
     ],
   },
   {
     title: 'SERVER HANDSHAKES',
     color: '#c87aff',
     items: [
-      { h: 'What is a handshake?', b: 'A handshake is a mutual agreement between two servers to share data. The initiating admin generates an invite code; the partner admin accepts it.' },
-      { h: 'Sharing caps', b: 'The server admin sets the maximum scope: live map, roster names, or player stats. Alliances can opt in within that scope — they cannot share more than the server allows.' },
-      { h: 'Revoking access', b: 'Either server admin can revoke a handshake at any time. Revoked handshakes immediately stop sharing data in the partner server\'s map view.' },
+      { h: 'What is a handshake?', b: 'A mutual agreement between two server admins to share data. One admin generates an invite code and sends it to the other admin via Discord. The receiving admin accepts it to activate the connection.' },
+      { h: 'Sharing caps', b: 'The server admin sets the maximum scope of sharing: live map, roster names, or player stats. Alliance Owners then decide individually whether to opt in — they can never share more than the server cap allows.' },
+      { h: 'Revoking access', b: 'Either server admin can revoke a handshake at any time. Shared data immediately disappears from the partner server\'s map view.' },
     ],
   },
   {
     title: 'MEMBER ACCOUNTS',
-    color: '#3a9bff',
+    color: '#00e87a',
     items: [
-      { h: 'Registration', b: 'Members join via an alliance invite link. They choose a username and password (stored as SHA-256 — never sent in plain text).' },
-      { h: 'Profile data', b: 'Members can fill in their in-game name, power, troop types, garrison, profession, and availability for Canyon / Desert events.' },
-      { h: 'Alliance admins', b: 'An alliance can have up to 10 members promoted to Alliance Admin. They can edit the live map on behalf of the alliance.' },
+      { h: 'Registration', b: 'Members join via the Member Invite link from their Alliance Owner. They choose a username (unique on this server) and a password. Passwords are stored as SHA-256 hashes — never in plain text.' },
+      { h: 'Profile data', b: 'Members fill in their in-game name, squad powers (in millions), troop types, garrison, profession, and event availability for Canyon Storm and Desert Storm. Keep this up to date so leadership can build accurate teams.' },
+      { h: 'Password reset', b: 'If you forget your password, ask your Alliance Owner or an Alliance Admin. They can reset it from the MANAGE → ROSTER tab in Alliance HQ.' },
     ],
   },
   {
     title: 'ETIQUETTE & FAIR PLAY',
     color: '#ff6080',
     items: [
-      { h: 'Keep the map accurate', b: 'Update territory ownership promptly after battles. An outdated map hurts your own alliance\'s planning.' },
-      { h: 'Handshake trust', b: 'Only share data with servers you have a genuine alliance or non-aggression pact with. Sharing your plan map exposes your attack intent.' },
-      { h: 'Dispute resolution', b: 'Tile disputes should be resolved in your alliance\'s Discord. The planner is a coordination tool, not an arbitration system.' },
+      { h: 'Keep the map accurate', b: 'Update territory ownership promptly after battles. An outdated map misleads your own alliance\'s planning as much as the enemy\'s.' },
+      { h: 'Handshake trust', b: 'Only establish handshakes with servers you have a genuine alliance or non-aggression agreement with. Sharing your planning map exposes your attack intent to the partner server.' },
+      { h: 'Dispute resolution', b: 'Tile disputes and in-game conflicts should be resolved in your alliance\'s Discord. This planner is a coordination tool, not an arbitration system.' },
     ],
   },
 ];

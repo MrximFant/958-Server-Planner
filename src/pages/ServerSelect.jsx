@@ -246,7 +246,7 @@ export default function ServerSelect() {
             ))}
             {!loading && servers.length > 0 && (
               <p style={{ color: '#3a5878', fontSize: 11, marginTop: 16, textAlign: 'center' }}>
-                Click a server to view its dashboard. Log in with your alliance credentials once inside.
+                Click your server to open its dashboard, then log in with your username and password.
               </p>
             )}
           </div>
@@ -260,23 +260,23 @@ export default function ServerSelect() {
             </div>
             <div style={S.howTitle}>FOR MEMBERS</div>
             <div style={S.howSteps}>
-              <HowStep n="1" title="Find your server above" text="Click your server number in the SERVERS list to open its dashboard." />
-              <HowStep n="2" title="Log in via your alliance" text="On the server dashboard, select your alliance and log in with your member credentials." />
-              <HowStep n="3" title="Join via invite link" text="First time? You need your alliance's invite link — ask your R5 or alliance leader for it." />
+              <HowStep n="1" title="Find your server" text="Click your server number in the list above to open its dashboard." />
+              <HowStep n="2" title="Log in" text="Click LOGIN and enter your username and password. First time? You need an invite link — ask your Alliance Owner (R5) for it." />
+              <HowStep n="3" title="Register via invite link" text="Click your invite link, choose a username and password, and you're in. You only need to do this once." />
             </div>
 
-            <div style={{ ...S.howTitle, marginTop: 24 }}>FOR ALLIANCE LEADERS (R5)</div>
+            <div style={{ ...S.howTitle, marginTop: 24 }}>FOR ALLIANCE OWNERS (R5)</div>
             <div style={S.howSteps}>
-              <HowStep n="1" title="Get your server set up" text="A server workspace must be requested and approved first (see REQUEST ACCESS)." />
-              <HowStep n="2" title="Create your alliance" text="The server admin creates alliances from the admin panel. You'll receive an alliance invite link." />
-              <HowStep n="3" title="Invite your members" text="Share your alliance invite link with your members so they can register and log in." />
+              <HowStep n="1" title="Receive your owner invite" text="Your server admin sends you a one-time Owner Invite link. Click it to create your account — you'll automatically get owner access to your alliance." />
+              <HowStep n="2" title="Share your member invite" text="In Alliance HQ → Manage → Settings, copy your Member Invite link and share it with your players so they can register." />
+              <HowStep n="3" title="Manage your roster" text="Use Alliance HQ to view your roster, manage your team, set up train rotations, and plan event assignments." />
             </div>
 
             <div style={{ ...S.howTitle, marginTop: 24 }}>FOR SERVER ADMINS</div>
             <div style={S.howSteps}>
-              <HowStep n="1" title="Request a workspace" text="Submit a request with your Discord handle as your contact name. The platform admin will verify you." />
-              <HowStep n="2" title="Activate with your code" text="Once approved, you'll receive an activation code via Discord. Use the ACTIVATE tab to create your server." />
-              <HowStep n="3" title="Set up alliances" text="After activation, log into the admin panel at /server/[id]/admin to create alliances and invite R5 leaders." />
+              <HowStep n="1" title="Request a server workspace" text="Fill in the REQUEST A SERVER form with your Discord handle and User ID. The platform admin will review and approve your request." />
+              <HowStep n="2" title="Activate your server" text="Once approved, you'll receive an activation code via Discord DM. Use ACTIVATE A SERVER to create your workspace and admin account." />
+              <HowStep n="3" title="Set up your alliances" text="In the Admin Panel, create each alliance and send the one-time Owner Invite link to each R5 leader. They register themselves — no shared passwords needed." />
             </div>
 
             <div style={{ display: 'flex', gap: 10, marginTop: 20, flexWrap: 'wrap' }}>
@@ -326,10 +326,10 @@ export default function ServerSelect() {
             ) : (
               <form onSubmit={handleRequest}>
                 <p style={{ color: '#7a9bb8', fontSize: 12, marginBottom: 6, lineHeight: 1.6 }}>
-                  Servers are approved by the platform admin. Fill in your details and your request will be reviewed shortly.
+                  Each server workspace is manually approved by the platform admin. Fill in your details below and you'll receive an activation code via Discord DM once approved — usually within 24 hours.
                 </p>
                 <div style={{ background: 'rgba(240,165,0,0.07)', border: '1px solid rgba(240,165,0,0.25)', padding: '10px 14px', marginBottom: 18, fontSize: 12, color: '#f0a500', lineHeight: 1.6 }}>
-                  <strong>Important:</strong> Provide your Discord handle and User ID so your activation code can be sent to you automatically via Discord DM.
+                  <strong>Important:</strong> Your Discord User ID is required so your activation code can be sent to you automatically via Discord DM. Without it, you may need to wait for manual contact.
                 </div>
                 <Field label="SERVER NUMBER" placeholder="e.g. 958"
                   value={reqForm.serverNumber} onChange={v => setReqForm(f => ({ ...f, serverNumber: v }))} />

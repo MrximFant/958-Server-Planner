@@ -116,10 +116,10 @@ export default function ServerDashboard() {
   const role = activeSession?.role;
 
   const FEATURES = [
-    { to: `/server/${serverId}/alliance`, icon: Users, color: '#f0a500', glow: 'rgba(240,165,0,0.15)', border: 'rgba(240,165,0,0.3)', label: 'ALLIANCE HQ', title: 'Member Roster & Planning', desc: 'Alliance roster, squad powers, event teams, train rotation, and war map access.', tag: 'COMMAND', locked: !activeSession },
-    { to: null, icon: Trophy, color: '#a040d0', glow: 'rgba(160,64,208,0.15)', border: 'rgba(160,64,208,0.3)', label: 'LEADERBOARD', title: 'Season Rankings', desc: 'Alliance influence totals, city counts and crystal gold rates.', tag: 'SOON', disabled: true },
-    { to: `/server/${serverId}/rules`, icon: BookOpen, color: '#00e87a', glow: 'rgba(0,232,122,0.15)', border: 'rgba(0,232,122,0.3)', label: 'RULES', title: 'Game Guide', desc: 'Complete rulebook for territory warfare, attack windows, and capture limits.', tag: 'GUIDE', locked: false },
-    { to: null, icon: Clock, color: '#ff4060', glow: 'rgba(255,64,96,0.15)', border: 'rgba(255,64,96,0.3)', label: 'SEASONS', title: 'Season History', desc: 'Past season outcomes and alliance performance trends.', tag: 'SOON', disabled: true },
+    { to: `/server/${serverId}/alliance`, icon: Users, color: '#f0a500', glow: 'rgba(240,165,0,0.15)', border: 'rgba(240,165,0,0.3)', label: 'ALLIANCE HQ', title: 'Member Roster & Planning', desc: 'Roster, squad powers, train rotation planner, event team assignments, and war map.', tag: 'COMMAND', locked: !activeSession },
+    { to: null, icon: Trophy, color: '#a040d0', glow: 'rgba(160,64,208,0.15)', border: 'rgba(160,64,208,0.3)', label: 'LEADERBOARD', title: 'Season Rankings', desc: 'Alliance influence totals, territory counts, and season performance overview.', tag: 'SOON', disabled: true },
+    { to: `/server/${serverId}/rules`, icon: BookOpen, color: '#00e87a', glow: 'rgba(0,232,122,0.15)', border: 'rgba(0,232,122,0.3)', label: 'RULES & GUIDE', title: 'Platform Guide', desc: 'How the planner works — roles, territory ownership, map sharing, and member accounts.', tag: 'GUIDE', locked: false },
+    { to: null, icon: Clock, color: '#ff4060', glow: 'rgba(255,64,96,0.15)', border: 'rgba(255,64,96,0.3)', label: 'SEASONS', title: 'Season History', desc: 'Past season outcomes, alliance rankings, and performance trends across seasons.', tag: 'SOON', disabled: true },
   ];
 
   return (
@@ -159,7 +159,7 @@ export default function ServerDashboard() {
         <h1 style={S.h1}>SERVER {server.server_number}</h1>
         <h2 style={S.h2}>{server.name.toUpperCase()}</h2>
         <div style={S.seasonBadge}><Zap size={12} fill="currentColor" /> LAST WAR: SURVIVAL <Zap size={12} fill="currentColor" /></div>
-        <p style={S.heroSub}>Your alliance's command center. Coordinate your roster, plan train rotations, and access the war map.</p>
+        <p style={S.heroSub}>Your alliance's command center. Manage your roster, coordinate train rotations, and plan event teams.</p>
         <div style={S.heroBtns}>
           {activeSession ? (
             <button style={S.btnPrimary} onClick={() => navigate(`/server/${serverId}/alliance`)}>ALLIANCE HQ →</button>
@@ -299,20 +299,20 @@ const ROLE_HELP = {
     label: '🔧 SERVER HELPER QUICK START',
     color: '#00c8ff',
     steps: [
-      'You have been promoted to Server Helper by the admin.',
-      'Open the Helper Panel (top-right button) to view and reassign members between alliances.',
-      'You can see all members grouped by their alliance.',
-      'You cannot change server settings or manage alliances — contact the server admin for that.',
+      'You have been promoted to Server Helper by the server admin.',
+      'Open the Helper Panel (top-right button) to view all members and reassign them between alliances.',
+      'Members are grouped by alliance — use the dropdown next to each member to move them.',
+      'You cannot change server settings, create alliances, or manage admin passwords — contact the server admin for those.',
     ],
   },
   member: {
     label: '👤 MEMBER QUICK START',
     color: '#00c8ff',
     steps: [
-      'Go to Alliance HQ to view your alliance roster and update your profile.',
-      'In the MY PROFILE panel, fill in your squad powers, troop types, and event preferences.',
-      'Your alliance leadership uses this data to plan Canyon Storm and Desert Storm teams.',
-      'Keep your T1 power and team preference up to date before each event.',
+      'Click ALLIANCE HQ to view your alliance roster and update your profile.',
+      'Go to MY PROFILE and fill in your squad powers (in millions), troop types, and event team preferences.',
+      'Your Alliance Owner and Alliance Admins use this data to plan Canyon Storm and Desert Storm teams — keep it up to date before each event.',
+      'Forgot your password? Ask your Alliance Owner or an Alliance Admin to reset it for you.',
     ],
   },
 };

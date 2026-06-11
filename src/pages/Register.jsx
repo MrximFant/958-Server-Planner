@@ -171,7 +171,7 @@ export default function Register() {
               </div>
             </div>
 
-            <p style={S.sub}>Create your account to join. Your username must be unique on this server.</p>
+            <p style={S.sub}>{isOwnerInvite ? 'Create your Alliance Owner account. Your username and password are how you\'ll log in from now on — choose something you\'ll remember.' : 'Create your account to join. Your username must be unique on this server.'}</p>
 
             <form style={S.form} onSubmit={handleRegister}>
               <Field
@@ -219,7 +219,7 @@ export default function Register() {
             <div style={S.successTitle}>WELCOME TO {alliance.name.toUpperCase()}!</div>
             <p style={S.successSub}>
               Your account <strong style={{ color: '#d0e4f4' }}>{form.username}</strong> has been created
-              and you're now logged in as a member of <strong style={{ color: alliance.color }}>{alliance.name}</strong>.
+              and you're now logged in as {isOwnerInvite ? <><strong style={{ color: '#f0a500' }}>Alliance Owner</strong> of</> : 'a member of'} <strong style={{ color: alliance.color }}>{alliance.name}</strong>.
             </p>
             <button
               style={{ ...S.btn, background: '#00c8ff', marginTop: 8 }}
