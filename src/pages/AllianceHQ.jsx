@@ -1338,6 +1338,8 @@ export default function AllianceHQ() {
   const [members,         setMembers]         = useState([]);
   const [loading,         setLoading]         = useState(true);
   const [mainTab, setMainTab] = useState('home');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const effectiveAllianceId = activeSession?.allianceId;
 
@@ -1372,10 +1374,21 @@ export default function AllianceHQ() {
   const showRoster = canManage || alliance?.roster_public !== false || (role === 'member' && activeSession?.allianceId === effectiveAllianceId);
   const showPowerInRoster = canManage || alliance?.roster_show_power !== false;
 
+  // Build nav items for sidebar
+  const sidebarNavItems = [
+    { id: 'home',    label: 'HOME',       icon: '🏠', show: true },
+    { id: 'events',  label: 'EVENTS',     icon: '⚔️', show: true },
+    { id: 'profile', label: 'MY PROFILE', icon: '👤', show: !!activeSession?.memberId },
+    { id: 'manage',  label: 'MANAGE',     icon: '⚙️', show: canManage },
+  ].filter(t => t.show);
+
   return (
     <div className="ahq-root">
       {/* Topbar */}
       <div className="ahq-topbar">
+        <button className="ahq-hamburger" onClick={() => setMobileOpen(o => !o)} aria-label="Menu">
+          ☰
+        </button>
         <button className="ahq-back-btn" onClick={() => navigate(`/server/${serverId}`)}>
           <ArrowLeft size={14} style={{ marginRight: 6 }} /> BACK
         </button>
@@ -1389,64 +1402,69 @@ export default function AllianceHQ() {
           {!isAdmin && isOwner                         && <span className="ahq-role-badge role-owner">👑 ALLIANCE OWNER</span>}
           {!isAdmin && !isOwner && allianceRole === 'alliance_admin' && <span className="ahq-role-badge role-alladmin">🛡 ALLIANCE ADMIN</span>}
           {!isAdmin && !isOwner && allianceRole === 'member'         && <span className="ahq-role-badge role-member">👤 {activeSession.username}</span>}
-          {effectiveAllianceId && (
-            <button
-              className="btn-secondary-sm"
-              onClick={() => navigate(`/server/${serverId}/map`)}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, opacity: 0.75 }}
-              title="War Map — work in progress"
-            >
-              🗺 MAP <span style={{ fontSize: 9, color: '#f0a500', marginLeft: 2 }}>WIP</span>
-            </button>
-          )}
-          {canManage && (
-            <button
-              className="btn-secondary-sm"
-              onClick={() => navigate(`/server/${serverId}/train`)}
-              style={{ display: 'flex', alignItems: 'center', gap: 5 }}
-            >
-              🚂 TRAIN
-            </button>
-          )}
         </div>
       </div>
 
+      {/* Sidebar */}
+      <nav className={`ahq-sidebar${sidebarCollapsed ? ' collapsed' : ''}${mobileOpen ? ' mobile-open' : ''}`}>
+        <div className="ahq-sidebar-nav">
+          {sidebarNavItems.map(item => (
+            <button
+              key={item.id}
+              className={`ahq-sidebar-nav-item${mainTab === item.id ? ' active' : ''}`}
+              onClick={() => { setMainTab(item.id); setMobileOpen(false); }}
+              title={sidebarCollapsed ? item.label : undefined}
+            >
+              <span className="snav-icon">{item.icon}</span>
+              <span className="snav-label">{item.label}</span>
+            </button>
+          ))}
+
+          {/* Extra links */}
+          {effectiveAllianceId && (
+            <>
+              <div className="ahq-sidebar-divider" />
+              <button
+                className="ahq-sidebar-nav-item"
+                onClick={() => { navigate(`/server/${serverId}/map`); setMobileOpen(false); }}
+                title={sidebarCollapsed ? 'MAP' : undefined}
+              >
+                <span className="snav-icon">🗺</span>
+                <span className="snav-label">MAP <span style={{ fontSize: 9, color: '#f0a500', marginLeft: 4 }}>WIP</span></span>
+              </button>
+            </>
+          )}
+          {(canManage) && (
+            <button
+              className="ahq-sidebar-nav-item"
+              onClick={() => { navigate(`/server/${serverId}/train`); setMobileOpen(false); }}
+              title={sidebarCollapsed ? 'TRAIN PLANNER' : undefined}
+            >
+              <span className="snav-icon">🚂</span>
+              <span className="snav-label">TRAIN PLANNER</span>
+            </button>
+          )}
+          {(isAdmin || role === 'helper') && (
+            <button
+              className="ahq-sidebar-nav-item"
+              onClick={() => { navigate(`/server/${serverId}/admin`); setMobileOpen(false); }}
+              title={sidebarCollapsed ? 'ADMIN PANEL' : undefined}
+            >
+              <span className="snav-icon">⚡</span>
+              <span className="snav-label">ADMIN PANEL</span>
+            </button>
+          )}
+        </div>
+        <div className="ahq-sidebar-collapse-btn">
+          <button onClick={() => setSidebarCollapsed(c => !c)} title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
+            {sidebarCollapsed ? '→' : '←'}
+          </button>
+        </div>
+      </nav>
+
       <div className={`ahq-toast${toast.show ? ' show' : ''}${toast.err ? ' err' : ''}`}>{toast.msg}</div>
 
-      <main className="ahq-main">
-
-        {/* ── Top-level tab navigation ─────────────────────────── */}
-        {effectiveAllianceId && alliance && (
-          <div style={{ borderBottom: '2px solid #1e3550', marginBottom: 0, background: 'rgba(5,10,18,0.8)', position: 'sticky', top: 0, zIndex: 30, display: 'flex', alignItems: 'stretch', gap: 0, overflowX: 'auto' }}>
-            {[
-              { id: 'home',    label: '🏠 HOME',       show: true },
-              { id: 'events',  label: '⚔️ EVENTS',     show: true },
-              { id: 'profile', label: '👤 MY PROFILE', show: !!activeSession?.memberId },
-              { id: 'manage',  label: '⚙️ MANAGE',     show: canManage },
-            ].filter(t => t.show).map(t => (
-              <button
-                key={t.id}
-                onClick={() => setMainTab(t.id)}
-                style={{
-                  background: mainTab === t.id ? 'rgba(0,200,255,0.08)' : 'transparent',
-                  border: 'none',
-                  borderBottom: mainTab === t.id ? '3px solid #00c8ff' : '3px solid transparent',
-                  color: mainTab === t.id ? '#00c8ff' : '#3a5878',
-                  padding: '12px 22px',
-                  fontFamily: "'Rajdhani',sans-serif",
-                  fontWeight: 700,
-                  fontSize: 13,
-                  letterSpacing: '1.5px',
-                  cursor: 'pointer',
-                  transition: 'color 0.15s, border-color 0.15s',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        )}
+      <main className={`ahq-main${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
 
         {/* 🏠 HOME — Train schedule + Roster */}
         {(!effectiveAllianceId || mainTab === 'home') && (

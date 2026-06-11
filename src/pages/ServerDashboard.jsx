@@ -27,10 +27,23 @@ export default function ServerDashboard() {
     async function load() {
       const [{ data: srv }, { data: als }] = await Promise.all([
         supabase.from('servers').select('*').eq('id', serverId).single(),
-        supabase.from('alliances').select('id, name, color').eq('server_id', serverId).order('name'),
+        supabase.from('alliances').select('id, name, tag, color, roster_public').eq('server_id', serverId).order('name'),
       ]);
       setServer(srv);
-      setAlliances(als ?? []);
+
+      if (als && als.length > 0) {
+        // Load member counts for each alliance
+        const counts = await Promise.all(
+          als.map(a =>
+            supabase.from('members').select('id', { count: 'exact', head: true }).eq('alliance_id', a.id)
+          )
+        );
+        const withCounts = als.map((a, i) => ({ ...a, memberCount: counts[i].count ?? 0 }));
+        setAlliances(withCounts);
+      } else {
+        setAlliances([]);
+      }
+
       setLoading(false);
     }
     load();
@@ -140,6 +153,45 @@ export default function ServerDashboard() {
 
       {/* Role help banner */}
       {activeSession && <RoleHelp role={role} serverId={serverId} navigate={navigate} />}
+
+      {/* Alliance public roster list */}
+      {alliances.length > 0 && (
+        <section style={{ position: 'relative', zIndex: 1, maxWidth: 860, margin: '0 auto', padding: '0 24px 8px' }}>
+          <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '3px', color: '#3a5878' }}>ALLIANCES ON THIS SERVER</div>
+            <div style={{ flex: 1, height: 1, background: '#1e3550' }} />
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {alliances.map(al => (
+              <div key={al.id} style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(13,21,32,0.85)', border: `1px solid rgba(30,53,80,0.8)`, borderLeft: `3px solid ${al.color}`, padding: '14px 20px' }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: al.color, flexShrink: 0, boxShadow: `0 0 8px ${al.color}` }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 16, color: '#d0e4f4', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    {al.name}
+                    {al.tag && <span style={{ fontSize: 10, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace", border: '1px solid #1e3550', padding: '1px 6px' }}>{al.tag}</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace", marginTop: 2 }}>
+                    {al.memberCount} member{al.memberCount !== 1 ? 's' : ''}
+                  </div>
+                </div>
+                {al.roster_public ? (
+                  <button
+                    onClick={() => navigate(`/server/${serverId}/alliance/${al.id}/public`)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${al.color}14`, border: `1px solid ${al.color}50`, color: al.color, padding: '7px 16px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
+                  >
+                    VIEW ROSTER →
+                  </button>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#2a4058', fontSize: 12 }}>
+                    <Lock size={12} />
+                    <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 9 }}>PRIVATE</span>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Feature cards */}
       <section style={S.cards}>

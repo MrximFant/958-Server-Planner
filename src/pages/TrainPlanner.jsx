@@ -126,6 +126,36 @@ function genPriority(existing, driverPool, vipPool) {
   return slots;
 }
 
+// ── Week helpers ────────────────────────────────────────────────────
+function getMondayDate(d = new Date()) {
+  const date = new Date(d);
+  const day = date.getDay(); // 0=Sun,1=Mon,...
+  const diff = (day === 0 ? -6 : 1 - day);
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+
+function toDateString(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function formatWeekRange(mondayStr) {
+  const mon = new Date(mondayStr + 'T00:00:00');
+  const sun = new Date(mon);
+  sun.setDate(sun.getDate() + 6);
+  const fmt = (d) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return `${fmt(mon)} – ${fmt(sun)} ${sun.getFullYear()}`;
+}
+
+function weekLabelFromDate(dateStr) {
+  const d = new Date(dateStr + 'T00:00:00');
+  return 'Week of ' + d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}
+
 // ── Main component ─────────────────────────────────────────────────
 export default function TrainPlanner() {
   const { serverId }  = useParams();
@@ -140,29 +170,36 @@ export default function TrainPlanner() {
   const [loading,     setLoading]     = useState(true);
   const [saving,      setSaving]      = useState(false);
   const [saved,       setSaved]       = useState(false);
-  const [members,     setMembers]     = useState([]);  // alliance members
+  const [members,     setMembers]     = useState([]);
   const [alliance,    setAlliance]    = useState(null);
-  const [scheduleId,  setScheduleId]  = useState(null);
+
+  // ── Multi-week state ─────────────────────────────────────────────
+  const [allSchedules,    setAllSchedules]    = useState([]);   // all schedule rows
+  const [currentWeekKey,  setCurrentWeekKey]  = useState('');   // YYYY-MM-DD
+  const [scheduleId,      setScheduleId]      = useState(null);
+  const [weekLabelOverride, setWeekLabelOverride] = useState(''); // manual override
 
   // ── Schedule state ───────────────────────────────────────────────
   const [mode,        setMode]        = useState('manual');
-  const [weekLabel,   setWeekLabel]   = useState('Current Week');
   const [slots,       setSlots]       = useState(EMPTY_SLOTS);
 
   // Mode-specific config state
-  const [fixedDriver, setFixedDriver] = useState(null);        // memberId
-  const [vipPool,     setVipPool]     = useState([]);          // [member]
-  const [pairs,       setPairs]       = useState([]);          // [{driver: id, vip: id}]
-  const [driverQueue, setDriverQueue] = useState([]);          // [memberId]
-  const [vipQueue,    setVipQueue]    = useState([]);          // [memberId]
+  const [fixedDriver, setFixedDriver] = useState(null);
+  const [vipPool,     setVipPool]     = useState([]);
+  const [pairs,       setPairs]       = useState([]);
+  const [driverQueue, setDriverQueue] = useState([]);
+  const [vipQueue,    setVipQueue]    = useState([]);
   const [modeOpen,    setModeOpen]    = useState(false);
 
   // ── Drag state ───────────────────────────────────────────────────
-  const [dragging,    setDragging]    = useState(null);   // { memberId, fromSlot? }
-  const [dragOver,    setDragOver]    = useState(null);   // slot key
-  const [selected,    setSelected]    = useState(null);   // selected member for click-assign
+  const [dragging,    setDragging]    = useState(null);
+  const [dragOver,    setDragOver]    = useState(null);
+  const [selected,    setSelected]    = useState(null);
 
-  // ── Load ─────────────────────────────────────────────────────────
+  // Derived label shown in topbar
+  const displayLabel = weekLabelOverride || (currentWeekKey ? weekLabelFromDate(currentWeekKey) : 'Current Week');
+
+  // ── Load all schedules ────────────────────────────────────────────
   useEffect(() => {
     if (!myAllianceId) { setLoading(false); return; }
 
@@ -174,35 +211,61 @@ export default function TrainPlanner() {
       setAlliance(al);
       setMembers(mems ?? []);
 
-      // Load existing schedule
-      const { data: sched } = await supabase
+      // Load ALL schedules for this alliance
+      const { data: scheds } = await supabase
         .from('train_schedules')
         .select('*')
         .eq('alliance_id', myAllianceId)
-        .maybeSingle();
+        .order('week_label');
 
-      if (sched) {
-        setScheduleId(sched.id);
-        setMode(sched.mode ?? 'manual');
-        setWeekLabel(sched.week_label ?? 'Current Week');
+      const rows = scheds ?? [];
+      setAllSchedules(rows);
 
-        const cfg = sched.mode_config ?? {};
-        if (cfg.fixedDriver)  setFixedDriver(cfg.fixedDriver);
-        if (cfg.vipPool)      setVipPool(cfg.vipPool);
-        if (cfg.pairs)        setPairs(cfg.pairs);
-        if (cfg.driverQueue)  setDriverQueue(cfg.driverQueue);
-        if (cfg.vipQueue)     setVipQueue(cfg.vipQueue);
+      // Determine which week to show: find current Monday
+      const todayMonday = toDateString(getMondayDate());
 
-        const { data: dbSlots } = await supabase
-          .from('train_slots')
-          .select('*')
-          .eq('schedule_id', sched.id);
-        setSlots(initSlots(dbSlots));
+      // Try to find schedule matching today's Monday
+      let target = rows.find(s => s.week_label === todayMonday);
+
+      // Fallback: if no schedule for this week, use latest (last by week_label)
+      if (!target && rows.length > 0) {
+        target = rows[rows.length - 1];
       }
+
+      if (target) {
+        applySchedule(target);
+      } else {
+        // No schedule exists: set week to this Monday
+        setCurrentWeekKey(todayMonday);
+        setScheduleId(null);
+        setSlots(EMPTY_SLOTS());
+      }
+
       setLoading(false);
     }
     load();
   }, [myAllianceId]);
+
+  function applySchedule(sched) {
+    setScheduleId(sched.id);
+    setCurrentWeekKey(sched.week_label ?? '');
+    setWeekLabelOverride('');
+    setMode(sched.mode ?? 'manual');
+
+    const cfg = sched.mode_config ?? {};
+    if (cfg.fixedDriver !== undefined)  setFixedDriver(cfg.fixedDriver);
+    if (cfg.vipPool !== undefined)      setVipPool(cfg.vipPool);
+    if (cfg.pairs !== undefined)        setPairs(cfg.pairs);
+    if (cfg.driverQueue !== undefined)  setDriverQueue(cfg.driverQueue);
+    if (cfg.vipQueue !== undefined)     setVipQueue(cfg.vipQueue);
+
+    // Load slots for this schedule
+    supabase
+      .from('train_slots')
+      .select('*')
+      .eq('schedule_id', sched.id)
+      .then(({ data: dbSlots }) => setSlots(initSlots(dbSlots)));
+  }
 
   // ── Save ──────────────────────────────────────────────────────────
   const handleSave = useCallback(async () => {
@@ -210,19 +273,28 @@ export default function TrainPlanner() {
     setSaving(true);
 
     const modeConfig = { fixedDriver, vipPool, pairs, driverQueue, vipQueue };
+    const wLabel = currentWeekKey || toDateString(getMondayDate());
 
     let sid = scheduleId;
     if (!sid) {
       const { data } = await supabase
         .from('train_schedules')
-        .insert({ alliance_id: myAllianceId, mode, week_label: weekLabel, mode_config: modeConfig })
+        .insert({ alliance_id: myAllianceId, mode, week_label: wLabel, mode_config: modeConfig })
         .select('id').single();
       sid = data?.id;
-      setScheduleId(sid);
+      if (sid) {
+        setScheduleId(sid);
+        const newSched = { id: sid, alliance_id: myAllianceId, mode, week_label: wLabel, mode_config: modeConfig };
+        setAllSchedules(prev => {
+          const filtered = prev.filter(s => s.week_label !== wLabel);
+          return [...filtered, newSched].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
+        });
+      }
     } else {
       await supabase.from('train_schedules')
-        .update({ mode, week_label: weekLabel, mode_config: modeConfig })
+        .update({ mode, week_label: wLabel, mode_config: modeConfig })
         .eq('id', sid);
+      setAllSchedules(prev => prev.map(s => s.id === sid ? { ...s, mode, week_label: wLabel, mode_config: modeConfig } : s));
     }
 
     if (!sid) { setSaving(false); return; }
@@ -246,7 +318,52 @@ export default function TrainPlanner() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
-  }, [myAllianceId, scheduleId, mode, weekLabel, slots, fixedDriver, vipPool, pairs, driverQueue, vipQueue]);
+  }, [myAllianceId, scheduleId, currentWeekKey, mode, slots, fixedDriver, vipPool, pairs, driverQueue, vipQueue]);
+
+  // ── Week navigation ───────────────────────────────────────────────
+  function navigateWeek(dir) {
+    // Sort schedules by week_label
+    const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
+    const idx = sorted.findIndex(s => s.id === scheduleId);
+
+    if (dir === -1 && idx > 0) {
+      applySchedule(sorted[idx - 1]);
+    } else if (dir === 1 && idx < sorted.length - 1) {
+      applySchedule(sorted[idx + 1]);
+    }
+  }
+
+  function createNewWeek() {
+    // Find next Monday after the most recent schedule
+    const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
+    let baseDate;
+    if (sorted.length > 0) {
+      const lastLabel = sorted[sorted.length - 1].week_label;
+      // Try parse as date
+      const parsed = new Date(lastLabel + 'T00:00:00');
+      if (!isNaN(parsed.getTime())) {
+        baseDate = getMondayDate(new Date(parsed.getTime() + 7 * 24 * 3600000));
+      } else {
+        baseDate = getMondayDate(new Date(Date.now() + 7 * 24 * 3600000));
+      }
+    } else {
+      baseDate = getMondayDate();
+    }
+
+    const newKey = toDateString(baseDate);
+    // Check it doesn't exist already
+    if (allSchedules.some(s => s.week_label === newKey)) {
+      alert('A schedule for that week already exists.');
+      return;
+    }
+
+    // Create blank week — copy mode config but clear slots
+    setScheduleId(null);
+    setCurrentWeekKey(newKey);
+    setWeekLabelOverride('');
+    setSlots(EMPTY_SLOTS());
+    // mode config carries over
+  }
 
   // ── Auto-generate based on mode ───────────────────────────────────
   function generate() {
@@ -378,32 +495,98 @@ export default function TrainPlanner() {
       <style>{FONT}</style>
 
       {/* ── Topbar ──────────────────────────────────────────────── */}
-      <div style={{ height: 48, background: 'rgba(8,13,20,0.97)', borderBottom: '1px solid #1e3550', display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', flexShrink: 0, zIndex: 50 }}>
-        <button onClick={() => navigate(`/server/${serverId}/alliance`)} style={S.iconBtn}><ArrowLeft size={15} /></button>
-        <Train size={15} style={{ color: '#f0a500', flexShrink: 0 }} />
-        <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '2px', color: '#f0a500' }}>TRAIN PLANNER</div>
-        {alliance && <div style={{ fontSize: 11, color: '#3a5878', marginLeft: 4 }}>— {alliance.name}</div>}
-        <div style={{ flex: 1 }} />
-        <input
-          value={weekLabel}
-          onChange={e => setWeekLabel(e.target.value)}
-          style={{ background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', width: 140 }}
-          placeholder="Week label…"
-          readOnly={!canEdit}
-        />
-        {canEdit && (
-          <>
-            <button onClick={clearAll} style={{ ...S.iconBtn, color: '#ff6080' }} title="Clear all slots"><RotateCcw size={14} /></button>
-            <button
-              onClick={handleSave}
-              disabled={saving}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.4)' : 'rgba(240,165,0,0.4)'}`, color: saved ? '#00e87a' : '#f0a500', padding: '5px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: saving ? 'default' : 'pointer' }}
-            >
-              <Save size={13} />
-              {saving ? 'SAVING…' : saved ? 'SAVED ✓' : 'SAVE'}
+      <div style={{ background: 'rgba(8,13,20,0.97)', borderBottom: '1px solid #1e3550', flexShrink: 0, zIndex: 50 }}>
+        {/* Row 1: title + save */}
+        <div style={{ height: 48, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderBottom: '1px solid rgba(30,53,80,0.5)' }}>
+          <button onClick={() => navigate(`/server/${serverId}/alliance`)} style={S.iconBtn}><ArrowLeft size={15} /></button>
+          <Train size={15} style={{ color: '#f0a500', flexShrink: 0 }} />
+          <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '2px', color: '#f0a500' }}>TRAIN PLANNER</div>
+          {alliance && <div style={{ fontSize: 11, color: '#3a5878', marginLeft: 4 }}>— {alliance.name}</div>}
+          <div style={{ flex: 1 }} />
+          {canEdit && (
+            <>
+              <button onClick={clearAll} style={{ ...S.iconBtn, color: '#ff6080' }} title="Clear all slots"><RotateCcw size={14} /></button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.4)' : 'rgba(240,165,0,0.4)'}`, color: saved ? '#00e87a' : '#f0a500', padding: '5px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: saving ? 'default' : 'pointer' }}
+              >
+                <Save size={13} />
+                {saving ? 'SAVING…' : saved ? 'SAVED ✓' : 'SAVE'}
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Row 2: Week Navigator */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', flexWrap: 'wrap' }}>
+          {/* Date picker for week start */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: '#3a5878' }}>WEEK START:</span>
+            <input
+              type="date"
+              value={currentWeekKey}
+              onChange={e => {
+                const monday = getMondayDate(new Date(e.target.value + 'T12:00:00'));
+                const key = toDateString(monday);
+                // Try to find an existing schedule for this week
+                const existing = allSchedules.find(s => s.week_label === key);
+                if (existing) {
+                  applySchedule(existing);
+                } else {
+                  setScheduleId(null);
+                  setCurrentWeekKey(key);
+                  setWeekLabelOverride('');
+                  setSlots(EMPTY_SLOTS());
+                }
+              }}
+              readOnly={!canEdit}
+              style={{ background: '#0a1220', border: '1px solid #1e3550', color: '#7a9bb8', padding: '3px 8px', fontFamily: "'Share Tech Mono',monospace", fontSize: 11 }}
+            />
+          </div>
+
+          {/* Prev / current / next */}
+          <button
+            onClick={() => navigateWeek(-1)}
+            disabled={!allSchedules.length || allSchedules[0]?.id === scheduleId}
+            style={{ ...S.weekNavBtn, opacity: (!allSchedules.length || allSchedules.sort((a,b)=>(a.week_label||'').localeCompare(b.week_label||''))[0]?.id === scheduleId) ? 0.3 : 1 }}
+          >
+            ← PREV WEEK
+          </button>
+
+          <div style={{ flex: 1, textAlign: 'center', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', color: '#d0e4f4', minWidth: 160 }}>
+            {currentWeekKey ? formatWeekRange(currentWeekKey) : 'No week selected'}
+            {allSchedules.length > 1 && (
+              <span style={{ fontSize: 9, color: '#3a5878', marginLeft: 8 }}>
+                ({(allSchedules.sort((a,b)=>(a.week_label||'').localeCompare(b.week_label||'')).findIndex(s => s.id === scheduleId) + 1) || '?'}/{allSchedules.length})
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={() => navigateWeek(1)}
+            disabled={!allSchedules.length}
+            style={{ ...S.weekNavBtn, opacity: !allSchedules.length ? 0.3 : 1 }}
+          >
+            NEXT WEEK →
+          </button>
+
+          {canEdit && (
+            <button onClick={createNewWeek} style={{ ...S.weekNavBtn, background: 'rgba(0,200,255,0.06)', border: '1px solid rgba(0,200,255,0.25)', color: '#00c8ff' }}>
+              + NEW WEEK
             </button>
-          </>
-        )}
+          )}
+
+          {/* Label override */}
+          <input
+            value={weekLabelOverride}
+            onChange={e => setWeekLabelOverride(e.target.value)}
+            placeholder={displayLabel}
+            style={{ background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', padding: '3px 8px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', width: 130 }}
+            title="Label override (leave blank to auto-generate)"
+            readOnly={!canEdit}
+          />
+        </div>
       </div>
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -698,9 +881,9 @@ function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mo
         <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 560 }}>
           <thead>
             <tr>
-              <th style={{ width: 72, padding: '6px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', borderBottom: '1px solid #1e3550' }}></th>
-              {days.map((d, i) => (
-                <th key={d} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#d0e4f4', borderBottom: '1px solid #1e3550', minWidth: 90 }}>
+              <th style={{ width: 80, padding: '6px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', borderBottom: '1px solid #1e3550' }}></th>
+              {days.map((d) => (
+                <th key={d} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#d0e4f4', borderBottom: '1px solid #1e3550', minWidth: 90 }}>
                   {d}
                 </th>
               ))}
@@ -713,7 +896,7 @@ function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mo
             ].map(({ role, label, icon, color }) => (
               <tr key={role}>
                 <td style={{ padding: '8px 10px 8px 0', verticalAlign: 'middle' }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', color }}>
                     {icon} {label}
                   </div>
                 </td>
@@ -732,10 +915,10 @@ function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mo
                         onDrop={e => onDrop(e, key)}
                         onClick={() => !member && onSlotClick(key)}
                         style={{
-                          minHeight: 64, borderRadius: 2, padding: '6px 8px',
-                          background: isOver  ? `${color}18` :
-                                      member  ? `${color}0d` : 'rgba(30,53,80,0.2)',
-                          border: `1px solid ${isOver ? color : isLocked ? `${color}60` : member ? `${color}30` : '#1e3550'}`,
+                          minHeight: 52, borderRadius: 2, padding: '6px 8px',
+                          background: isOver  ? `${color}22` :
+                                      member  ? `${color}18` : 'rgba(20,35,55,0.35)',
+                          border: `1px solid ${isOver ? color : isLocked ? `${color}70` : member ? `${color}50` : '#1e3550'}`,
                           cursor: canEdit && !member ? 'crosshair' : 'default',
                           position: 'relative', transition: 'border-color 0.1s',
                           boxSizing: 'border-box',
@@ -754,10 +937,10 @@ function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mo
                             toggleLock={toggleLock}
                           />
                         ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 48 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 40 }}>
                             {isLocked
-                              ? <Lock size={12} style={{ color: `${color}60` }} />
-                              : <span style={{ fontSize: 18, opacity: 0.15 }}>{icon}</span>
+                              ? <Lock size={12} style={{ color: `${color}70` }} />
+                              : <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: '#2a4058', fontFamily: "'Rajdhani',sans-serif" }}>— OPEN —</span>
                             }
                           </div>
                         )}
@@ -790,11 +973,11 @@ function SlotMember({ member, role, color, isLocked, canEdit, slotKey, onDragSta
       onDragStart={e => !isLocked && onDragStart(e, member.id, slotKey)}
       style={{ display: 'flex', flexDirection: 'column', gap: 3 }}
     >
-      <div style={{ fontSize: 11, fontWeight: 700, color, lineHeight: 1.2, paddingRight: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff', lineHeight: 1.2, paddingRight: canEdit ? 18 : 0 }}>
         {member.in_game_name || member.username}
       </div>
       {member.username && member.in_game_name && (
-        <div style={{ fontSize: 9, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace" }}>@{member.username}</div>
+        <div style={{ fontSize: 9, color: '#5a7a98', fontFamily: "'Share Tech Mono',monospace" }}>@{member.username}</div>
       )}
       {canEdit && (
         <div style={{ position: 'absolute', top: 3, right: 3, display: 'flex', gap: 2 }}>
@@ -828,4 +1011,5 @@ const S = {
   genBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '8px', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' },
   sel: { width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: '6px 8px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11 },
   qBtn: { background: 'none', border: 'none', color: '#3a5878', cursor: 'pointer', padding: '2px 4px', fontSize: 10, fontFamily: 'monospace' },
+  weekNavBtn: { display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(30,53,80,0.5)', border: '1px solid #1e3550', color: '#7a9bb8', padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: 'pointer', whiteSpace: 'nowrap' },
 };
