@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { ArrowLeft, Shuffle, Lock, Unlock, RotateCcw, Save, Train, Info, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Shuffle, Lock, Unlock, RotateCcw, Save, Train, Info, Download } from 'lucide-react';
 
 // ── Constants ──────────────────────────────────────────────────────
 const DAYS   = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -15,7 +15,7 @@ const MODES = [
     label: 'Manual',
     icon: '✋',
     color: '#00c8ff',
-    desc: 'Full control. Drag members into any slot. No automation.',
+    desc: 'Full control. Drag members into any slot.',
     detail: 'Best for alliances with specific rules each week or changing circumstances.',
   },
   {
@@ -23,7 +23,7 @@ const MODES = [
     label: 'Fixed Driver',
     icon: '🚂',
     color: '#00e87a',
-    desc: 'One person drives every day. VIPs rotate from a pool.',
+    desc: 'One person drives every day. VIPs rotate.',
     detail: 'Best when one dedicated player always drives and VIPs are rotated fairly.',
   },
   {
@@ -31,8 +31,8 @@ const MODES = [
     label: 'Paired Rotation',
     icon: '🔁',
     color: '#f0a500',
-    desc: 'Members paired as (Driver, VIP). After a full cycle, roles swap.',
-    detail: 'Pairs rotate through days. Once everyone has gone, Driver↔VIP swap for the next cycle. Fairest for small groups.',
+    desc: 'Members paired as (Driver, VIP). Roles swap each cycle.',
+    detail: 'Pairs rotate through days. Once everyone has gone, Driver↔VIP swap for the next cycle.',
   },
   {
     id: 'round_robin',
@@ -47,7 +47,7 @@ const MODES = [
     label: 'Priority Days',
     icon: '🏆',
     color: '#ff6080',
-    desc: 'Lock specific days for event winners or officers. Rest auto-fills.',
+    desc: 'Lock specific days for event winners. Rest auto-fills.',
     detail: 'Mark important days with specific members (canyon winners, etc.). Other days fill via round robin.',
   },
 ];
@@ -91,13 +91,33 @@ function genFixedDriver(members, driverMemberId, vipPool) {
   return slots;
 }
 
-function genPaired(pairs) {
-  // pairs: [{driver, vip}]
+function genPaired(pairs, startDate) {
+  // Calculate offset from startDate if provided
   const slots = EMPTY_SLOTS();
+  if (!pairs.length) return slots;
+  let offset = 0;
+  if (startDate) {
+    const start = new Date(startDate + 'T00:00:00');
+    const now = getMondayDate();
+    const diffMs = now - start;
+    const diffWeeks = Math.floor(diffMs / (7 * 24 * 3600 * 1000));
+    const cycleLen = pairs.length;
+    if (cycleLen > 0) {
+      const totalDays = diffWeeks * 7;
+      offset = Math.floor(totalDays / cycleLen) % cycleLen;
+      // Check if roles should be swapped (after full cycle)
+      const fullCycles = Math.floor(totalDays / cycleLen);
+      if (fullCycles % 2 === 1) {
+        // swap roles for this cycle
+        pairs = pairs.map(p => ({ driver: p.vip, vip: p.driver }));
+      }
+    }
+  }
   pairs.forEach((pair, i) => {
-    if (i < 7) {
-      slots[`${i}-driver`] = { memberId: pair.driver, locked: false };
-      slots[`${i}-vip`]    = { memberId: pair.vip,    locked: false };
+    const dayIdx = (i + offset) % 7;
+    if (dayIdx < 7) {
+      slots[`${dayIdx}-driver`] = { memberId: pair.driver, locked: false };
+      slots[`${dayIdx}-vip`]    = { memberId: pair.vip,    locked: false };
     }
   });
   return slots;
@@ -172,24 +192,29 @@ export default function TrainPlanner() {
   const [saved,       setSaved]       = useState(false);
   const [members,     setMembers]     = useState([]);
   const [alliance,    setAlliance]    = useState(null);
+  const [isDirty,     setIsDirty]     = useState(false);
+  const [toast,       setToast]       = useState('');
 
   // ── Multi-week state ─────────────────────────────────────────────
-  const [allSchedules,    setAllSchedules]    = useState([]);   // all schedule rows
-  const [currentWeekKey,  setCurrentWeekKey]  = useState('');   // YYYY-MM-DD
+  const [allSchedules,    setAllSchedules]    = useState([]);
+  const [currentWeekKey,  setCurrentWeekKey]  = useState('');
   const [scheduleId,      setScheduleId]      = useState(null);
-  const [weekLabelOverride, setWeekLabelOverride] = useState(''); // manual override
+  const [weekLabelOverride, setWeekLabelOverride] = useState('');
 
   // ── Schedule state ───────────────────────────────────────────────
   const [mode,        setMode]        = useState('manual');
   const [slots,       setSlots]       = useState(EMPTY_SLOTS);
 
   // Mode-specific config state
-  const [fixedDriver, setFixedDriver] = useState(null);
-  const [vipPool,     setVipPool]     = useState([]);
-  const [pairs,       setPairs]       = useState([]);
-  const [driverQueue, setDriverQueue] = useState([]);
-  const [vipQueue,    setVipQueue]    = useState([]);
-  const [modeOpen,    setModeOpen]    = useState(false);
+  const [fixedDriver,     setFixedDriver]     = useState(null);
+  const [vipPool,         setVipPool]         = useState([]);
+  const [pairs,           setPairs]           = useState([]);
+  const [pairedStartDate, setPairedStartDate] = useState('');
+  const [driverQueue,     setDriverQueue]     = useState([]);
+  const [vipQueue,        setVipQueue]        = useState([]);
+
+  // ── Unsaved changes dialog ────────────────────────────────────────
+  const [pendingNav, setPendingNav] = useState(null); // { type: 'week', dir } | { type: 'date', key, sched }
 
   // ── Drag state ───────────────────────────────────────────────────
   const [dragging,    setDragging]    = useState(null);
@@ -198,6 +223,8 @@ export default function TrainPlanner() {
 
   // Derived label shown in topbar
   const displayLabel = weekLabelOverride || (currentWeekKey ? weekLabelFromDate(currentWeekKey) : 'Current Week');
+
+  function markDirty() { setIsDirty(true); }
 
   // ── Load all schedules ────────────────────────────────────────────
   useEffect(() => {
@@ -211,7 +238,6 @@ export default function TrainPlanner() {
       setAlliance(al);
       setMembers(mems ?? []);
 
-      // Load ALL schedules for this alliance
       const { data: scheds } = await supabase
         .from('train_schedules')
         .select('*')
@@ -221,26 +247,17 @@ export default function TrainPlanner() {
       const rows = scheds ?? [];
       setAllSchedules(rows);
 
-      // Determine which week to show: find current Monday
       const todayMonday = toDateString(getMondayDate());
-
-      // Try to find schedule matching today's Monday
       let target = rows.find(s => s.week_label === todayMonday);
-
-      // Fallback: if no schedule for this week, use latest (last by week_label)
-      if (!target && rows.length > 0) {
-        target = rows[rows.length - 1];
-      }
+      if (!target && rows.length > 0) target = rows[rows.length - 1];
 
       if (target) {
         applySchedule(target);
       } else {
-        // No schedule exists: set week to this Monday
         setCurrentWeekKey(todayMonday);
         setScheduleId(null);
         setSlots(EMPTY_SLOTS());
       }
-
       setLoading(false);
     }
     load();
@@ -253,18 +270,21 @@ export default function TrainPlanner() {
     setMode(sched.mode ?? 'manual');
 
     const cfg = sched.mode_config ?? {};
-    if (cfg.fixedDriver !== undefined)  setFixedDriver(cfg.fixedDriver);
-    if (cfg.vipPool !== undefined)      setVipPool(cfg.vipPool);
-    if (cfg.pairs !== undefined)        setPairs(cfg.pairs);
-    if (cfg.driverQueue !== undefined)  setDriverQueue(cfg.driverQueue);
-    if (cfg.vipQueue !== undefined)     setVipQueue(cfg.vipQueue);
+    if (cfg.fixedDriver !== undefined)      setFixedDriver(cfg.fixedDriver);
+    if (cfg.vipPool !== undefined)          setVipPool(cfg.vipPool);
+    if (cfg.pairs !== undefined)            setPairs(cfg.pairs);
+    if (cfg.pairedStartDate !== undefined)  setPairedStartDate(cfg.pairedStartDate);
+    if (cfg.driverQueue !== undefined)      setDriverQueue(cfg.driverQueue);
+    if (cfg.vipQueue !== undefined)         setVipQueue(cfg.vipQueue);
 
-    // Load slots for this schedule
     supabase
       .from('train_slots')
       .select('*')
       .eq('schedule_id', sched.id)
-      .then(({ data: dbSlots }) => setSlots(initSlots(dbSlots)));
+      .then(({ data: dbSlots }) => {
+        setSlots(initSlots(dbSlots));
+        setIsDirty(false);
+      });
   }
 
   // ── Save ──────────────────────────────────────────────────────────
@@ -272,7 +292,7 @@ export default function TrainPlanner() {
     if (!myAllianceId) return;
     setSaving(true);
 
-    const modeConfig = { fixedDriver, vipPool, pairs, driverQueue, vipQueue };
+    const modeConfig = { fixedDriver, vipPool, pairs, pairedStartDate, driverQueue, vipQueue };
     const wLabel = currentWeekKey || toDateString(getMondayDate());
 
     let sid = scheduleId;
@@ -299,70 +319,82 @@ export default function TrainPlanner() {
 
     if (!sid) { setSaving(false); return; }
 
-    // Upsert all 14 slots
     const rows = [];
     DAYS.forEach((_, d) => {
       ROLES.forEach(r => {
         const slot = slots[`${d}-${r}`];
-        rows.push({
-          schedule_id:  sid,
-          day_of_week:  d,
-          role:         r,
-          member_id:    slot?.memberId ?? null,
-          locked:       slot?.locked ?? false,
-        });
+        rows.push({ schedule_id: sid, day_of_week: d, role: r, member_id: slot?.memberId ?? null, locked: slot?.locked ?? false });
       });
     });
     await supabase.from('train_slots').upsert(rows, { onConflict: 'schedule_id,day_of_week,role' });
 
     setSaving(false);
     setSaved(true);
+    setIsDirty(false);
     setTimeout(() => setSaved(false), 2500);
-  }, [myAllianceId, scheduleId, currentWeekKey, mode, slots, fixedDriver, vipPool, pairs, driverQueue, vipQueue]);
+  }, [myAllianceId, scheduleId, currentWeekKey, mode, slots, fixedDriver, vipPool, pairs, pairedStartDate, driverQueue, vipQueue]);
 
-  // ── Week navigation ───────────────────────────────────────────────
-  function navigateWeek(dir) {
-    // Sort schedules by week_label
-    const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
-    const idx = sorted.findIndex(s => s.id === scheduleId);
+  // ── Unsaved changes guard ─────────────────────────────────────────
+  function guardedNavigateWeek(dir) {
+    if (isDirty) { setPendingNav({ type: 'week', dir }); return; }
+    navigateWeek(dir);
+  }
 
-    if (dir === -1 && idx > 0) {
-      applySchedule(sorted[idx - 1]);
-    } else if (dir === 1 && idx < sorted.length - 1) {
-      applySchedule(sorted[idx + 1]);
+  function guardedDateChange(key, existingSched) {
+    if (isDirty) { setPendingNav({ type: 'date', key, sched: existingSched }); return; }
+    if (existingSched) applySchedule(existingSched);
+    else { setScheduleId(null); setCurrentWeekKey(key); setWeekLabelOverride(''); setSlots(EMPTY_SLOTS()); setIsDirty(false); }
+  }
+
+  async function handleUnsavedSave() {
+    await handleSave();
+    const nav = pendingNav;
+    setPendingNav(null);
+    setTimeout(() => executePendingNav(nav), 100);
+  }
+
+  function handleUnsavedDiscard() {
+    const nav = pendingNav;
+    setIsDirty(false);
+    setPendingNav(null);
+    executePendingNav(nav);
+  }
+
+  function executePendingNav(nav) {
+    if (!nav) return;
+    if (nav.type === 'week') navigateWeek(nav.dir);
+    else if (nav.type === 'date') {
+      if (nav.sched) applySchedule(nav.sched);
+      else { setScheduleId(null); setCurrentWeekKey(nav.key); setWeekLabelOverride(''); setSlots(EMPTY_SLOTS()); setIsDirty(false); }
     }
   }
 
+  // ── Week navigation ───────────────────────────────────────────────
+  function navigateWeek(dir) {
+    const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
+    const idx = sorted.findIndex(s => s.id === scheduleId);
+    if (dir === -1 && idx > 0) applySchedule(sorted[idx - 1]);
+    else if (dir === 1 && idx < sorted.length - 1) applySchedule(sorted[idx + 1]);
+  }
+
   function createNewWeek() {
-    // Find next Monday after the most recent schedule
     const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
     let baseDate;
     if (sorted.length > 0) {
       const lastLabel = sorted[sorted.length - 1].week_label;
-      // Try parse as date
       const parsed = new Date(lastLabel + 'T00:00:00');
-      if (!isNaN(parsed.getTime())) {
-        baseDate = getMondayDate(new Date(parsed.getTime() + 7 * 24 * 3600000));
-      } else {
-        baseDate = getMondayDate(new Date(Date.now() + 7 * 24 * 3600000));
-      }
-    } else {
-      baseDate = getMondayDate();
-    }
+      if (!isNaN(parsed.getTime())) baseDate = getMondayDate(new Date(parsed.getTime() + 7 * 24 * 3600000));
+      else baseDate = getMondayDate(new Date(Date.now() + 7 * 24 * 3600000));
+    } else { baseDate = getMondayDate(); }
 
     const newKey = toDateString(baseDate);
-    // Check it doesn't exist already
-    if (allSchedules.some(s => s.week_label === newKey)) {
-      alert('A schedule for that week already exists.');
-      return;
-    }
+    if (allSchedules.some(s => s.week_label === newKey)) { alert('A schedule for that week already exists.'); return; }
 
-    // Create blank week — copy mode config but clear slots
     setScheduleId(null);
     setCurrentWeekKey(newKey);
     setWeekLabelOverride('');
     setSlots(EMPTY_SLOTS());
-    // mode config carries over
+    setIsDirty(false);
   }
 
   // ── Auto-generate based on mode ───────────────────────────────────
@@ -370,7 +402,7 @@ export default function TrainPlanner() {
     if (mode === 'fixed_driver') {
       setSlots(genFixedDriver(members, fixedDriver, vipPool));
     } else if (mode === 'paired') {
-      setSlots(genPaired(pairs));
+      setSlots(genPaired(pairs, pairedStartDate));
     } else if (mode === 'round_robin') {
       setSlots(genRoundRobin(driverQueue, vipQueue));
     } else if (mode === 'priority') {
@@ -378,27 +410,41 @@ export default function TrainPlanner() {
       const vPool = [...dPool];
       setSlots(genPriority(slots, dPool, vPool));
     }
+    markDirty();
+  }
+
+  // ── Fixed Driver roll-to-next-week ───────────────────────────────
+  function rollVipToNextWeek() {
+    if (vipPool.length < 2) return;
+    const next = [...vipPool.slice(1), vipPool[0]];
+    setVipPool(next);
+    setSlots(genFixedDriver(members, fixedDriver, next));
+    markDirty();
   }
 
   // ── Slot assignment ───────────────────────────────────────────────
   function assignSlot(key, memberId) {
     if (!canEdit) return;
     setSlots(prev => ({ ...prev, [key]: { ...prev[key], memberId } }));
+    markDirty();
   }
 
   function clearSlot(key) {
     if (!canEdit) return;
     setSlots(prev => ({ ...prev, [key]: { ...prev[key], memberId: null } }));
+    markDirty();
   }
 
   function toggleLock(key) {
     if (!canEdit) return;
     setSlots(prev => ({ ...prev, [key]: { ...prev[key], locked: !prev[key]?.locked } }));
+    markDirty();
   }
 
   function clearAll() {
     if (!confirm('Clear all slots?')) return;
     setSlots(EMPTY_SLOTS());
+    markDirty();
   }
 
   // ── Drag handlers ─────────────────────────────────────────────────
@@ -417,18 +463,22 @@ export default function TrainPlanner() {
     setDragOver(null);
     if (!dragging || !canEdit) return;
     const { memberId, fromSlot } = dragging;
-    // If dragged from another slot, clear that slot
     if (fromSlot && fromSlot !== key) {
-      setSlots(prev => ({
-        ...prev,
-        [fromSlot]: { ...prev[fromSlot], memberId: null },
-        [key]:      { ...prev[key], memberId },
-      }));
+      // Swap: if target slot has a member, move it back to fromSlot
+      setSlots(prev => {
+        const targetMemberId = prev[key]?.memberId ?? null;
+        return {
+          ...prev,
+          [fromSlot]: { ...prev[fromSlot], memberId: targetMemberId },
+          [key]:      { ...prev[key],      memberId },
+        };
+      });
     } else {
       assignSlot(key, memberId);
     }
     setDragging(null);
     setSelected(null);
+    markDirty();
   }
   function onDropPool(e) {
     e.preventDefault();
@@ -437,7 +487,6 @@ export default function TrainPlanner() {
     setDragging(null);
   }
 
-  // Click assign: select member → click slot
   function onMemberClick(memberId) {
     if (!canEdit) return;
     setSelected(s => s === memberId ? null : memberId);
@@ -450,6 +499,38 @@ export default function TrainPlanner() {
     }
   }
 
+  // ── Export ────────────────────────────────────────────────────────
+  function handleExport() {
+    const allianceName = alliance?.name || 'Alliance';
+    const weekRange = currentWeekKey ? formatWeekRange(currentWeekKey) : 'Unknown Week';
+    const lines = [
+      `TRAIN SCHEDULE — ${allianceName}`,
+      weekRange,
+      '',
+    ];
+    DAYS.forEach((day, d) => {
+      const driverSlot = slots[`${d}-driver`];
+      const vipSlot    = slots[`${d}-vip`];
+      const driverMem  = driverSlot?.memberId ? memberById[driverSlot.memberId] : null;
+      const vipMem     = vipSlot?.memberId    ? memberById[vipSlot.memberId]    : null;
+      const dName = driverMem ? memberName(driverMem) : '— OPEN —';
+      const vName = vipMem    ? memberName(vipMem)    : '— OPEN —';
+      lines.push(`${day}  Driver: ${dName}  VIP: ${vName}`);
+    });
+    const text = lines.join('\n');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => {
+        setToast('COPIED!');
+        setTimeout(() => setToast(''), 2000);
+      });
+    } else {
+      const a = document.createElement('a');
+      a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text);
+      a.download = `train-schedule-${currentWeekKey || 'week'}.txt`;
+      a.click();
+    }
+  }
+
   // ── Derived ───────────────────────────────────────────────────────
   const memberById = Object.fromEntries(members.map(m => [m.id, m]));
   const assignedIds = new Set(Object.values(slots).map(s => s.memberId).filter(Boolean));
@@ -459,13 +540,15 @@ export default function TrainPlanner() {
   function addPair(driverId, vipId) {
     if (!driverId || !vipId) return;
     setPairs(p => [...p, { driver: driverId, vip: vipId }]);
+    markDirty();
   }
-  function removePair(i) { setPairs(p => p.filter((_, j) => j !== i)); }
-  function swapPairs() { setPairs(p => p.map(pair => ({ driver: pair.vip, vip: pair.driver }))); }
+  function removePair(i) { setPairs(p => p.filter((_, j) => j !== i)); markDirty(); }
+  function swapPairs() { setPairs(p => p.map(pair => ({ driver: pair.vip, vip: pair.driver }))); markDirty(); }
 
   // ── Queue helpers ─────────────────────────────────────────────────
   function toggleQueue(arr, setArr, memberId) {
     setArr(a => a.includes(memberId) ? a.filter(id => id !== memberId) : [...a, memberId]);
+    markDirty();
   }
   function moveQueue(arr, setArr, i, dir) {
     const n = [...arr];
@@ -473,6 +556,7 @@ export default function TrainPlanner() {
     if (j < 0 || j >= n.length) return;
     [n[i], n[j]] = [n[j], n[i]];
     setArr(n);
+    markDirty();
   }
 
   if (loading) return (
@@ -490,9 +574,34 @@ export default function TrainPlanner() {
     </div>
   );
 
+  const sortedScheds = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
+  const schedIdx = sortedScheds.findIndex(s => s.id === scheduleId);
+
   return (
     <div style={{ height: '100vh', background: '#080d14', display: 'flex', flexDirection: 'column', fontFamily: "'Rajdhani',sans-serif", color: '#d0e4f4', overflow: 'hidden' }}>
       <style>{FONT}</style>
+
+      {/* ── Unsaved changes dialog ───────────────────────────────── */}
+      {pendingNav && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: '#0d1520', border: '1px solid rgba(240,165,0,0.4)', padding: '28px 32px', maxWidth: 380, width: '90%' }}>
+            <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '2px', color: '#f0a500', marginBottom: 12 }}>UNSAVED CHANGES</div>
+            <p style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>You have unsaved changes. Save before switching weeks?</p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handleUnsavedSave} style={{ flex: 1, padding: '9px', background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.4)', color: '#f0a500', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' }}>SAVE</button>
+              <button onClick={handleUnsavedDiscard} style={{ flex: 1, padding: '9px', background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.3)', color: '#ff4060', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' }}>DISCARD</button>
+              <button onClick={() => setPendingNav(null)} style={{ flex: 1, padding: '9px', background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' }}>CANCEL</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Toast ────────────────────────────────────────────────── */}
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 300, background: 'rgba(0,232,122,0.15)', border: '1px solid rgba(0,232,122,0.5)', color: '#00e87a', padding: '8px 20px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: '2px', pointerEvents: 'none' }}>
+          {toast}
+        </div>
+      )}
 
       {/* ── Topbar ──────────────────────────────────────────────── */}
       <div style={{ background: 'rgba(8,13,20,0.97)', borderBottom: '1px solid #1e3550', flexShrink: 0, zIndex: 50 }}>
@@ -502,7 +611,9 @@ export default function TrainPlanner() {
           <Train size={15} style={{ color: '#f0a500', flexShrink: 0 }} />
           <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '2px', color: '#f0a500' }}>TRAIN PLANNER</div>
           {alliance && <div style={{ fontSize: 11, color: '#3a5878', marginLeft: 4 }}>— {alliance.name}</div>}
+          {isDirty && <div style={{ fontSize: 9, color: '#f0a500', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', padding: '2px 7px', letterSpacing: '1px', fontWeight: 700 }}>UNSAVED</div>}
           <div style={{ flex: 1 }} />
+          <button onClick={handleExport} style={{ ...S.iconBtn, color: '#00c8ff' }} title="Export schedule to clipboard"><Download size={14} /></button>
           {canEdit && (
             <>
               <button onClick={clearAll} style={{ ...S.iconBtn, color: '#ff6080' }} title="Clear all slots"><RotateCcw size={14} /></button>
@@ -520,7 +631,6 @@ export default function TrainPlanner() {
 
         {/* Row 2: Week Navigator */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', flexWrap: 'wrap' }}>
-          {/* Date picker for week start */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: '#3a5878' }}>WEEK START:</span>
             <input
@@ -529,44 +639,35 @@ export default function TrainPlanner() {
               onChange={e => {
                 const monday = getMondayDate(new Date(e.target.value + 'T12:00:00'));
                 const key = toDateString(monday);
-                // Try to find an existing schedule for this week
                 const existing = allSchedules.find(s => s.week_label === key);
-                if (existing) {
-                  applySchedule(existing);
-                } else {
-                  setScheduleId(null);
-                  setCurrentWeekKey(key);
-                  setWeekLabelOverride('');
-                  setSlots(EMPTY_SLOTS());
-                }
+                guardedDateChange(key, existing || null);
               }}
               readOnly={!canEdit}
               style={{ background: '#0a1220', border: '1px solid #1e3550', color: '#7a9bb8', padding: '3px 8px', fontFamily: "'Share Tech Mono',monospace", fontSize: 11 }}
             />
           </div>
 
-          {/* Prev / current / next */}
           <button
-            onClick={() => navigateWeek(-1)}
-            disabled={!allSchedules.length || allSchedules[0]?.id === scheduleId}
-            style={{ ...S.weekNavBtn, opacity: (!allSchedules.length || allSchedules.sort((a,b)=>(a.week_label||'').localeCompare(b.week_label||''))[0]?.id === scheduleId) ? 0.3 : 1 }}
+            onClick={() => guardedNavigateWeek(-1)}
+            disabled={sortedScheds.length === 0 || schedIdx <= 0}
+            style={{ ...S.weekNavBtn, opacity: (sortedScheds.length === 0 || schedIdx <= 0) ? 0.3 : 1 }}
           >
             ← PREV WEEK
           </button>
 
           <div style={{ flex: 1, textAlign: 'center', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', color: '#d0e4f4', minWidth: 160 }}>
             {currentWeekKey ? formatWeekRange(currentWeekKey) : 'No week selected'}
-            {allSchedules.length > 1 && (
+            {sortedScheds.length > 1 && (
               <span style={{ fontSize: 9, color: '#3a5878', marginLeft: 8 }}>
-                ({(allSchedules.sort((a,b)=>(a.week_label||'').localeCompare(b.week_label||'')).findIndex(s => s.id === scheduleId) + 1) || '?'}/{allSchedules.length})
+                ({schedIdx >= 0 ? schedIdx + 1 : '?'}/{sortedScheds.length})
               </span>
             )}
           </div>
 
           <button
-            onClick={() => navigateWeek(1)}
-            disabled={!allSchedules.length}
-            style={{ ...S.weekNavBtn, opacity: !allSchedules.length ? 0.3 : 1 }}
+            onClick={() => guardedNavigateWeek(1)}
+            disabled={sortedScheds.length === 0 || schedIdx >= sortedScheds.length - 1}
+            style={{ ...S.weekNavBtn, opacity: (sortedScheds.length === 0 || schedIdx >= sortedScheds.length - 1) ? 0.3 : 1 }}
           >
             NEXT WEEK →
           </button>
@@ -577,10 +678,9 @@ export default function TrainPlanner() {
             </button>
           )}
 
-          {/* Label override */}
           <input
             value={weekLabelOverride}
-            onChange={e => setWeekLabelOverride(e.target.value)}
+            onChange={e => { setWeekLabelOverride(e.target.value); markDirty(); }}
             placeholder={displayLabel}
             style={{ background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', padding: '3px 8px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', width: 130 }}
             title="Label override (leave blank to auto-generate)"
@@ -591,41 +691,36 @@ export default function TrainPlanner() {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-        {/* ── Left: Mode + Config ─────────────────────────────────── */}
-        <div style={{ width: 260, minWidth: 260, background: 'rgba(5,10,18,0.98)', borderRight: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        {/* ── Left: Mode Cards + Config ────────────────────────────── */}
+        <div style={{ width: 270, minWidth: 270, background: 'rgba(5,10,18,0.98)', borderRight: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-          {/* Mode selector */}
-          <div style={{ borderBottom: '1px solid #1e3550', flexShrink: 0 }}>
-            <button
-              onClick={() => setModeOpen(o => !o)}
-              style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', padding: '10px 14px', cursor: 'pointer', color: currentMode?.color ?? '#d0e4f4' }}
-            >
-              <span style={{ fontSize: 16 }}>{currentMode?.icon}</span>
-              <span style={{ fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', flex: 1, textAlign: 'left' }}>{currentMode?.label?.toUpperCase()}</span>
-              {modeOpen ? <ChevronUp size={13} style={{ color: '#3a5878' }} /> : <ChevronDown size={13} style={{ color: '#3a5878' }} />}
-            </button>
-            {modeOpen && (
-              <div style={{ borderTop: '1px solid #1e3550' }}>
-                {MODES.map(m => (
+          {/* Mode cards grid */}
+          <div style={{ flexShrink: 0, borderBottom: '1px solid #1e3550', padding: '10px 10px 8px' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', marginBottom: 8 }}>SCHEDULING MODE</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+              {MODES.map(m => {
+                const active = mode === m.id;
+                return (
                   <button
                     key={m.id}
-                    onClick={() => { setMode(m.id); setModeOpen(false); }}
+                    onClick={() => { if (canEdit) { setMode(m.id); markDirty(); } }}
                     style={{
-                      width: '100%', display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 14px',
-                      background: mode === m.id ? `${m.color}0d` : 'transparent',
-                      border: 'none', borderBottom: '1px solid #1e3550',
+                      display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3,
+                      padding: '8px 9px', background: active ? `${m.color}14` : 'rgba(10,18,30,0.6)',
+                      border: `1px solid ${active ? m.color + '60' : '#1e3550'}`,
                       cursor: canEdit ? 'pointer' : 'default', textAlign: 'left',
+                      transition: 'border-color 0.15s, background 0.15s',
                     }}
                   >
-                    <span style={{ fontSize: 14, marginTop: 1 }}>{m.icon}</span>
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 11, letterSpacing: '1px', color: mode === m.id ? m.color : '#d0e4f4' }}>{m.label.toUpperCase()}</div>
-                      <div style={{ fontSize: 10, color: '#3a5878', lineHeight: 1.5, marginTop: 2 }}>{m.desc}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <span style={{ fontSize: 13 }}>{m.icon}</span>
+                      <span style={{ fontWeight: 700, fontSize: 10, letterSpacing: '1px', color: active ? m.color : '#d0e4f4' }}>{m.label.toUpperCase()}</span>
                     </div>
+                    <div style={{ fontSize: 9, color: active ? m.color + 'cc' : '#3a5878', lineHeight: 1.4 }}>{m.desc}</div>
                   </button>
-                ))}
-              </div>
-            )}
+                );
+              })}
+            </div>
           </div>
 
           {/* Mode config panel */}
@@ -635,14 +730,21 @@ export default function TrainPlanner() {
               members={members}
               memberById={memberById}
               canEdit={canEdit}
-              fixedDriver={fixedDriver} setFixedDriver={setFixedDriver}
-              vipPool={vipPool}        setVipPool={setVipPool}
+              fixedDriver={fixedDriver} setFixedDriver={v => { setFixedDriver(v); markDirty(); }}
+              vipPool={vipPool}        setVipPool={v => { setVipPool(v); markDirty(); }}
               pairs={pairs}            addPair={addPair} removePair={removePair} swapPairs={swapPairs}
-              driverQueue={driverQueue} setDriverQueue={setDriverQueue} moveDriverQueue={(i,d) => moveQueue(driverQueue, setDriverQueue, i, d)}
-              vipQueue={vipQueue}       setVipQueue={setVipQueue}       moveVipQueue={(i,d) => moveQueue(vipQueue, setVipQueue, i, d)}
+              pairedStartDate={pairedStartDate} setPairedStartDate={v => { setPairedStartDate(v); markDirty(); }}
+              driverQueue={driverQueue} setDriverQueue={v => { setDriverQueue(v); markDirty(); }}
+              vipQueue={vipQueue}       setVipQueue={v => { setVipQueue(v); markDirty(); }}
               toggleQueue={toggleQueue}
+              moveDriverQueue={(i, d) => moveQueue(driverQueue, setDriverQueue, i, d)}
+              moveVipQueue={(i, d) => moveQueue(vipQueue, setVipQueue, i, d)}
               generate={generate}
+              rollVipToNextWeek={rollVipToNextWeek}
               currentMode={currentMode}
+              slots={slots}
+              setSlots={setSlots}
+              markDirty={markDirty}
             />
           </div>
         </div>
@@ -669,12 +771,13 @@ export default function TrainPlanner() {
 
         {/* ── Right: Member pool ───────────────────────────────────── */}
         <div
-          style={{ width: 190, minWidth: 190, background: 'rgba(5,10,18,0.98)', borderLeft: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+          style={{ width: 200, minWidth: 200, background: 'rgba(5,10,18,0.98)', borderLeft: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
           onDragOver={e => e.preventDefault()}
           onDrop={onDropPool}
         >
-          <div style={{ padding: '10px 12px', borderBottom: '1px solid #1e3550', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', flexShrink: 0 }}>
-            MEMBERS — {members.length}
+          <div style={{ padding: '10px 12px', borderBottom: '1px solid #1e3550', flexShrink: 0 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#00c8ff', marginBottom: 2 }}>DRAG TO SLOT</div>
+            <div style={{ fontSize: 9, color: '#3a5878', letterSpacing: '1px' }}>MEMBERS — {members.length}</div>
           </div>
           {selected && (
             <div style={{ padding: '6px 12px', background: 'rgba(0,200,255,0.06)', borderBottom: '1px solid rgba(0,200,255,0.2)', fontSize: 10, color: '#00c8ff' }}>
@@ -694,27 +797,31 @@ export default function TrainPlanner() {
                   onClick={() => onMemberClick(m.id)}
                   style={{
                     display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', marginBottom: 3,
-                    background: isSel ? 'rgba(0,200,255,0.12)' : isAssigned ? 'rgba(0,200,255,0.03)' : 'transparent',
-                    border: `1px solid ${isSel ? 'rgba(0,200,255,0.5)' : isAssigned ? 'rgba(0,200,255,0.15)' : '#1e3550'}`,
+                    background: isSel ? 'rgba(0,200,255,0.12)' : isAssigned ? 'rgba(0,200,255,0.05)' : 'transparent',
+                    border: `1px solid ${isSel ? 'rgba(0,200,255,0.5)' : isAssigned ? 'rgba(0,200,255,0.2)' : '#1e3550'}`,
                     cursor: canEdit ? 'grab' : 'default',
-                    opacity: isAssigned && !isSel ? 0.55 : 1,
+                    opacity: 1,
                   }}
                 >
-                  <div style={{ width: 26, height: 26, borderRadius: 2, background: alliance?.color ?? '#1e3550', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#080d14', flexShrink: 0 }}>
+                  <div style={{ width: 26, height: 26, borderRadius: 2, background: alliance?.color ?? '#1e3550', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#080d14', flexShrink: 0, position: 'relative' }}>
                     {memberInitials(m)}
+                    {isAssigned && (
+                      <div style={{ position: 'absolute', top: -4, right: -4, width: 8, height: 8, borderRadius: '50%', background: '#00e87a', border: '1px solid #080d14' }} />
+                    )}
                   </div>
-                  <div style={{ overflow: 'hidden' }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: isSel ? '#00c8ff' : '#d0e4f4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  <div style={{ overflow: 'hidden', flex: 1 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: isSel ? '#00c8ff' : isAssigned ? '#a0c8e8' : '#d0e4f4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                       {memberName(m)}
                     </div>
-                    {m.power1 && <div style={{ fontSize: 9, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace" }}>{m.power1}B{m.troop1 ? ` · ${m.troop1}` : ''}</div>}
+                    {isAssigned && <div style={{ fontSize: 8, color: '#00e87a', fontWeight: 700, letterSpacing: '1px' }}>ASSIGNED</div>}
+                    {m.power1 && !isAssigned && <div style={{ fontSize: 9, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace" }}>{m.power1}B{m.troop1 ? ` · ${m.troop1}` : ''}</div>}
                   </div>
                 </div>
               );
             })}
           </div>
           <div style={{ padding: '8px 12px', borderTop: '1px solid #1e3550', fontSize: 9, color: '#2a4058', lineHeight: 1.6, flexShrink: 0 }}>
-            Drag to a slot, or click member then click slot.
+            Drag to slot · Drag slot→here to remove · Click member then slot to assign
           </div>
         </div>
       </div>
@@ -723,7 +830,7 @@ export default function TrainPlanner() {
 }
 
 // ── Mode Config Panel ──────────────────────────────────────────────
-function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedDriver, vipPool, setVipPool, pairs, addPair, removePair, swapPairs, driverQueue, setDriverQueue, vipQueue, setVipQueue, moveDriverQueue, moveVipQueue, toggleQueue, generate, currentMode }) {
+function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedDriver, vipPool, setVipPool, pairs, addPair, removePair, swapPairs, pairedStartDate, setPairedStartDate, driverQueue, setDriverQueue, vipQueue, setVipQueue, moveDriverQueue, moveVipQueue, toggleQueue, generate, rollVipToNextWeek, currentMode, slots, setSlots, markDirty }) {
   const [pairDriver, setPairDriver] = useState('');
   const [pairVip,    setPairVip]    = useState('');
 
@@ -733,6 +840,12 @@ function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedD
       {members.map(m => <option key={m.id} value={m.id}>{m.in_game_name || m.username}</option>)}
     </select>
   );
+
+  const ordinal = (n) => {
+    const s = ['th','st','nd','rd'];
+    const v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
 
   return (
     <div>
@@ -744,7 +857,7 @@ function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedD
       {/* MANUAL */}
       {mode === 'manual' && (
         <div style={{ fontSize: 11, color: '#3a5878', lineHeight: 1.7 }}>
-          Drag members from the pool on the right into any slot, or click a member then click a slot. Use the lock icon to protect a slot from being cleared.
+          Drag members from the pool on the right into any slot, or click a member then click a slot. Use the lock icon to protect a slot from being cleared. Dragging a member from one slot to another will swap them.
         </div>
       )}
 
@@ -757,24 +870,51 @@ function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedD
           </div>
           <div>
             <div style={S.cfgLabel}>VIP ROTATION ORDER</div>
-            <p style={{ fontSize: 10, color: '#2a4058', marginBottom: 8 }}>Click to add/remove from VIP pool:</p>
-            {members.filter(m => m.id !== fixedDriver).map(m => {
-              const inPool = vipPool.some(p => p.id === m.id);
-              return (
-                <button key={m.id} onClick={() => canEdit && setVipPool(p => inPool ? p.filter(x => x.id !== m.id) : [...p, m])}
-                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', marginBottom: 3, background: inPool ? 'rgba(0,232,122,0.08)' : 'transparent', border: `1px solid ${inPool ? 'rgba(0,232,122,0.3)' : '#1e3550'}`, color: inPool ? '#00e87a' : '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, cursor: canEdit ? 'pointer' : 'default' }}>
-                  {inPool ? '✓' : '+'} {m.in_game_name || m.username}
-                </button>
-              );
-            })}
+            <p style={{ fontSize: 10, color: '#2a4058', marginBottom: 8 }}>Click to add/remove from VIP pool. Order = rotation sequence.</p>
+            {/* Ordered VIP pool with ordinal numbers */}
+            {vipPool.length > 0 && (
+              <div style={{ marginBottom: 8 }}>
+                {vipPool.map((p, i) => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', marginBottom: 3, background: 'rgba(0,232,122,0.08)', border: '1px solid rgba(0,232,122,0.25)' }}>
+                    <span style={{ fontSize: 9, color: '#00e87a', fontFamily: 'monospace', minWidth: 22 }}>{ordinal(i + 1)}</span>
+                    <span style={{ flex: 1, fontSize: 11, color: '#00e87a', fontWeight: 700 }}>{p.in_game_name || p.username}</span>
+                    {canEdit && <button onClick={() => setVipPool(prev => prev.filter(x => x.id !== p.id))} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {members.filter(m => m.id !== fixedDriver && !vipPool.some(p => p.id === m.id)).map(m => (
+              <button key={m.id} onClick={() => canEdit && setVipPool(p => [...p, m])}
+                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', marginBottom: 3, background: 'transparent', border: '1px solid #1e3550', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, cursor: canEdit ? 'pointer' : 'default' }}>
+                + {m.in_game_name || m.username}
+              </button>
+            ))}
           </div>
-          {canEdit && <button onClick={generate} style={S.genBtn}><Shuffle size={12} /> GENERATE SCHEDULE</button>}
+          {canEdit && (
+            <>
+              <button onClick={rollVipToNextWeek} style={{ ...S.genBtn, background: 'rgba(0,232,122,0.08)', border: '1px solid rgba(0,232,122,0.3)', color: '#00e87a' }}>
+                <RotateCcw size={12} /> ROLL TO NEXT WEEK
+              </button>
+              <button onClick={generate} style={S.genBtn}><Shuffle size={12} /> GENERATE SCHEDULE</button>
+            </>
+          )}
         </div>
       )}
 
       {/* PAIRED */}
       {mode === 'paired' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <div style={S.cfgLabel}>ROTATION START DATE</div>
+            <p style={{ fontSize: 10, color: '#2a4058', marginBottom: 6 }}>Set the first Monday this rotation began. Auto-calculates which pair is up each week.</p>
+            <input
+              type="date"
+              value={pairedStartDate}
+              onChange={e => setPairedStartDate(e.target.value)}
+              disabled={!canEdit}
+              style={{ ...S.sel, fontSize: 11, padding: '5px 8px' }}
+            />
+          </div>
           <div>
             <div style={S.cfgLabel}>PAIRS ({pairs.length})</div>
             <p style={{ fontSize: 10, color: '#2a4058', marginBottom: 8 }}>Each pair takes one day. After a full cycle, roles swap automatically.</p>
@@ -826,12 +966,102 @@ function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedD
       {/* PRIORITY */}
       {mode === 'priority' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 11, color: '#3a5878', lineHeight: 1.7 }}>
-            In the grid, lock any slot with the 🔒 icon and assign a specific member. Then click Generate to auto-fill the remaining unlocked slots.
+          <div style={{ fontSize: 10, color: '#7a9bb8', lineHeight: 1.6, padding: '8px 10px', background: 'rgba(255,96,128,0.05)', border: '1px solid rgba(255,96,128,0.2)' }}>
+            Lock slots for event winners. Unlocked slots auto-fill from the pool.
           </div>
+          <PriorityDayLocks slots={slots} setSlots={setSlots} members={members} canEdit={canEdit} markDirty={markDirty} />
           {canEdit && <button onClick={generate} style={{ ...S.genBtn, background: 'rgba(255,96,128,0.1)', border: '1px solid rgba(255,96,128,0.3)', color: '#ff6080' }}>
             <Shuffle size={12} /> AUTO-FILL UNLOCKED
           </button>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Priority Day Locks ─────────────────────────────────────────────
+function PriorityDayLocks({ slots, setSlots, members, canEdit, markDirty }) {
+  const [selDay, setSelDay] = useState(null); // { dayIdx, role }
+
+  function lockSlot(dayIdx, role, memberId) {
+    const key = `${dayIdx}-${role}`;
+    setSlots(prev => ({ ...prev, [key]: { memberId, locked: true } }));
+    markDirty();
+    setSelDay(null);
+  }
+
+  function clearLock(dayIdx, role) {
+    const key = `${dayIdx}-${role}`;
+    setSlots(prev => ({ ...prev, [key]: { memberId: null, locked: false } }));
+    markDirty();
+  }
+
+  return (
+    <div>
+      <div style={S.cfgLabel}>DAY LOCKS (MON–SUN)</div>
+      {DAYS.map((day, d) => {
+        const dSlot = slots[`${d}-driver`] ?? {};
+        const vSlot = slots[`${d}-vip`]    ?? {};
+        return (
+          <div key={d} style={{ marginBottom: 6 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: '#3a5878', marginBottom: 3 }}>{day}</div>
+            <div style={{ display: 'flex', gap: 4 }}>
+              {/* Driver lock */}
+              <div style={{ flex: 1 }}>
+                {dSlot.locked && dSlot.memberId ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.4)' }}>
+                    <span style={{ fontSize: 11 }}>👑</span>
+                    <span style={{ flex: 1, fontSize: 9, color: '#f0a500', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {members.find(m => m.id === dSlot.memberId)?.in_game_name || members.find(m => m.id === dSlot.memberId)?.username || '?'}
+                    </span>
+                    {canEdit && <button onClick={() => clearLock(d, 'driver')} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: 0 }}>×</button>}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => canEdit && setSelDay({ dayIdx: d, role: 'driver' })}
+                    style={{ width: '100%', padding: '4px 5px', background: 'transparent', border: '1px dashed #1e3550', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 8, letterSpacing: '0.5px', cursor: canEdit ? 'pointer' : 'default', textAlign: 'center' }}
+                  >
+                    🚂 SET DRIVER
+                  </button>
+                )}
+              </div>
+              {/* VIP lock */}
+              <div style={{ flex: 1 }}>
+                {vSlot.locked && vSlot.memberId ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', background: 'rgba(200,122,255,0.1)', border: '1px solid rgba(200,122,255,0.4)' }}>
+                    <span style={{ fontSize: 11 }}>👑</span>
+                    <span style={{ flex: 1, fontSize: 9, color: '#c87aff', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {members.find(m => m.id === vSlot.memberId)?.in_game_name || members.find(m => m.id === vSlot.memberId)?.username || '?'}
+                    </span>
+                    {canEdit && <button onClick={() => clearLock(d, 'vip')} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: 0 }}>×</button>}
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => canEdit && setSelDay({ dayIdx: d, role: 'vip' })}
+                    style={{ width: '100%', padding: '4px 5px', background: 'transparent', border: '1px dashed #1e3550', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 8, letterSpacing: '0.5px', cursor: canEdit ? 'pointer' : 'default', textAlign: 'center' }}
+                  >
+                    ⭐ SET VIP
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Member picker popup */}
+      {selDay && (
+        <div style={{ marginTop: 8, padding: '8px', background: '#0a1220', border: '1px solid #1e3550' }}>
+          <div style={{ fontSize: 9, color: '#3a5878', marginBottom: 6, fontWeight: 700, letterSpacing: '1.5px' }}>
+            SELECT {selDay.role.toUpperCase()} FOR {DAYS[selDay.dayIdx]}
+          </div>
+          {members.map(m => (
+            <button key={m.id} onClick={() => lockSlot(selDay.dayIdx, selDay.role, m.id)}
+              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', marginBottom: 2, background: 'transparent', border: '1px solid #1e3550', color: '#d0e4f4', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, cursor: 'pointer' }}>
+              {m.in_game_name || m.username}
+            </button>
+          ))}
+          <button onClick={() => setSelDay(null)} style={{ width: '100%', marginTop: 6, padding: '4px', background: 'transparent', border: '1px solid #2a4058', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, cursor: 'pointer' }}>CANCEL</button>
         </div>
       )}
     </div>
@@ -842,7 +1072,6 @@ function QueueEditor({ label, queue, members, memberById, canEdit, toggle, move 
   return (
     <div>
       <div style={S.cfgLabel}>{label}</div>
-      {/* Ordered queue */}
       {queue.length > 0 && (
         <div style={{ marginBottom: 8 }}>
           {queue.map((id, i) => (
@@ -860,7 +1089,6 @@ function QueueEditor({ label, queue, members, memberById, canEdit, toggle, move 
           ))}
         </div>
       )}
-      {/* Add members */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
         {members.filter(m => !queue.includes(m.id)).map(m => (
           <button key={m.id} onClick={() => canEdit && toggle(m.id)}
@@ -924,6 +1152,11 @@ function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mo
                           boxSizing: 'border-box',
                         }}
                       >
+                        {isLocked && !member && (
+                          <div style={{ position: 'absolute', top: 3, left: 3 }}>
+                            <span style={{ fontSize: 10 }}>👑</span>
+                          </div>
+                        )}
                         {member ? (
                           <SlotMember
                             member={member}
@@ -958,8 +1191,8 @@ function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mo
       <div style={{ marginTop: 20, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 10, color: '#2a4058' }}>
         <span>🔒 Locked slot</span>
         <span>Drag member from pool → slot</span>
-        <span>Drag member from slot → pool to remove</span>
-        <span>Click member in pool → click slot to assign</span>
+        <span>Drag filled slot → another slot to swap</span>
+        <span>Drag slot → pool to remove</span>
         {canEdit && <span style={{ color: '#3a5878' }}>× removes assignment · lock protects slot</span>}
       </div>
     </div>
@@ -979,6 +1212,7 @@ function SlotMember({ member, role, color, isLocked, canEdit, slotKey, onDragSta
       {member.username && member.in_game_name && (
         <div style={{ fontSize: 9, color: '#5a7a98', fontFamily: "'Share Tech Mono',monospace" }}>@{member.username}</div>
       )}
+      {isLocked && <span style={{ fontSize: 9 }}>👑</span>}
       {canEdit && (
         <div style={{ position: 'absolute', top: 3, right: 3, display: 'flex', gap: 2 }}>
           <button

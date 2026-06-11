@@ -41,7 +41,7 @@ coordinate war events, plan train rotations, and share map data with allied serv
 | **Member** | Reusable member invite link, no role flag | View roster, update own profile, see train rotation |
 
 All roles log in with **username + password** on the server dashboard.
-Emergency admin access (legacy server admin password) is hidden behind a collapsible section.
+Emergency admin password login has been removed from both the UI and login flow.
 
 ---
 
@@ -56,7 +56,7 @@ Emergency admin access (legacy server admin password) is hidden behind a collaps
       ↓
 4. Server admin clicks ACTIVATE A SERVER → enters code + creates admin account
       ↓
-5. Server admin logs in → sees ⚡ ADMIN PANEL button prominently in hero
+5. Server admin logs in → sees ⚡ SERVER ADMIN button prominently in hero
       ↓ opens Admin Panel → creates alliances
       ↓ each alliance gets: owner invite link (one-time) + member invite link (reusable)
 6. Admin sends owner invite link to each R5 leader
@@ -80,23 +80,30 @@ Emergency admin access (legacy server admin password) is hidden behind a collaps
 #### Server Dashboard (`/server/:id`)
 - Particle background — 180 smooth drifting dots, gentle alpha pulse (no flares)
 - Single unified LOGIN button (username + password for all roles)
+- Emergency admin password login **removed** (UI + logic stripped)
 - After login: role-appropriate quick-start help banner
-- **Role-based quick-action buttons in hero**: ALLIANCE HQ for all, ⚡ ADMIN PANEL for admins, 🔧 HELPER PANEL for helpers
-- Admin panel button also in topbar (always visible after login)
-- Feature cards: Alliance HQ, Rules, Leaderboard (soon), Seasons (soon)
+- **Role-based quick-action buttons in hero**: ALLIANCE HQ for all, ⚡ SERVER ADMIN for admins, 🔧 HELPER PANEL for helpers
+- Admin/Helper panel button in topbar (always visible after login)
+- **Public alliance roster list** — shows all alliances on the server with member counts; public alliances show "VIEW ROSTER →" button linking to PublicRoster.jsx
+- Feature cards section with gold TOOLS divider accent line
+- **Floating TOOLS button** (bottom-right, fixed) — slides in a right-hand panel with quick links to Alliance HQ, Rules & Guide, and Admin/Helper Panel (if applicable); backdrop overlay + CSS transform transition
+- Season Rankings card **removed** from dashboard
 
 #### Admin Panel (`/server/:id/admin`)
+- Labelled **SERVER ADMIN** throughout (not "Admin Panel")
 - **ALLIANCES tab** — create/edit/delete alliances, copy owner + member invite links
 - **MEMBERS tab** — view all members, reassign between alliances, promote to helper
 - **HANDSHAKES tab** — create server-to-server data sharing agreements
 - **SERVER tab** — edit server name, season number, public map toggle
 
 #### Alliance HQ (`/server/:id/alliance`)
-Four top-level tabs:
-- **🏠 HOME** — World Clock (Server Time UTC-2 + Local Time) → Train rotation → Roster
-- **⚔️ EVENTS** — Canyon Storm & Desert Storm team wishlists (with troop filter)
-- **👤 MY PROFILE** — edit own stats, powers (in millions), troop types, event prefs
-- **⚙️ MANAGE** — sub-tabs: ROSTER (edit/delete/password reset), ADMINS (promote officers), PARTNERS (partner rosters), SETTINGS (invite links, visibility toggles)
+- **Left sidebar navigation** — collapsible sidebar with section icons for tab navigation on desktop
+- Four top-level tabs:
+  - **🏠 HOME** — World Clock (Server Time UTC-2 + Local Time) → Train rotation → Roster
+  - **⚔️ EVENTS** — Canyon Storm & Desert Storm team wishlists (with troop filter)
+  - **👤 MY PROFILE** — edit own stats, powers (in millions), troop types, event prefs
+  - **⚙️ MANAGE** — sub-tabs: ROSTER (edit/delete/password reset), ADMINS (promote officers), PARTNERS (partner rosters), SETTINGS (invite links, visibility toggles)
+- Alliance Admins labelled **ALLIANCE ADMIN** (not "Admin") to distinguish from Server Admin
 
 Roster table columns: Player | T1 Power | T2 Power | T3 Power | Canyon | Desert | Profession | Resist | Garrison | Quickstride | Notes
 - Power badges: coloured text only (no borders), mini bar chart vs alliance max
@@ -105,14 +112,56 @@ Roster table columns: Player | T1 Power | T2 Power | T3 Power | Canyon | Desert 
 - Filters: search, troop type, canyon team, desert team + CLEAR button
 - Topbar buttons: 🗺 MAP WIP, 🚂 TRAIN (owners + admins)
 
+#### Public Alliance Roster (`/server/:id/alliance/:allianceId/public`)
+- Viewable without login if `roster_public = true`
+- Shows member list with powers and troop types
+- Accessed via "VIEW ROSTER →" button on server dashboard
+
 #### World Clock (in Alliance HQ HOME)
 - **Server Time** — fixed UTC-2, no DST, matches in-game server clock
 - **Local Time** — browser's local timezone
 - Updates every second
 
 #### Train Planner (`/server/:id/train`)
-Five scheduling modes: Manual, Fixed Driver, Paired, Round Robin, Priority
-Features: drag-and-drop, click-to-assign, per-slot lock, save to Supabase
+
+Five scheduling modes: Manual, Fixed Driver, Paired Rotation, Round Robin, Priority Days
+
+**UI & UX:**
+- **Visual mode cards** — always-visible grid of clickable cards (icon + label + short desc) at top of left panel; active card highlighted in mode colour; replaces old dropdown
+- **UNSAVED badge** — topbar indicator when there are unsaved changes
+- **Save-before-navigate prompt** — modal dialog ("UNSAVED CHANGES: Save / Discard / Cancel") when user tries to navigate weeks with unsaved changes; tracked via `isDirty` state
+- **Multi-week navigation** — PREV WEEK / NEXT WEEK buttons with week counter, date picker, and + NEW WEEK button
+- **Export button** — Download icon in topbar; generates plain-text schedule and copies to clipboard; "COPIED!" toast on success
+
+**Member pool (right panel):**
+- Heading "DRAG TO SLOT" with member count
+- All members always visible (assigned and unassigned)
+- Assigned members shown with green dot indicator and "ASSIGNED" sub-label
+- Still draggable for re-assignment / swapping
+
+**Drag & drop:**
+- Dragging a member from one slot to another occupied slot → **swap** (not override)
+- Dragging a slot member back to the pool → removes assignment
+
+**Manual mode:** swap on drag described in legend  
+**Fixed Driver mode:**
+- Fixed driver excluded from VIP rotation list
+- VIP pool shows rotation order with ordinal labels (1st, 2nd, 3rd…)
+- **ROLL TO NEXT WEEK** button — advances VIP rotation by 1 (2nd becomes 1st) and regenerates schedule
+
+**Paired Rotation mode:**
+- **ROTATION START DATE** date picker stored in `mode_config`
+- When generating, calculates which pair is "up" based on elapsed weeks since start date; handles role-swap cycles automatically
+
+**Priority Days mode:**
+- Inline day-lock UI in left panel — each day (MON–SUN) has SET DRIVER / SET VIP buttons
+- Locked slots show gold crown icon (👑) and are highlighted
+- Individual locks can be cleared with ×
+- Note: "Lock slots for event winners. Unlocked slots auto-fill from the pool."
+- `genPriority` respects locked slots as before
+
+**Grid:**
+- Slot-to-slot swap on drag (when `fromSlot` is set and target has a member)
 
 #### War Map (`/server/:id/map`)
 - Territory map from territories.json tile data
@@ -149,7 +198,7 @@ Features: drag-and-drop, click-to-assign, per-slot lock, save to Supabase
 - Admin-assigned mode with drag-and-drop slot filling
 - Power/troop/profession breakdown per team
 
-#### Leaderboard
+#### Leaderboard / Season Rankings
 - Per-season alliance rankings, influence totals, territory counts
 
 #### Season History
@@ -202,15 +251,16 @@ DROP TABLE public.players;
 src/
   pages/
     ServerSelect.jsx       — landing page, request + activate
-    ServerDashboard.jsx    — server home, unified login, role-based quick actions
-    AdminPanel.jsx         — server admin tools
-    AllianceHQ.jsx         — main member area (home, events, profile, manage)
-    TrainPlanner.jsx       — train assignment planner
+    ServerDashboard.jsx    — server home, unified login, role-based quick actions, floating tools panel
+    AdminPanel.jsx         — server admin tools (labelled SERVER ADMIN)
+    AllianceHQ.jsx         — main member area (home, events, profile, manage) with left sidebar nav
+    TrainPlanner.jsx       — multi-week train planner with mode cards, export, swap-on-drop
     Map.jsx                — war map
     Register.jsx           — member + owner registration via invite link
     JoinServer.jsx         — invite link resolver
     Rules.jsx              — game guide
     SuperAdmin.jsx         — platform-level request management
+    PublicRoster.jsx       — public alliance roster (no login required)
   components/
     ParticleBackground.jsx — shared animated star field (180 dots, no flares)
   contexts/
@@ -241,4 +291,27 @@ PROJECT_PLAN.md            — this file
 - **Alliance merge tool** — admin can bulk-move members from one alliance to another
 - **CSV export** — export roster to spreadsheet for offline use
 - **Season map builder** — drag servers into warzone slots on a visual grid
-- **Collapsible left sidebar navigation** — for Alliance HQ on desktop
+
+---
+
+## WHAT'S STILL MISSING
+
+Features that would complete the platform, grouped by priority:
+
+### High Priority
+- **Password reset via Discord bot** — member-initiated password reset without needing admin involvement. Requires a Discord slash command handler and a second Supabase Edge Function that generates a one-time temp password and DMs it to the member's linked Discord account.
+- **CSV / spreadsheet export for roster** — export the full roster table (with all power columns and preferences) as a .csv file so alliance leaders can use it offline or share with Google Sheets.
+- **Member absence / availability flags** — let members mark themselves as unavailable for a specific event week. Train planner and event planners would skip or flag those members automatically.
+
+### Medium Priority
+- **Canyon Storm / Desert Storm visual team planners** — drag-and-drop team builder replacing the current wishlist view. Admin assigns members to specific attack/defense slots, with live power and troop composition breakdowns per team.
+- **Leaderboard / season rankings** — per-season per-alliance ranking table: influence earned, territories held, war wins. Requires a `season_results` table and an input/import flow for admins.
+- **Season map builder (multi-server)** — visual warzone grid where a Super Admin places servers into Warzone A–H slots. Useful for cross-server coordination. Schema (`season_maps`, `season_map_servers`) is already built; only the UI is missing.
+- **Event history log** — timestamped record of which members participated in each war event. Would populate automatically from the train planner (train slot assignments) and eventually from team planners.
+
+### Lower Priority / Future
+- **Mobile app / PWA** — service worker + manifest to install as a mobile app. Main challenge is the map and drag-and-drop UX on touch screens.
+- **Alliance merge tool** — server admin can bulk-move all members from one alliance to another (useful after war disbands / merges). A single SQL operation but needs a safe UI confirmation flow.
+- **Notification preferences (Discord DMs for event reminders)** — members link their Discord User ID in profile; Discord bot sends automated DMs before Canyon/Desert Storm events. Requires per-member opt-in flag and a scheduler Edge Function.
+- **In-game alliance tag colour sync** — import alliance colours from a config so the war map matches the in-game colour scheme exactly.
+- **Realtime collaboration on train planner** — Supabase Realtime subscription so two admins editing simultaneously see each other's changes without refresh.

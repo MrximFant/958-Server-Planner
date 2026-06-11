@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword } from '../lib/auth';
-import { Users, BookOpen, Trophy, Clock, Zap, Shield, LogOut, Settings, ChevronRight, Lock, Plus, Eye, EyeOff } from 'lucide-react';
+import { Users, BookOpen, Zap, Shield, LogOut, Settings, ChevronRight, Lock, Plus, Eye, EyeOff } from 'lucide-react';
 import ParticleBackground from '../components/ParticleBackground';
 
 export default function ServerDashboard() {
@@ -193,9 +193,11 @@ export default function ServerDashboard() {
 
       {/* Feature cards */}
       <section style={S.cards}>
-        <div style={{ textAlign: 'center', marginBottom: 40 }}>
-          <div style={S.sectionLabel}>COMMAND CENTER</div>
-          <h3 style={S.sectionTitle}>ALL TOOLS</h3>
+        {/* Full-width TOOLS divider */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 40 }}>
+          <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, transparent, rgba(240,165,0,0.4))' }} />
+          <div style={{ padding: '6px 20px', border: '1px solid rgba(240,165,0,0.4)', background: 'rgba(240,165,0,0.07)', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '3px', color: '#f0a500' }}>TOOLS</div>
+          <div style={{ flex: 1, height: 1, background: 'linear-gradient(to left, transparent, rgba(240,165,0,0.4))' }} />
         </div>
         <div style={S.grid2}>
           {FEATURES.map(f => <FeatureCard key={f.label} feature={f} navigate={navigate} session={activeSession} />)}
@@ -225,6 +227,14 @@ export default function ServerDashboard() {
           </div>
         </div>
       )}
+
+      {/* Floating Tools button + slide-in panel */}
+      <ToolsPanel
+        serverId={serverId}
+        navigate={navigate}
+        session={activeSession}
+        role={role}
+      />
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');
@@ -350,6 +360,90 @@ function RoleHelp({ role, serverId, navigate }) {
         )}
       </div>
     </section>
+  );
+}
+
+function ToolsPanel({ serverId, navigate, session, role }) {
+  const [open, setOpen] = useState(false);
+
+  const tools = [
+    { label: 'Alliance HQ', icon: Users, color: '#f0a500', to: `/server/${serverId}/alliance`, locked: !session },
+    { label: 'Rules & Guide', icon: BookOpen, color: '#00e87a', to: `/server/${serverId}/rules`, locked: false },
+    ...(role === 'admin' || role === 'helper'
+      ? [{ label: role === 'helper' ? 'Helper Panel' : 'Server Admin', icon: Shield, color: '#00c8ff', to: `/server/${serverId}/admin`, locked: false }]
+      : []),
+  ];
+
+  return (
+    <>
+      {/* Backdrop */}
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 90, background: 'rgba(0,0,0,0.45)' }}
+        />
+      )}
+
+      {/* Slide-in panel */}
+      <div style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0, zIndex: 95,
+        width: 280, background: '#0a1220', borderLeft: '1px solid rgba(0,200,255,0.25)',
+        transform: open ? 'translateX(0)' : 'translateX(100%)',
+        transition: 'transform 0.25s cubic-bezier(0.4,0,0.2,1)',
+        display: 'flex', flexDirection: 'column',
+        boxShadow: open ? '-8px 0 40px rgba(0,0,0,0.6)' : 'none',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #1e3550' }}>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '3px', color: '#f0a500' }}>TOOLS</div>
+          <button onClick={() => setOpen(false)} style={{ background: 'none', border: '1px solid #1e3550', color: '#7a9bb8', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16, fontFamily: 'monospace' }}>×</button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 16px' }}>
+          {tools.map(t => {
+            const Icon = t.icon;
+            return (
+              <div
+                key={t.label}
+                onClick={() => { if (!t.locked) { navigate(t.to); setOpen(false); } }}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 14, padding: '16px 18px', marginBottom: 10,
+                  background: 'rgba(13,21,32,0.8)', border: `1px solid ${t.locked ? '#1e3550' : t.color + '40'}`,
+                  cursor: t.locked ? 'default' : 'pointer', transition: 'border-color 0.15s',
+                  opacity: t.locked ? 0.5 : 1,
+                }}
+                onMouseEnter={e => { if (!t.locked) e.currentTarget.style.borderColor = t.color; }}
+                onMouseLeave={e => { if (!t.locked) e.currentTarget.style.borderColor = t.color + '40'; }}
+              >
+                <div style={{ width: 40, height: 40, background: t.color + '18', border: `1px solid ${t.color + '40'}`, display: 'flex', alignItems: 'center', justifyContent: 'center', color: t.locked ? '#3a5878' : t.color, flexShrink: 0 }}>
+                  {t.locked ? <Lock size={18} /> : <Icon size={18} />}
+                </div>
+                <div>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 14, color: t.locked ? '#3a5878' : '#d0e4f4' }}>{t.label}</div>
+                  {t.locked && <div style={{ fontSize: 9, color: '#3a5878', letterSpacing: '1px', fontFamily: "'Rajdhani',sans-serif" }}>LOGIN REQUIRED</div>}
+                </div>
+                {!t.locked && <ChevronRight size={14} style={{ marginLeft: 'auto', color: t.color }} />}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Floating button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          position: 'fixed', bottom: 32, right: 0, zIndex: 80,
+          background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.5)',
+          borderRight: 'none',
+          color: '#f0a500', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '2px',
+          padding: '10px 14px', cursor: 'pointer', writingMode: 'vertical-rl', textOrientation: 'mixed',
+          transform: 'rotate(180deg)',
+          boxShadow: '0 0 20px rgba(240,165,0,0.2)',
+        }}
+        title="Quick tools"
+      >
+        TOOLS
+      </button>
+    </>
   );
 }
 
