@@ -1144,7 +1144,7 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
         <div className="ahq-controls">
           <input className="ahq-search" placeholder="Search name…" value={search} onChange={e => setSearch(e.target.value)} />
           <select className="ahq-sel" value={filterTroop} onChange={e => setFilterTroop(e.target.value)}>
-            <option value="">All Troops</option>
+            <option value="">All T1 Squads</option>
             <option value="Tank">🛡 Tank</option>
             <option value="Missile">🚀 Missile</option>
             <option value="Air">✈ Air</option>
@@ -1297,7 +1297,7 @@ function EventsView({ members, alliance, myMemberId, showPower }) {
       <div style={{ padding: '0 20px 20px' }}>
         <div className="ahq-controls" style={{ marginBottom: 14 }}>
           <select className="ahq-sel" value={filterTroop} onChange={e => setFilterTroop(e.target.value)}>
-            <option value="">All Troops</option>
+            <option value="">All T1 Squads</option>
             <option value="Tank">🛡 Tank</option>
             <option value="Missile">🚀 Missile</option>
             <option value="Air">✈ Air</option>

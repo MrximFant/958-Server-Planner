@@ -20,7 +20,7 @@ export default function ServerDashboard() {
   const [authError,   setAuthError]   = useState('');
   const [authBusy,    setAuthBusy]    = useState(false);
   const [alliances,   setAlliances]   = useState([]);
-  const [showEmergency, setShowEmergency] = useState(false);
+  const [showEmergency, setShowEmergency] = useState(false); // kept for state but section removed
 
 
   useEffect(() => {
@@ -172,26 +172,6 @@ export default function ServerDashboard() {
               <button type="submit" style={S.modalBtn} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'LOGIN →'}</button>
             </form>
 
-            {/* Emergency admin access */}
-            <div style={{ marginTop: 20, borderTop: '1px solid #1e3550', paddingTop: 14 }}>
-              <button
-                type="button"
-                onClick={() => { setShowEmergency(e => !e); setAuthError(''); setAuthForm(f => ({ ...f, password: '' })); }}
-                style={{ background: 'none', border: 'none', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', padding: 0 }}
-              >
-                {showEmergency ? '▲' : '▼'} EMERGENCY ADMIN ACCESS
-              </button>
-              {showEmergency && (
-                <form onSubmit={handleEmergencyAdminLogin} style={{ marginTop: 12 }}>
-                  <p style={{ color: '#3a5878', fontSize: 11, marginBottom: 10, lineHeight: 1.5 }}>
-                    Use this only if you cannot log in as an admin member. Requires the server admin password set during activation.
-                  </p>
-                  <Field label="SERVER ADMIN PASSWORD" type="password" value={authForm.password} onChange={v => setAuthForm(f => ({ ...f, password: v }))} />
-                  {authError && <p style={S.error}>{authError}</p>}
-                  <button type="submit" style={{ ...S.modalBtn, background: '#f0a500', color: '#080d14' }} disabled={authBusy}>{authBusy ? 'CHECKING…' : 'EMERGENCY LOGIN →'}</button>
-                </form>
-              )}
-            </div>
           </div>
         </div>
       )}

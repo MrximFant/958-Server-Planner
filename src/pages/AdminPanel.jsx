@@ -542,8 +542,6 @@ function ServerTab({ server, setServer, serverId }) {
       <HelpCard title="SERVER SETTINGS GUIDE" lines={[
         'The server invite link takes people directly to this server\'s dashboard — share it so members can find the right server easily.',
         'Set the active season number to match your current in-game season. This controls which fields and map layers are shown.',
-        'The Emergency Admin Password is a fallback only. Normally you log in with your admin member account (username + password).',
-        'Change the emergency password if you believe it has been compromised — it does not affect member logins.',
         'To delete a server permanently, contact the platform super admin.',
       ]} />
 
@@ -559,18 +557,6 @@ function ServerTab({ server, setServer, serverId }) {
         </div>
       </div>
 
-      {/* Change admin password */}
-      <div style={S.settingsCard}>
-        <div style={S.settingsLabel}>EMERGENCY ADMIN PASSWORD</div>
-        <div style={S.settingsSub}>This is the fallback password used via the hidden "Emergency Admin Access" option on the login screen. Normally you log in with your admin member account. Change this only if it has been compromised.</div>
-        <form onSubmit={handlePasswordChange}>
-          <Field label="NEW PASSWORD" type="password" value={form.newPassword} onChange={v => setForm(f => ({ ...f, newPassword: v }))} />
-          <Field label="CONFIRM PASSWORD" type="password" value={form.confirmPassword} onChange={v => setForm(f => ({ ...f, confirmPassword: v }))} />
-          {error && <p style={S.error}>{error}</p>}
-          {msg   && <p style={{ color: '#00e87a', fontSize: 12, marginBottom: 8 }}>{msg}</p>}
-          <button type="submit" style={S.saveBtn} disabled={busy}>{busy ? 'SAVING…' : 'UPDATE PASSWORD →'}</button>
-        </form>
-      </div>
 
       {/* Active season */}
       <div style={S.settingsCard}>
