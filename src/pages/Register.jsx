@@ -1,9 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword } from '../lib/auth';
 import { Zap, Shield, CheckCircle, Eye, EyeOff } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
 
 export default function Register() {
   const { serverId, allianceId } = useParams();
@@ -12,8 +13,6 @@ export default function Register() {
   const isOwnerInvite            = searchParams.get('role') === 'owner';
   const ownerCode                = searchParams.get('ownerCode');
   const { session, login }       = useAuth();
-  const canvasRef                = useRef(null);
-
   const [server,   setServer]   = useState(null);
   const [alliance, setAlliance] = useState(null);
   const [loading,  setLoading]  = useState(true);
@@ -28,35 +27,6 @@ export default function Register() {
   const [error, setError] = useState('');
   const [busy,  setBusy]  = useState(false);
 
-  // Particle canvas
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let W = canvas.width = window.innerWidth;
-    let H = canvas.height = window.innerHeight;
-    const particles = Array.from({ length: 50 }, () => ({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
-      r: Math.random() * 1.5 + 0.5, a: Math.random() * 0.4 + 0.1,
-    }));
-    let raf;
-    function draw() {
-      ctx.clearRect(0, 0, W, H);
-      particles.forEach(p => {
-        p.x += p.vx; p.y += p.vy;
-        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0,200,255,${p.a})`; ctx.fill();
-      });
-      raf = requestAnimationFrame(draw);
-    }
-    draw();
-    const onResize = () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; };
-    window.addEventListener('resize', onResize);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); };
-  }, []);
 
   useEffect(() => {
     async function load() {
@@ -144,7 +114,7 @@ export default function Register() {
 
   return (
     <div style={S.root}>
-      <canvas ref={canvasRef} style={S.canvas} />
+      <ParticleBackground />
       <div style={S.gridBg} />
 
       <div style={S.center}>
@@ -186,7 +156,7 @@ export default function Register() {
                 value={form.inGameName}
                 onChange={v => setForm(f => ({ ...f, inGameName: v }))}
               />
-              <div style={S.row2}>
+              <div style={S.row2} className="reg-row2">
                 <Field
                   label="PASSWORD"
                   type="password"
@@ -271,7 +241,7 @@ function Field({ label, placeholder = '', type = 'text', value, onChange }) {
 }
 
 const styles = {
-  root: { minHeight: '100vh', background: '#080d14', color: '#d0e4f4', fontFamily: "'Rajdhani',sans-serif", display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', position: 'relative' },
+  root: { minHeight: '100vh', background: '#080d14', color: '#d0e4f4', fontFamily: "'Rajdhani',sans-serif", display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: '60px 24px 40px', position: 'relative', overflowY: 'auto' },
   canvas: { position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' },
   gridBg: { position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: 'linear-gradient(rgba(0,200,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,.025) 1px,transparent 1px)', backgroundSize: '44px 44px' },
   center: { position: 'relative', zIndex: 1, width: '100%', maxWidth: 480 },

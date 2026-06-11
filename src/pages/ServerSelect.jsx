@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { hashPassword, generateInviteCode } from '../lib/auth';
 import { Server, Plus, LogIn, Zap, Key, Eye, EyeOff, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
 
 const DISCORD_WEBHOOK = import.meta.env.VITE_DISCORD_WEBHOOK;
 const DISCORD_INVITE  = import.meta.env.VITE_DISCORD_INVITE;
@@ -39,7 +40,6 @@ async function sendDiscordNotification(r) {
 
 export default function ServerSelect() {
   const navigate  = useNavigate();
-  const canvasRef = useRef(null);
   const [servers,  setServers]  = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [view,     setView]     = useState('how'); // list | request | activate | how
@@ -59,50 +59,6 @@ export default function ServerSelect() {
   const [actError,    setActError]   = useState('');
   const [showPwd,     setShowPwd]    = useState(false);
 
-  // Particle background
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let W = canvas.width  = window.innerWidth;
-    let H = canvas.height = window.innerHeight;
-    const particles = Array.from({ length: 60 }, () => ({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: (Math.random() - 0.5) * 0.3,
-      r: Math.random() * 1.5 + 0.5,
-      a: Math.random() * 0.4 + 0.1,
-    }));
-    let raf;
-    function draw() {
-      ctx.clearRect(0, 0, W, H);
-      particles.forEach(p => {
-        p.x += p.vx; p.y += p.vy;
-        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0,200,255,${p.a})`; ctx.fill();
-      });
-      for (let i = 0; i < particles.length; i++)
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const d  = Math.sqrt(dx*dx + dy*dy);
-          if (d < 120) {
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(0,200,255,${0.06*(1-d/120)})`;
-            ctx.lineWidth = 0.5; ctx.stroke();
-          }
-        }
-      raf = requestAnimationFrame(draw);
-    }
-    draw();
-    const onResize = () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; };
-    window.addEventListener('resize', onResize);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); };
-  }, []);
 
   useEffect(() => {
     supabase
@@ -189,10 +145,10 @@ export default function ServerSelect() {
 
   return (
     <div style={S.root}>
-      <canvas ref={canvasRef} style={S.canvas} />
+      <ParticleBackground />
       <div style={S.grid} />
 
-      <div style={S.center}>
+      <div style={S.center} className="ss-center">
         <div style={S.badge}>
           <Zap size={10} fill="currentColor" />
           LAST WAR ALLIANCE PLANNER
@@ -201,17 +157,17 @@ export default function ServerSelect() {
         <h1 style={S.title}>SELECT SERVER</h1>
         <p style={S.sub}>Choose your game server workspace or set up a new one.</p>
 
-        <div style={S.tabs}>
-          <button style={{ ...S.tab, ...(view === 'how' ? S.tabActiveHow : {}) }} onClick={() => setView('how')}>
+        <div style={S.tabs} className="ss-tabs">
+          <button style={{ ...S.tab, ...(view === 'how' ? S.tabActiveHow : {}) }} className="ss-tab" onClick={() => setView('how')}>
             <Info size={14} /> HOW IT WORKS
           </button>
-          <button style={{ ...S.tab, ...(view === 'list' ? S.tabActive : {}) }} onClick={() => setView('list')}>
+          <button style={{ ...S.tab, ...(view === 'list' ? S.tabActive : {}) }} className="ss-tab" onClick={() => setView('list')}>
             <LogIn size={14} /> ENTER SERVER
           </button>
-          <button style={{ ...S.tab, ...(view === 'request' ? S.tabActive : {}) }} onClick={() => { setView('request'); setReqSuccess(false); setReqError(''); }}>
+          <button style={{ ...S.tab, ...(view === 'request' ? S.tabActive : {}) }} className="ss-tab" onClick={() => { setView('request'); setReqSuccess(false); setReqError(''); }}>
             <Plus size={14} /> REQUEST A SERVER
           </button>
-          <button style={{ ...S.tab, ...(view === 'activate' ? S.tabActive : {}) }} onClick={() => { setView('activate'); setActError(''); }}>
+          <button style={{ ...S.tab, ...(view === 'activate' ? S.tabActive : {}) }} className="ss-tab" onClick={() => { setView('activate'); setActError(''); }}>
             <Key size={14} /> ACTIVATE A SERVER
           </button>
         </div>
@@ -339,11 +295,25 @@ export default function ServerSelect() {
                   value={reqForm.contactName} onChange={v => setReqForm(f => ({ ...f, contactName: v }))} />
                 <Field label="YOUR DISCORD USER ID" placeholder="e.g. 123456789012345678"
                   value={reqForm.discordUserId} onChange={v => setReqForm(f => ({ ...f, discordUserId: v }))} />
-                <div style={{ background: 'rgba(0,200,255,0.05)', border: '1px solid rgba(0,200,255,0.15)', padding: '10px 14px', marginBottom: 16, fontSize: 11, color: '#3a5878', lineHeight: 1.8 }}>
-                  💡 <strong style={{ color: '#7a9bb8' }}>How to find your Discord User ID:</strong><br />
-                  1. Open Discord → <strong style={{ color: '#7a9bb8' }}>Settings</strong> (gear icon) → <strong style={{ color: '#7a9bb8' }}>Advanced</strong> → enable <strong style={{ color: '#7a9bb8' }}>Developer Mode</strong><br />
-                  2. Click your own username or avatar anywhere → <strong style={{ color: '#7a9bb8' }}>Copy User ID</strong><br />
-                  You can turn Developer Mode off again straight after — it only adds "Copy ID" to right-click menus.
+                <div style={{ background: 'rgba(0,200,255,0.05)', border: '1px solid rgba(0,200,255,0.2)', padding: '14px 16px', marginBottom: 16, borderRadius: 0 }}>
+                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', color: '#00c8ff', marginBottom: 10 }}>
+                    💡 HOW TO FIND YOUR DISCORD USER ID
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {[
+                      ['1', 'Open Discord → Settings (gear icon, bottom-left)'],
+                      ['2', 'Go to Advanced → turn on Developer Mode'],
+                      ['3', 'Click your own username or avatar anywhere → Copy User ID'],
+                    ].map(([n, text]) => (
+                      <div key={n} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                        <div style={{ width: 22, height: 22, background: 'rgba(0,200,255,0.12)', border: '1px solid rgba(0,200,255,0.3)', color: '#00c8ff', fontFamily: "'Share Tech Mono',monospace", fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>{n}</div>
+                        <div style={{ fontSize: 13, color: '#7a9bb8', lineHeight: 1.5 }}>{text}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ marginTop: 10, fontSize: 12, color: '#3a5878', lineHeight: 1.5 }}>
+                    You can turn Developer Mode off straight after — it only adds a "Copy ID" option to right-click menus and doesn't change anything else.
+                  </div>
                 </div>
                 <div style={{ marginBottom: 16 }}>
                   <div style={S.label}>MESSAGE (optional)</div>
@@ -446,8 +416,7 @@ function PwdField({ label, value, onChange, show, onToggle }) {
 }
 
 const styles = {
-  root: { minHeight: '100vh', background: '#080d14', color: '#d0e4f4', fontFamily: "'Rajdhani', sans-serif", display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 24px', position: 'relative' },
-  canvas: { position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' },
+  root: { minHeight: '100vh', background: '#080d14', color: '#d0e4f4', fontFamily: "'Rajdhani', sans-serif", display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', padding: '48px 24px 60px', position: 'relative', overflowY: 'auto' },
   grid: { position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: 'linear-gradient(rgba(0,200,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,.025) 1px,transparent 1px)', backgroundSize: '44px 44px' },
   center: { position: 'relative', zIndex: 1, width: '100%', maxWidth: 540, textAlign: 'center' },
   badge: { display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', padding: '5px 16px', color: '#00c8ff', fontWeight: 700, fontSize: 11, letterSpacing: '2px', marginBottom: 24 },

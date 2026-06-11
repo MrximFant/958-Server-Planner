@@ -1,16 +1,16 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword } from '../lib/auth';
 import { Users, BookOpen, Trophy, Clock, Zap, Shield, LogOut, Settings, ChevronRight, Lock, Plus, Eye, EyeOff } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
 
 export default function ServerDashboard() {
   const { serverId }          = useParams();
   const navigate              = useNavigate();
   const { session, login, logout } = useAuth();
 
-  const canvasRef             = useRef(null);
   const [server,   setServer] = useState(null);
   const [loading,  setLoading] = useState(true);
 
@@ -22,47 +22,6 @@ export default function ServerDashboard() {
   const [alliances,   setAlliances]   = useState([]);
   const [showEmergency, setShowEmergency] = useState(false);
 
-  // Particle bg
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let W = canvas.width = window.innerWidth;
-    let H = canvas.height = window.innerHeight;
-    const particles = Array.from({ length: 60 }, () => ({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3,
-      r: Math.random() * 1.5 + 0.5, a: Math.random() * 0.4 + 0.1,
-    }));
-    let raf;
-    function draw() {
-      ctx.clearRect(0, 0, W, H);
-      particles.forEach(p => {
-        p.x += p.vx; p.y += p.vy;
-        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
-        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0,200,255,${p.a})`; ctx.fill();
-      });
-      for (let i = 0; i < particles.length; i++)
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x, dy = particles[i].y - particles[j].y;
-          const d = Math.sqrt(dx*dx + dy*dy);
-          if (d < 120) {
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(0,200,255,${0.06*(1-d/120)})`;
-            ctx.lineWidth = 0.5; ctx.stroke();
-          }
-        }
-      raf = requestAnimationFrame(draw);
-    }
-    draw();
-    const onResize = () => { W = canvas.width = window.innerWidth; H = canvas.height = window.innerHeight; };
-    window.addEventListener('resize', onResize);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); };
-  }, []);
 
   useEffect(() => {
     async function load() {
@@ -124,7 +83,7 @@ export default function ServerDashboard() {
 
   return (
     <div style={S.root}>
-      <canvas ref={canvasRef} style={S.canvas} />
+      <ParticleBackground />
       <div style={S.grid} />
 
       {/* Top bar */}
@@ -190,7 +149,7 @@ export default function ServerDashboard() {
       {/* Auth modal */}
       {authView && (
         <div style={S.overlay} onClick={() => setAuthView(null)}>
-          <div style={S.modal} onClick={e => e.stopPropagation()}>
+          <div style={S.modal} className="modal-inner" onClick={e => e.stopPropagation()}>
             <div style={S.modalTitle}>🔐 LOGIN</div>
 
             <form onSubmit={handleUnifiedLogin}>
@@ -382,7 +341,6 @@ function FeatureCard({ feature: f, navigate, session }) {
 
 const styles = {
   root: { minHeight: '100vh', background: '#080d14', color: '#d0e4f4', fontFamily: "'Rajdhani', sans-serif", position: 'relative', overflowX: 'hidden' },
-  canvas: { position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' },
   grid: { position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: 'linear-gradient(rgba(0,200,255,.025) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,.025) 1px,transparent 1px)', backgroundSize: '44px 44px' },
   topbar: { position: 'fixed', top: 0, left: 0, right: 0, zIndex: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px', background: 'rgba(8,13,20,0.9)', borderBottom: '1px solid #1e3550' },
   backBtn: { background: 'none', border: 'none', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' },
