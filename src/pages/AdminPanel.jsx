@@ -235,30 +235,88 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         {alliances.length === 0 && <div style={S.empty}>No alliances yet. Create one above.</div>}
         {alliances.map(a => (
-          <div key={a.id} style={S.row}>
-            <div style={{ ...S.colorDot, background: a.color }} />
-            <div style={{ flex: 1 }}>
-              <div style={S.rowTitle}>{a.name} {a.tag && <span style={S.tag}>{a.tag}</span>}</div>
-              {a.owner_invite_code && (
-                <div style={{ ...S.rowSub, color: '#f0a500', marginBottom: 2 }}>
-                  👑 Owner invite: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.owner_invite_code}</span>
-                  {' '}
-                  <button onClick={() => copyInviteLink(a.owner_invite_code)} style={{ background: 'none', border: 'none', color: '#f0a500', cursor: 'pointer', padding: '0 2px', verticalAlign: 'middle' }}>
-                    {copied === a.owner_invite_code ? <Check size={11} style={{ color: '#00e87a' }} /> : <Copy size={11} />}
-                  </button>
+          <div key={a.id} style={{ border: '1px solid #1e3550' }}>
+            <div style={{ ...S.row, border: 'none' }}>
+              <div style={{ ...S.colorDot, background: a.color }} />
+              <div style={{ flex: 1 }}>
+                <div style={S.rowTitle}>{a.name} {a.tag && <span style={S.tag}>{a.tag}</span>}</div>
+                {a.owner_invite_code && (
+                  <div style={{ ...S.rowSub, color: '#f0a500', marginBottom: 2 }}>
+                    👑 Owner invite: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.owner_invite_code}</span>
+                    {' '}
+                    <button onClick={() => copyInviteLink(a.owner_invite_code)} style={{ background: 'none', border: 'none', color: '#f0a500', cursor: 'pointer', padding: '0 2px', verticalAlign: 'middle' }}>
+                      {copied === a.owner_invite_code ? <Check size={11} style={{ color: '#00e87a' }} /> : <Copy size={11} />}
+                    </button>
+                  </div>
+                )}
+                <div style={S.rowSub}>
+                  👥 Member invite: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.invite_code}</span>
                 </div>
-              )}
-              <div style={S.rowSub}>
-                👥 Member invite: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.invite_code}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <button
+                  onClick={() => toggleExpand(a.id)}
+                  title={expandedId === a.id ? 'Collapse members' : 'Show members'}
+                  style={{
+                    background: expandedId === a.id ? 'rgba(0,200,255,0.08)' : 'transparent',
+                    border: `1px solid ${expandedId === a.id ? 'rgba(0,200,255,0.3)' : '#1e3550'}`,
+                    color: expandedId === a.id ? '#00c8ff' : '#3a5878',
+                    padding: '4px 10px',
+                    fontFamily: "'Rajdhani',sans-serif",
+                    fontWeight: 700,
+                    fontSize: 10,
+                    letterSpacing: '1px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    flexShrink: 0,
+                  }}
+                >
+                  MEMBERS {expandedId === a.id ? '▲' : '▼'}
+                </button>
+                <IconBtn title="Copy member invite link" onClick={() => copyInviteLink(a.invite_code)}>
+                  {copied === a.invite_code ? <Check size={14} style={{ color: '#00e87a' }} /> : <Copy size={14} />}
+                </IconBtn>
+                <IconBtn title="Edit" onClick={() => openEdit(a)}><Edit2 size={14} /></IconBtn>
+                <IconBtn title="Delete" danger onClick={() => handleDelete(a.id)}><Trash2 size={14} /></IconBtn>
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 6 }}>
-              <IconBtn title="Copy member invite link" onClick={() => copyInviteLink(a.invite_code)}>
-                {copied === a.invite_code ? <Check size={14} style={{ color: '#00e87a' }} /> : <Copy size={14} />}
-              </IconBtn>
-              <IconBtn title="Edit" onClick={() => openEdit(a)}><Edit2 size={14} /></IconBtn>
-              <IconBtn title="Delete" danger onClick={() => handleDelete(a.id)}><Trash2 size={14} /></IconBtn>
-            </div>
+            {expandedId === a.id && (
+              <div style={{ borderTop: '1px solid #1e3550', background: 'rgba(0,0,0,0.2)', padding: '10px 16px' }}>
+                {!allianceMembers[a.id] ? (
+                  <div style={{ fontSize: 12, color: '#3a5878' }}>Loading…</div>
+                ) : allianceMembers[a.id].length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#3a5878' }}>No members yet.</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', marginBottom: 6 }}>
+                      {allianceMembers[a.id].length} MEMBER{allianceMembers[a.id].length !== 1 ? 'S' : ''}
+                    </div>
+                    {allianceMembers[a.id].map(m => (
+                      <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 8px', background: 'rgba(13,21,32,0.5)', border: '1px solid #1e3550' }}>
+                        <div style={{ flex: 1 }}>
+                          <span style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, color: '#d0e4f4' }}>
+                            {m.in_game_name || m.username}
+                          </span>
+                          {m.in_game_name && m.in_game_name !== m.username && (
+                            <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 10, color: '#3a5878', marginLeft: 6 }}>@{m.username}</span>
+                          )}
+                        </div>
+                        <div style={{ display: 'flex', gap: 4 }}>
+                          {m.alliance_role === 'alliance_admin' && (
+                            <span style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '1px', color: '#f0a500', border: '1px solid rgba(240,165,0,0.4)', padding: '1px 5px' }}>ADMIN</span>
+                          )}
+                          {m.server_role === 'helper' && (
+                            <span style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '1px', color: '#00c8ff', border: '1px solid rgba(0,200,255,0.4)', padding: '1px 5px' }}>HELPER</span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         ))}
       </div>
