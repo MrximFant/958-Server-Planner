@@ -1075,7 +1075,12 @@ function WorldClock() {
   }, []);
 
   function pad(n) { return String(n).padStart(2, '0'); }
-  function fmt(d) { return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())} ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`; }
+  // Game server runs at UTC-2 (fixed, no DST)
+  const SERVER_OFFSET_HOURS = -2;
+  function fmt(d) {
+    const s = new Date(d.getTime() + SERVER_OFFSET_HOURS * 3600000);
+    return `${s.getUTCFullYear()}-${pad(s.getUTCMonth()+1)}-${pad(s.getUTCDate())} ${pad(s.getUTCHours())}:${pad(s.getUTCMinutes())}:${pad(s.getUTCSeconds())}`;
+  }
   function fmtLocal(d) {
     return d.toLocaleString(undefined, { year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12: false });
   }
@@ -1085,7 +1090,7 @@ function WorldClock() {
       <div style={{ flex: 1, minWidth: 220, background: 'rgba(0,200,255,0.05)', border: '1px solid rgba(0,200,255,0.2)', padding: '10px 16px', display: 'flex', gap: 12, alignItems: 'center' }}>
         <span style={{ fontSize: 18 }}>🌐</span>
         <div>
-          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 2 }}>SERVER TIME (UTC+0)</div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '2px', color: '#3a5878', marginBottom: 2 }}>SERVER TIME (UTC-2)</div>
           <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 16, color: '#00c8ff', letterSpacing: '1px' }}>{fmt(now)}</div>
         </div>
       </div>
