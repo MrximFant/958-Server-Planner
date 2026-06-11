@@ -165,7 +165,7 @@ export default function TrainPlanner() {
   const role          = session?.serverId === serverId ? session.role       : null;
   const myAllianceId  = session?.allianceId ?? null;
   const allianceRole  = session?.allianceRole ?? null;
-  const canEdit       = role === 'admin' || role === 'helper' || role === 'owner' || allianceRole === 'alliance_admin';
+  const canEdit       = role === 'admin' || role === 'helper' || allianceRole === 'owner' || allianceRole === 'alliance_admin';
 
   const [loading,     setLoading]     = useState(true);
   const [saving,      setSaving]      = useState(false);

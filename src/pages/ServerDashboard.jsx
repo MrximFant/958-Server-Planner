@@ -89,9 +89,7 @@ export default function ServerDashboard() {
 
   const FEATURES = [
     { to: `/server/${serverId}/alliance`, icon: Users, color: '#f0a500', glow: 'rgba(240,165,0,0.15)', border: 'rgba(240,165,0,0.3)', label: 'ALLIANCE HQ', title: 'Member Roster & Planning', desc: 'Roster, squad powers, train rotation planner, event team assignments, and war map.', tag: 'COMMAND', locked: !activeSession },
-    { to: null, icon: Trophy, color: '#a040d0', glow: 'rgba(160,64,208,0.15)', border: 'rgba(160,64,208,0.3)', label: 'LEADERBOARD', title: 'Season Rankings', desc: 'Alliance influence totals, territory counts, and season performance overview.', tag: 'SOON', disabled: true },
     { to: `/server/${serverId}/rules`, icon: BookOpen, color: '#00e87a', glow: 'rgba(0,232,122,0.15)', border: 'rgba(0,232,122,0.3)', label: 'RULES & GUIDE', title: 'Platform Guide', desc: 'How the planner works — roles, territory ownership, map sharing, and member accounts.', tag: 'GUIDE', locked: false },
-    { to: null, icon: Clock, color: '#ff4060', glow: 'rgba(255,64,96,0.15)', border: 'rgba(255,64,96,0.3)', label: 'SEASONS', title: 'Season History', desc: 'Past season outcomes, alliance rankings, and performance trends across seasons.', tag: 'SOON', disabled: true },
   ];
 
   return (
@@ -110,7 +108,7 @@ export default function ServerDashboard() {
               </span>
               {(role === 'admin' || role === 'helper') && (
                 <button style={S.adminBtn} onClick={() => navigate(`/server/${serverId}/admin`)}>
-                  <Settings size={12} /> {role === 'helper' ? 'HELPER PANEL' : 'ADMIN PANEL'}
+                  <Settings size={12} /> {role === 'helper' ? 'HELPER PANEL' : 'SERVER ADMIN'}
                 </button>
               )}
               <button style={S.logoutBtn} onClick={logout}>
@@ -141,7 +139,7 @@ export default function ServerDashboard() {
                   style={{ ...S.btnPrimary, background: 'transparent', border: '2px solid #f0a500', color: '#f0a500' }}
                   onClick={() => navigate(`/server/${serverId}/admin`)}
                 >
-                  {role === 'helper' ? '🔧 HELPER PANEL →' : '⚡ ADMIN PANEL →'}
+                  {role === 'helper' ? '🔧 HELPER PANEL →' : '⚡ SERVER ADMIN →'}
                 </button>
               )}
             </>
