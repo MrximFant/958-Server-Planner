@@ -1228,20 +1228,38 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
   );
 }
 
-// ── Events View (Canyon & Desert wishlists) ───────────────────────
+// ── Events View (Canyon & Desert wishlists) ─────────────────────
 
+// Server time is fixed UTC-2 (no DST)
+// startH/startM/endH/endM are in server time
 const EVENT_SLOTS = {
   canyon: [
-    { id: 'thu_09', label: 'Thursday 09:00–10:00', day: 'Thursday', time: '09:00–10:00' },
-    { id: 'thu_18', label: 'Thursday 18:00–19:00', day: 'Thursday', time: '18:00–19:00' },
-    { id: 'thu_23', label: 'Thursday 23:00–00:00', day: 'Thursday', time: '23:00–00:00' },
+    { id: 'thu_09', day: 'Thursday', startH: 9,  startM: 0,  endH: 10, endM: 0  },
+    { id: 'thu_18', day: 'Thursday', startH: 18, startM: 0,  endH: 19, endM: 0  },
+    { id: 'thu_23', day: 'Thursday', startH: 23, startM: 0,  endH: 0,  endM: 0  },
   ],
   desert: [
-    { id: 'fri_09', label: 'Friday 09:00–09:30', day: 'Friday', time: '09:00–09:30' },
-    { id: 'fri_18', label: 'Friday 18:00–18:30', day: 'Friday', time: '18:00–18:30' },
-    { id: 'fri_23', label: 'Friday 23:00–23:30', day: 'Friday', time: '23:00–23:30' },
+    { id: 'fri_09', day: 'Friday',   startH: 9,  startM: 0,  endH: 9,  endM: 30 },
+    { id: 'fri_18', day: 'Friday',   startH: 18, startM: 0,  endH: 18, endM: 30 },
+    { id: 'fri_23', day: 'Friday',   startH: 23, startM: 0,  endH: 23, endM: 30 },
   ],
 };
+
+function p2(n) { return String(n).padStart(2, '0'); }
+
+// Convert server-time hour+minute (UTC-2) to user local time string
+function serverToLocal(h, m) {
+  const d = new Date(Date.UTC(2000, 0, 6, h + 2, m, 0));
+  return `${p2(d.getHours())}:${p2(d.getMinutes())}`;
+}
+
+function slotTimeStrings(slot) {
+  const srvStart = `${p2(slot.startH)}:${p2(slot.startM)}`;
+  const srvEnd   = `${p2(slot.endH)}:${p2(slot.endM)}`;
+  const locStart = serverToLocal(slot.startH, slot.startM);
+  const locEnd   = serverToLocal(slot.endH,   slot.endM);
+  return { srvStart, srvEnd, locStart, locEnd };
+}
 
 const DEFAULT_EVENT_CONFIG = {
   canyon: { teamA: 'thu_09', teamB: 'thu_18' },
@@ -1263,24 +1281,41 @@ function EventsView({ members, alliance, myMemberId, showPower, canManage }) {
     setSaving(false);
   }
 
-  function slotLabel(event, slotId) {
-    const slot = EVENT_SLOTS[event].find(s => s.id === slotId);
-    return slot ? `${slot.day} ${slot.time} (Server Time)` : '—';
+  function getSlot(event, slotId) {
+    return EVENT_SLOTS[event].find(s => s.id === slotId) || null;
   }
 
+  // JSX component showing server time + user local time
+  function SlotTime({ event, slotId }) {
+    const slot = getSlot(event, slotId);
+    if (!slot) return <span>—</span>;
+    const { srvStart, srvEnd, locStart, locEnd } = slotTimeStrings(slot);
+    return (
+      <span>
+        {slot.day}{' '}
+        <span style={{ color: '#d0e4f4', fontWeight: 700 }}>{srvStart}–{srvEnd}</span>
+        <span style={{ fontSize: '0.82em', color: '#3a5878', margin: '0 5px' }}>server</span>
+        <span style={{ color: '#00c8ff', fontWeight: 700 }}>{locStart}–{locEnd}</span>
+        <span style={{ fontSize: '0.82em', color: '#3a5878', marginLeft: 3 }}>your time</span>
+      </span>
+    );
+  }
+
+  function slotDropdownLabel(slot) {
+    const { srvStart, srvEnd, locStart, locEnd } = slotTimeStrings(slot);
+    return `${slot.day} ${srvStart}–${srvEnd} (Server) · ${locStart}–${locEnd} (Local)`;
+  }
   function renderWishlist(type) {
     const tField   = type === 'canyon' ? 'canyon_team' : 'desert_team';
     const subField = type === 'canyon' ? 'canyon_sub'  : 'desert_sub';
-    const teamATime = slotLabel(type, cfg[type].teamA);
-    const teamBTime = slotLabel(type, cfg[type].teamB);
     const sorted = [...members]
       .filter(p => !filterTroop || p.troop1 === filterTroop)
       .sort((a, b) => (parseFloat(b.power1) || 0) - (parseFloat(a.power1) || 0));
     const cats = [
-      { label: 'Team A', dot: 'dot-l-green',  time: teamATime,  filter: p => p[tField] === 'A' && !p[subField] },
-      { label: 'Team B', dot: 'dot-l-orange', time: teamBTime,  filter: p => p[tField] === 'B' && !p[subField] },
-      { label: 'Substitutes', dot: 'dot-l-warn', time: '',      filter: p => !!p[subField] },
-      { label: 'Flexible',    dot: 'dot-l-gray', time: '',      filter: p => p[tField] === 'any' && !p[subField] },
+      { label: 'Team A', dot: 'dot-l-green',  slotId: cfg[type].teamA, filter: p => p[tField] === 'A' && !p[subField] },
+      { label: 'Team B', dot: 'dot-l-orange', slotId: cfg[type].teamB, filter: p => p[tField] === 'B' && !p[subField] },
+      { label: 'Substitutes', dot: 'dot-l-warn', slotId: null, filter: p => !!p[subField] },
+      { label: 'Flexible',    dot: 'dot-l-gray', slotId: null, filter: p => p[tField] === 'any' && !p[subField] },
     ];
     return (
       <div className="teams-grid">
@@ -1291,7 +1326,7 @@ function EventsView({ members, alliance, myMemberId, showPower, canManage }) {
               <div className="team-box-header">
                 <div className={`dot-l ${cat.dot}`} />
                 {cat.label}
-                {cat.time && <span className="team-time">{cat.time}</span>}
+                {cat.slotId && <span className="team-time" style={{ fontSize: 11, color: '#7a9bb8', marginLeft: 6 }}><SlotTime event={type} slotId={cat.slotId} /></span>}
                 <span className="team-count">{list.length}</span>
               </div>
               <div className="team-body">
@@ -1358,7 +1393,7 @@ function EventsView({ members, alliance, myMemberId, showPower, canManage }) {
                       style={{ width: '100%', background: '#0d1520', border: '1px solid #1e3550', color: '#d0e4f4', padding: '7px 10px', fontFamily: "'Rajdhani',sans-serif", fontSize: 14 }}
                     >
                       {EVENT_SLOTS[ev].map(s => (
-                        <option key={s.id} value={s.id}>{s.label} (Server Time)</option>
+                        <option key={s.id} value={s.id}>{slotDropdownLabel(s)}</option>
                       ))}
                     </select>
                   </div>
@@ -1391,9 +1426,11 @@ function EventsView({ members, alliance, myMemberId, showPower, canManage }) {
         <div style={{ background: 'rgba(13,21,32,0.7)', border: '1px solid #1e3550', padding: '8px 14px', marginBottom: 14, fontSize: 12, color: '#7a9bb8' }}>
           <span style={{ color: '#d0e4f4', fontWeight: 700 }}>{eventName}</span>
           {' — '}
-          <span style={{ color: '#00c8ff' }}>Team A:</span> {slotLabel(tab, cfg[tab].teamA)}
+          <span style={{ color: '#00c8ff' }}>Team A:</span>{' '}
+          <SlotTime event={tab} slotId={cfg[tab].teamA} />
           <span style={{ margin: '0 12px', color: '#1e3550' }}>|</span>
-          <span style={{ color: '#f0a500' }}>Team B:</span> {slotLabel(tab, cfg[tab].teamB)}
+          <span style={{ color: '#f0a500' }}>Team B:</span>{' '}
+          <SlotTime event={tab} slotId={cfg[tab].teamB} />
         </div>
       </div>
 
