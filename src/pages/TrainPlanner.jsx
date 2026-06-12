@@ -209,6 +209,8 @@ export default function TrainPlanner() {
   const [pairedStartDate, setPairedStartDate] = useState('');
   const [driverQueue,     setDriverQueue]     = useState([]);
   const [vipQueue,        setVipQueue]        = useState([]);
+  // priorityDays: [{dayIdx, description}] — shared across all modes
+  const [priorityDays,   setPriorityDays]    = useState([]);
 
   // ── Unsaved changes dialog ────────────────────────────────────────
   const [pendingNav, setPendingNav] = useState(null);
@@ -318,6 +320,7 @@ export default function TrainPlanner() {
     if (cfg.pairedStartDate !== undefined)  setPairedStartDate(cfg.pairedStartDate);
     if (cfg.driverQueue !== undefined)      setDriverQueue(cfg.driverQueue);
     if (cfg.vipQueue !== undefined)         setVipQueue(cfg.vipQueue);
+    if (cfg.priorityDays !== undefined)     setPriorityDays(cfg.priorityDays); else setPriorityDays([]);
 
     supabase
       .from('train_slots')
@@ -334,7 +337,7 @@ export default function TrainPlanner() {
     if (!myAllianceId) return;
     setSaving(true);
 
-    const modeConfig = { fixedDriver, vipPool, pairs, pairedStartDate, driverQueue, vipQueue };
+    const modeConfig = { fixedDriver, vipPool, pairs, pairedStartDate, driverQueue, vipQueue, priorityDays };
     const wLabel = currentWeekKey || toDateString(getMondayDate());
 
     let sid = scheduleId;
@@ -374,7 +377,7 @@ export default function TrainPlanner() {
     setSaved(true);
     setIsDirty(false);
     setTimeout(() => setSaved(false), 2500);
-  }, [myAllianceId, scheduleId, currentWeekKey, mode, slots, fixedDriver, vipPool, pairs, pairedStartDate, driverQueue, vipQueue]);
+  }, [myAllianceId, scheduleId, currentWeekKey, mode, slots, fixedDriver, vipPool, pairs, pairedStartDate, driverQueue, vipQueue, priorityDays]);
 
   // ── Unsaved changes guard ─────────────────────────────────────────
   function guardedNavigateWeek(dir) {
@@ -872,69 +875,29 @@ export default function TrainPlanner() {
 
       {/* ── Topbar ──────────────────────────────────────────────── */}
       <div style={{ background: 'rgba(8,13,20,0.97)', borderBottom: '1px solid #1e3550', flexShrink: 0, zIndex: 50 }}>
-        {/* Row 1: title + save */}
-        <div style={{ height: 48, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderBottom: '1px solid rgba(30,53,80,0.5)' }}>
-          {/* Mobile toggles */}
-          <button
-            className="tp-mobile-only"
-            onClick={() => setLeftOpen(o => !o)}
-            style={{ ...S.iconBtn, display: 'none' }}
-            title="Toggle mode panel"
-          >
-            <Menu size={14} />
-          </button>
+        {/* Row 1: title */}
+        <div style={{ height: 48, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px' }}>
+          <button className="tp-mobile-only" onClick={() => setLeftOpen(o => !o)} style={{ ...S.iconBtn, display: 'none' }} title="Toggle mode panel"><Menu size={14} /></button>
           <button onClick={() => navigate(`/server/${serverId}/alliance`)} style={S.iconBtn}><ArrowLeft size={15} /></button>
           <Train size={15} style={{ color: '#f0a500', flexShrink: 0 }} />
-          <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '2px', color: '#f0a500' }}>TRAIN PLANNER</div>
-          {alliance && <div style={{ fontSize: 11, color: '#5a7898', marginLeft: 4 }}>— {alliance.name}</div>}
-          {isDirty && <div style={{ fontSize: 9, color: '#f0a500', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', padding: '2px 7px', letterSpacing: '1px', fontWeight: 700 }}>UNSAVED</div>}
+          <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '2px', color: '#f0a500' }}>TRAIN PLANNER</div>
+          {alliance && <div style={{ fontSize: 13, color: '#c0d8f0', marginLeft: 4 }}>— {alliance.name}</div>}
+          {isDirty && <div style={{ fontSize: 10, color: '#f0a500', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', padding: '2px 7px', letterSpacing: '1px', fontWeight: 700 }}>UNSAVED</div>}
           <div style={{ flex: 1 }} />
-          {canEdit && (
-            <button
-              onClick={() => setManagingTrain(true)}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(122,155,184,0.08)', border: '1px solid rgba(122,155,184,0.3)', color: '#7a9bb8', padding: '5px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: 'pointer', flexShrink: 0 }}
-              title="Manage train schedule"
-            >
-              <Settings size={12} /> MANAGE
-            </button>
-          )}
-          <button onClick={handleExport} style={{ ...S.iconBtn, color: '#00c8ff' }} title="Export schedule to clipboard"><Download size={14} /></button>
-          {canEdit && (
-            <>
-              <button onClick={clearAll} style={{ ...S.iconBtn, color: '#ff6080' }} title="Clear all slots"><RotateCcw size={14} /></button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.4)' : 'rgba(240,165,0,0.4)'}`, color: saved ? '#00e87a' : '#f0a500', padding: '5px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: saving ? 'default' : 'pointer' }}
-              >
-                <Save size={13} />
-                {saving ? 'SAVING…' : saved ? 'SAVED ✓' : 'SAVE'}
-              </button>
-            </>
-          )}
-          {/* Mobile members toggle */}
-          <button
-            onClick={() => setMembersOpen(o => !o)}
-            style={{ ...S.iconBtn, display: 'none' }}
-            className="tp-mobile-only"
-            title="Toggle members panel"
-          >
-            <Users size={14} />
-          </button>
+          <button onClick={() => setMembersOpen(o => !o)} style={{ ...S.iconBtn, display: 'none' }} className="tp-mobile-only" title="Toggle members panel"><Users size={14} /></button>
         </div>
-
-        {/* Row 2: active week label */}
-        <div style={{ height: 32, display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px', borderTop: '1px solid rgba(30,53,80,0.4)' }}>
-          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: '#5a7898' }}>WEEK:</span>
-          <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: '#d0e4f4' }}>
-            {currentWeekKey ? formatWeekRange(currentWeekKey) : 'No week selected'}
+        {/* Row 2: active week */}
+        <div style={{ height: 32, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderTop: '1px solid rgba(30,53,80,0.4)', background: 'rgba(5,10,18,0.5)' }}>
+          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: '#8aadcc' }}>WEEK:</span>
+          <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 12, color: '#ffffff', fontWeight: 700 }}>
+            {currentWeekKey ? formatWeekRange(currentWeekKey) : '— no week —'}
           </span>
           {sortedScheds.length > 1 && schedIdx >= 0 && (
-            <span style={{ fontSize: 9, color: '#5a7898' }}>({schedIdx + 1}/{sortedScheds.length})</span>
+            <span style={{ fontSize: 10, color: '#8aadcc' }}>{schedIdx + 1}/{sortedScheds.length}</span>
           )}
           <div style={{ flex: 1 }} />
-          <button onClick={() => guardedNavigateWeek(-1)} disabled={schedIdx <= 0} style={{ ...S.weekNavBtn, opacity: schedIdx <= 0 ? 0.3 : 1, padding: '2px 8px', fontSize: 10 }}>← PREV</button>
-          <button onClick={() => guardedNavigateWeek(1)} disabled={schedIdx >= sortedScheds.length - 1} style={{ ...S.weekNavBtn, opacity: schedIdx >= sortedScheds.length - 1 ? 0.3 : 1, padding: '2px 8px', fontSize: 10 }}>NEXT →</button>
+          <button onClick={() => guardedNavigateWeek(-1)} disabled={schedIdx <= 0} style={{ ...S.weekNavBtn, opacity: schedIdx <= 0 ? 0.3 : 1 }}><ChevronLeft size={12} /> PREV</button>
+          <button onClick={() => guardedNavigateWeek(1)} disabled={schedIdx >= sortedScheds.length - 1} style={{ ...S.weekNavBtn, opacity: schedIdx >= sortedScheds.length - 1 ? 0.3 : 1 }}>NEXT <ChevronRight size={12} /></button>
         </div>
       </div>
 
@@ -958,6 +921,7 @@ export default function TrainPlanner() {
               pairedStartDate={pairedStartDate} setPairedStartDate={v => { setPairedStartDate(v); markDirty(); }}
               driverQueue={driverQueue} setDriverQueue={v => { setDriverQueue(v); markDirty(); }}
               vipQueue={vipQueue}       setVipQueue={v => { setVipQueue(v); markDirty(); }}
+              priorityDays={priorityDays} setPriorityDays={v => { setPriorityDays(v); markDirty(); }}
               toggleQueue={toggleQueue}
               moveDriverQueue={(i, d) => moveQueue(driverQueue, setDriverQueue, i, d)}
               moveVipQueue={(i, d) => moveQueue(vipQueue, setVipQueue, i, d)}
@@ -970,10 +934,31 @@ export default function TrainPlanner() {
             />
           </div>
 
-          {/* Week List — maxHeight 180px */}
+          {/* Week List + Actions */}
           <div style={{ flexShrink: 0, borderTop: '1px solid #1e3550' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 6px' }}>
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8' }}>WEEKS ({sortedScheds.length})</div>
+            {/* Action buttons row */}
+            <div style={{ display: 'flex', gap: 5, padding: '8px 10px 6px', borderBottom: '1px solid rgba(30,53,80,0.5)', flexWrap: 'wrap' }}>
+              {canEdit && (
+                <button onClick={() => setManagingTrain(true)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '6px 4px', background: 'transparent', border: '1px solid #00e87a', color: '#00e87a', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: 'pointer' }}>
+                  <Settings size={11} /> MANAGE
+                </button>
+              )}
+              <button onClick={handleExport} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '6px 4px', background: 'transparent', border: '1px solid #1e3550', color: '#8aadcc', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: 'pointer' }}>
+                <Download size={11} /> EXPORT
+              </button>
+              {canEdit && (
+                <>
+                  <button onClick={clearAll} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '6px 4px', background: 'transparent', border: '1px solid rgba(255,64,96,0.35)', color: '#ff6080', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: 'pointer' }}>
+                    <RotateCcw size={11} /> CLEAR
+                  </button>
+                  <button onClick={handleSave} disabled={saving} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '6px 4px', background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.5)' : 'rgba(240,165,0,0.5)'}`, color: saved ? '#00e87a' : '#f0a500', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: saving ? 'default' : 'pointer' }}>
+                    <Save size={11} />{saving ? 'SAVING…' : saved ? 'SAVED ✓' : 'SAVE'}
+                  </button>
+                </>
+              )}
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px 4px' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#8aadcc' }}>WEEKS ({sortedScheds.length})</div>
               {canEdit && (
                 <button onClick={createNewWeek} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: '#00c8ff', background: 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.25)', padding: '2px 8px', cursor: 'pointer' }}>+ NEW</button>
               )}
@@ -997,8 +982,8 @@ export default function TrainPlanner() {
                     }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 10, color: isActive ? '#f0a500' : '#7a9bb8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-                      <div style={{ fontSize: 8, color: '#5a7898', letterSpacing: '1px' }}>WK {i + 1}</div>
+                      <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: isActive ? '#f0a500' : '#c0d8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                      <div style={{ fontSize: 9, color: '#8aadcc', letterSpacing: '1px' }}>WK {i + 1}</div>
                     </div>
                     {canEdit && (
                       <button
@@ -1179,14 +1164,14 @@ export default function TrainPlanner() {
 }
 
 // ── Mode Config Panel ──────────────────────────────────────────────
-function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedDriver, vipPool, setVipPool, pairs, addPair, removePair, swapPairs, pairedStartDate, setPairedStartDate, driverQueue, setDriverQueue, vipQueue, setVipQueue, moveDriverQueue, moveVipQueue, toggleQueue, generate, rollVipToNextWeek, currentMode, slots, setSlots, markDirty }) {
+function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedDriver, vipPool, setVipPool, pairs, addPair, removePair, swapPairs, pairedStartDate, setPairedStartDate, driverQueue, setDriverQueue, vipQueue, setVipQueue, priorityDays, setPriorityDays, moveDriverQueue, moveVipQueue, toggleQueue, generate, rollVipToNextWeek, currentMode, slots, setSlots, markDirty }) {
   const [pairDriver, setPairDriver] = useState('');
   const [pairVip,    setPairVip]    = useState('');
 
-  const sel = (label, value, onChange) => (
+  const sel = (label, value, onChange, list = members) => (
     <select value={value} onChange={e => onChange(e.target.value)} style={S.sel} disabled={!canEdit}>
       <option value="">— {label} —</option>
-      {members.map(m => <option key={m.id} value={m.id}>{m.in_game_name || m.username}</option>)}
+      {list.map(m => <option key={m.id} value={m.id}>{m.in_game_name || m.username}</option>)}
     </select>
   );
 
@@ -1203,9 +1188,22 @@ function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedD
         {currentMode?.detail}
       </div>
 
+      {/* Priority days banner — shown in all modes when priority days are set */}
+      {priorityDays.length > 0 && mode !== 'priority' && (
+        <div style={{ marginBottom: 12, padding: '8px 10px', background: 'rgba(255,96,128,0.06)', border: '1px solid rgba(255,96,128,0.3)' }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#ff6080', letterSpacing: '1.5px', marginBottom: 6 }}>🏆 PRIORITY DAYS ACTIVE</div>
+          {priorityDays.map(pd => (
+            <div key={pd.dayIdx} style={{ fontSize: 11, color: '#e0b0b8', marginBottom: 3 }}>
+              <span style={{ fontWeight: 700, color: '#ff8090' }}>{DAYS[pd.dayIdx]}</span> — {pd.description || 'Special day'}
+            </div>
+          ))}
+          <div style={{ fontSize: 9, color: '#8a5060', marginTop: 4 }}>These days have priority requirements. Switch to Priority Days mode to edit them.</div>
+        </div>
+      )}
+
       {/* MANUAL */}
       {mode === 'manual' && (
-        <div style={{ fontSize: 11, color: '#5a7898', lineHeight: 1.7 }}>
+        <div style={{ fontSize: 12, color: '#8aadcc', lineHeight: 1.7 }}>
           Drag members from the pool on the right into any slot, or click a member then click a slot. Use the lock icon to protect a slot from being cleared. Dragging a member from one slot to another will swap them.
         </div>
       )}
@@ -1250,55 +1248,61 @@ function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedD
       )}
 
       {/* PAIRED */}
-      {mode === 'paired' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
-            <div style={S.cfgLabel}>ROTATION START DATE</div>
-            <p style={{ fontSize: 10, color: '#2a4058', marginBottom: 6 }}>Set the first Monday this rotation began. Auto-calculates which pair is up each week.</p>
-            <input
-              type="date"
-              value={pairedStartDate}
-              onChange={e => setPairedStartDate(e.target.value)}
-              disabled={!canEdit}
-              style={{ ...S.sel, fontSize: 11, padding: '5px 8px' }}
-            />
-          </div>
-          <div>
-            <div style={S.cfgLabel}>PAIRS ({pairs.length})</div>
-            <p style={{ fontSize: 10, color: '#2a4058', marginBottom: 8 }}>Each pair takes one day. After a full cycle, roles swap automatically.</p>
-            {pairs.map((pair, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', marginBottom: 3, border: '1px solid #1e3550', background: 'rgba(240,165,0,0.04)' }}>
-                <div style={{ flex: 1, fontSize: 10 }}>
-                  <div style={{ color: '#f0a500' }}>🚂 {memberById[pair.driver] ? (memberById[pair.driver].in_game_name || memberById[pair.driver].username) : '?'}</div>
-                  <div style={{ color: '#7a9bb8' }}>⭐ {memberById[pair.vip] ? (memberById[pair.vip].in_game_name || memberById[pair.vip].username) : '?'}</div>
-                </div>
-                {canEdit && <button onClick={() => removePair(i)} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>}
-              </div>
-            ))}
-            {canEdit && pairs.length > 0 && (
-              <button onClick={swapPairs} style={{ display: 'flex', alignItems: 'center', gap: 6, ...S.genBtn, background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.3)', color: '#f0a500', marginBottom: 8 }}>
-                <RotateCcw size={11} /> SWAP ALL ROLES
-              </button>
-            )}
-          </div>
-          {canEdit && (
+      {mode === 'paired' && (() => {
+        const pairedMemberIds = new Set(pairs.flatMap(p => [p.driver, p.vip]));
+        const unpaired = members.filter(m => !pairedMemberIds.has(m.id));
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <div>
-              <div style={S.cfgLabel}>ADD PAIR</div>
-              {sel('Driver', pairDriver, setPairDriver)}
-              <div style={{ height: 4 }} />
-              {sel('VIP', pairVip, setPairVip)}
-              <button
-                onClick={() => { addPair(pairDriver, pairVip); setPairDriver(''); setPairVip(''); }}
-                disabled={!pairDriver || !pairVip}
-                style={{ ...S.genBtn, marginTop: 8 }}
-              >
-                + ADD PAIR
-              </button>
+              <div style={S.cfgLabel}>ROTATION START DATE</div>
+              <p style={{ fontSize: 11, color: '#8aadcc', marginBottom: 6 }}>Set the first Monday this rotation began. Auto-calculates which pair is up each week.</p>
+              <input type="date" value={pairedStartDate} onChange={e => setPairedStartDate(e.target.value)} disabled={!canEdit} style={{ ...S.sel, fontSize: 12, padding: '5px 8px' }} />
             </div>
-          )}
-          {canEdit && <button onClick={generate} style={S.genBtn}><Shuffle size={12} /> GENERATE SCHEDULE</button>}
-        </div>
-      )}
+            <div>
+              <div style={S.cfgLabel}>PAIRS ({pairs.length}) {unpaired.length > 0 && <span style={{ color: '#f0a500', fontWeight: 400, fontSize: 9 }}>— {unpaired.length} unassigned</span>}</div>
+              <p style={{ fontSize: 11, color: '#8aadcc', marginBottom: 8 }}>Each pair takes one day. After a full cycle, roles swap automatically.</p>
+              {pairs.map((pair, i) => (
+                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', marginBottom: 3, border: '1px solid #1e3550', background: 'rgba(240,165,0,0.04)' }}>
+                  <div style={{ flex: 1, fontSize: 11 }}>
+                    <div style={{ color: '#ffffff', fontWeight: 700 }}>🚂 {memberById[pair.driver] ? (memberById[pair.driver].in_game_name || memberById[pair.driver].username) : '?'}</div>
+                    <div style={{ color: '#c0d8f0' }}>⭐ {memberById[pair.vip] ? (memberById[pair.vip].in_game_name || memberById[pair.vip].username) : '?'}</div>
+                  </div>
+                  {canEdit && <button onClick={() => removePair(i)} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>}
+                </div>
+              ))}
+              {canEdit && pairs.length > 0 && (
+                <div style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
+                  <button onClick={swapPairs} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, ...S.genBtn, background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.3)', color: '#f0a500' }}>
+                    <RotateCcw size={11} /> SWAP ROLES
+                  </button>
+                  <button onClick={() => { setPairs(p => [...p, ...p.map(pair => ({ driver: pair.vip, vip: pair.driver }))]); markDirty(); }}
+                    title="Append a reversed copy — VIP becomes Driver and vice versa"
+                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, ...S.genBtn, background: 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.3)', color: '#00c8ff', fontSize: 9 }}>
+                    + REVERSE CYCLE
+                  </button>
+                </div>
+              )}
+            </div>
+            {canEdit && unpaired.length > 0 && (
+              <div>
+                <div style={S.cfgLabel}>ADD PAIR <span style={{ color: '#8aadcc', fontWeight: 400 }}>({unpaired.length} available)</span></div>
+                {sel('Driver', pairDriver, setPairDriver, unpaired)}
+                <div style={{ height: 4 }} />
+                {sel('VIP', pairVip, setPairVip, unpaired.filter(m => m.id !== pairDriver))}
+                <button onClick={() => { addPair(pairDriver, pairVip); setPairDriver(''); setPairVip(''); }} disabled={!pairDriver || !pairVip} style={{ ...S.genBtn, marginTop: 8 }}>
+                  + ADD PAIR
+                </button>
+              </div>
+            )}
+            {canEdit && unpaired.length === 0 && pairs.length > 0 && (
+              <div style={{ fontSize: 11, color: '#00e87a', padding: '6px 10px', background: 'rgba(0,232,122,0.07)', border: '1px solid rgba(0,232,122,0.25)' }}>
+                ✓ All members assigned to pairs. Use REVERSE CYCLE to add a swapped copy, then generate.
+              </div>
+            )}
+            {canEdit && <button onClick={generate} style={S.genBtn}><Shuffle size={12} /> GENERATE SCHEDULE</button>}
+          </div>
+        );
+      })()}
 
       {/* ROUND ROBIN */}
       {mode === 'round_robin' && (
@@ -1314,10 +1318,42 @@ function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedD
       {/* PRIORITY */}
       {mode === 'priority' && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 10, color: '#7a9bb8', lineHeight: 1.6, padding: '8px 10px', background: 'rgba(255,96,128,0.05)', border: '1px solid rgba(255,96,128,0.2)' }}>
-            Lock slots for event winners. Unlocked slots auto-fill from the pool.
+          <div style={{ fontSize: 11, color: '#c0a0b0', lineHeight: 1.6, padding: '8px 10px', background: 'rgba(255,96,128,0.05)', border: '1px solid rgba(255,96,128,0.2)' }}>
+            Set a <strong style={{ color: '#ff8090' }}>requirement</strong> for each priority day — e.g. "Canyon winner" or "Most kills". These descriptions show as reminders in all other modes. Lock specific slots for event winners; unlocked slots auto-fill.
           </div>
-          <PriorityDayLocks slots={slots} setSlots={setSlots} members={members} canEdit={canEdit} markDirty={markDirty} />
+          {/* Priority day descriptions */}
+          <div>
+            <div style={S.cfgLabel}>PRIORITY DAY REQUIREMENTS</div>
+            {DAYS.map((day, d) => {
+              const pd = priorityDays.find(p => p.dayIdx === d);
+              const isSet = !!pd;
+              return (
+                <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
+                  <div style={{ width: 32, fontSize: 10, fontWeight: 700, color: isSet ? '#ff8090' : '#5a7898', letterSpacing: '1px', flexShrink: 0 }}>{day}</div>
+                  {canEdit ? (
+                    <input
+                      value={pd?.description || ''}
+                      onChange={e => {
+                        const val = e.target.value;
+                        setPriorityDays(prev => {
+                          const filtered = prev.filter(p => p.dayIdx !== d);
+                          return val.trim() ? [...filtered, { dayIdx: d, description: val }] : filtered;
+                        });
+                      }}
+                      placeholder="e.g. Canyon winner…"
+                      style={{ flex: 1, background: isSet ? 'rgba(255,96,128,0.06)' : '#0a1220', border: `1px solid ${isSet ? 'rgba(255,96,128,0.4)' : '#1e3550'}`, color: '#ffffff', padding: '4px 8px', fontFamily: "'Rajdhani',sans-serif", fontSize: 11, outline: 'none' }}
+                    />
+                  ) : (
+                    <span style={{ flex: 1, fontSize: 11, color: isSet ? '#ff8090' : '#3a5878', fontStyle: isSet ? 'normal' : 'italic' }}>{pd?.description || '—'}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ borderTop: '1px solid rgba(255,96,128,0.2)', paddingTop: 10 }}>
+            <div style={S.cfgLabel}>SLOT LOCKS</div>
+            <PriorityDayLocks slots={slots} setSlots={setSlots} members={members} canEdit={canEdit} markDirty={markDirty} />
+          </div>
           {canEdit && <button onClick={generate} style={{ ...S.genBtn, background: 'rgba(255,96,128,0.1)', border: '1px solid rgba(255,96,128,0.3)', color: '#ff6080' }}>
             <Shuffle size={12} /> AUTO-FILL UNLOCKED
           </button>}
@@ -1518,7 +1554,7 @@ function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mo
                           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 40 }}>
                             {isLocked
                               ? <Lock size={12} style={{ color: `${color}70` }} />
-                              : <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: '#4a6880', fontFamily: "'Rajdhani',sans-serif" }}>— OPEN —</span>
+                              : <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', color: '#5a7890', fontFamily: "'Rajdhani',sans-serif" }}>— OPEN —</span>
                             }
                           </div>
                         )}
@@ -1533,12 +1569,12 @@ function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mo
       </div>
 
       {/* Legend */}
-      <div style={{ marginTop: 20, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 10, color: '#2a4058' }}>
+      <div style={{ marginTop: 20, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11, color: '#6a8aa8' }}>
         <span>🔒 Locked slot</span>
         <span>Drag member from pool → slot</span>
         <span>Drag filled slot → another slot to swap</span>
         <span>Drag slot → pool to remove</span>
-        {canEdit && <span style={{ color: '#5a7898' }}>× removes assignment · lock protects slot</span>}
+        {canEdit && <span>× removes · 🔒 locks slot</span>}
       </div>
     </div>
   );
@@ -1551,7 +1587,7 @@ function SlotMember({ member, role, color, isLocked, canEdit, slotKey, onDragSta
       onDragStart={e => !isLocked && onDragStart(e, member.id, slotKey)}
       style={{ display: 'flex', flexDirection: 'column', gap: 3 }}
     >
-      <div style={{ fontSize: 13, fontWeight: 700, color: '#ffffff', lineHeight: 1.2, paddingRight: canEdit ? 18 : 0 }}>
+      <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff', lineHeight: 1.2, paddingRight: canEdit ? 18 : 0 }}>
         {member.in_game_name || member.username}
       </div>
       {member.username && member.in_game_name && (
