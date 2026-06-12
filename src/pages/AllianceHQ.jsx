@@ -1230,22 +1230,62 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
 
 // ── Events View (Canyon & Desert wishlists) ───────────────────────
 
-function EventsView({ members, alliance, myMemberId, showPower }) {
+const EVENT_SLOTS = {
+  canyon: [
+    { id: 'thu_09', label: 'Thursday 09:00–09:30', day: 'Thursday', time: '09:00–09:30' },
+    { id: 'thu_18', label: 'Thursday 18:00–18:30', day: 'Thursday', time: '18:00–18:30' },
+    { id: 'thu_23', label: 'Thursday 23:00–23:30', day: 'Thursday', time: '23:00–23:30' },
+  ],
+  desert: [
+    { id: 'fri_09', label: 'Friday 09:00–09:30', day: 'Friday', time: '09:00–09:30' },
+    { id: 'fri_18', label: 'Friday 18:00–18:30', day: 'Friday', time: '18:00–18:30' },
+    { id: 'fri_23', label: 'Friday 23:00–23:30', day: 'Friday', time: '23:00–23:30' },
+  ],
+};
+
+function getEventConfig(allianceId) {
+  try {
+    return JSON.parse(localStorage.getItem(`ev_cfg_${allianceId}`) || 'null') || {
+      canyon: { teamA: 'thu_09', teamB: 'thu_18' },
+      desert: { teamA: 'fri_09', teamB: 'fri_18' },
+    };
+  } catch { return { canyon: { teamA: 'thu_09', teamB: 'thu_18' }, desert: { teamA: 'fri_09', teamB: 'fri_18' } }; }
+}
+
+function saveEventConfig(allianceId, cfg) {
+  localStorage.setItem(`ev_cfg_${allianceId}`, JSON.stringify(cfg));
+}
+
+function EventsView({ members, alliance, myMemberId, showPower, canManage }) {
   const [tab, setTab] = useState('canyon');
   const [filterTroop, setFilterTroop] = useState('');
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [cfg, setCfg] = useState(() => getEventConfig(alliance?.id));
+
+  function updateSlot(event, team, slotId) {
+    const next = { ...cfg, [event]: { ...cfg[event], [team]: slotId } };
+    setCfg(next);
+    saveEventConfig(alliance.id, next);
+  }
+
+  function slotLabel(event, slotId) {
+    const slot = EVENT_SLOTS[event].find(s => s.id === slotId);
+    return slot ? `${slot.day} ${slot.time} (Server Time)` : '—';
+  }
 
   function renderWishlist(type) {
-    const tField  = type === 'canyon' ? 'canyon_team' : 'desert_team';
+    const tField   = type === 'canyon' ? 'canyon_team' : 'desert_team';
     const subField = type === 'canyon' ? 'canyon_sub'  : 'desert_sub';
-    const isCan = type === 'canyon';
+    const teamATime = slotLabel(type, cfg[type].teamA);
+    const teamBTime = slotLabel(type, cfg[type].teamB);
     const sorted = [...members]
       .filter(p => !filterTroop || p.troop1 === filterTroop)
       .sort((a, b) => (parseFloat(b.power1) || 0) - (parseFloat(a.power1) || 0));
     const cats = [
-      { label: 'Team A', dot: 'dot-l-green',  time: isCan ? '12:00–12:30 (Server Time)' : '18:00–18:30 (Server Time)', filter: p => p[tField] === 'A' && !p[subField] },
-      { label: 'Team B', dot: 'dot-l-orange', time: isCan ? '23:00–23:30 (Server Time)' : '09:00–09:30 (Server Time)', filter: p => p[tField] === 'B' && !p[subField] },
-      { label: 'Substitutes', dot: 'dot-l-warn', time: '', filter: p => !!p[subField] },
-      { label: 'Flexible',    dot: 'dot-l-gray', time: '', filter: p => p[tField] === 'any' && !p[subField] },
+      { label: 'Team A', dot: 'dot-l-green',  time: teamATime,  filter: p => p[tField] === 'A' && !p[subField] },
+      { label: 'Team B', dot: 'dot-l-orange', time: teamBTime,  filter: p => p[tField] === 'B' && !p[subField] },
+      { label: 'Substitutes', dot: 'dot-l-warn', time: '',      filter: p => !!p[subField] },
+      { label: 'Flexible',    dot: 'dot-l-gray', time: '',      filter: p => p[tField] === 'any' && !p[subField] },
     ];
     return (
       <div className="teams-grid">
@@ -1281,12 +1321,69 @@ function EventsView({ members, alliance, myMemberId, showPower }) {
     );
   }
 
+  const eventName = tab === 'canyon' ? 'Canyon Storm' : 'Desert Storm';
+
   return (
     <div className="ahq-panel">
       <div className="ahq-panel-header" style={{ borderColor: 'rgba(0,232,122,0.3)', color: '#00e87a' }}>
         <span>⚔️ EVENTS</span>
-        <span className="ahq-panel-sub">{members.length} members</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="ahq-panel-sub">{members.length} members</span>
+          {canManage && (
+            <button
+              onClick={() => setShowAdmin(v => !v)}
+              style={{ background: showAdmin ? 'rgba(0,200,255,0.15)' : 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.4)', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', padding: '4px 12px', cursor: 'pointer' }}
+            >
+              ⚙ ADMIN MANAGER
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Admin manager panel */}
+      {showAdmin && canManage && (
+        <div style={{ margin: '0 20px 16px', background: 'rgba(0,200,255,0.04)', border: '1px solid rgba(0,200,255,0.2)', padding: '16px 20px' }}>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: '2px', color: '#00c8ff', marginBottom: 14 }}>
+            ⚙ EVENT TIME SLOT CONFIGURATION
+          </div>
+          {(['canyon', 'desert']).map(ev => (
+            <div key={ev} style={{ marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '1px', color: '#7a9bb8', marginBottom: 8 }}>
+                {ev === 'canyon' ? '🏔 CANYON STORM' : '🏜 DESERT STORM'}
+              </div>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                {['teamA', 'teamB'].map(team => (
+                  <div key={team} style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 11, color: '#3a5878', marginBottom: 5, letterSpacing: '1px' }}>
+                      {team === 'teamA' ? 'TEAM A TIME SLOT' : 'TEAM B TIME SLOT'}
+                    </div>
+                    <select
+                      value={cfg[ev][team]}
+                      onChange={e => updateSlot(ev, team, e.target.value)}
+                      style={{ width: '100%', background: '#0d1520', border: '1px solid #1e3550', color: '#d0e4f4', padding: '7px 10px', fontFamily: "'Rajdhani',sans-serif", fontSize: 14 }}
+                    >
+                      {EVENT_SLOTS[ev].map(s => (
+                        <option key={s.id} value={s.id}>{s.label} (Server Time)</option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 11, color: '#3a5878', marginTop: 4 }}>Changes save instantly and apply to all members' event view.</div>
+        </div>
+      )}
+
+      {/* Wishlist notice */}
+      <div style={{ margin: '0 20px 16px', background: 'rgba(255,200,0,0.06)', border: '1px solid rgba(255,200,0,0.35)', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ fontSize: 18 }}>📋</span>
+        <div>
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, color: '#ffc800', letterSpacing: '2px' }}>WISHLIST — NOT A SIGNUP</div>
+          <div style={{ fontSize: 12, color: '#a08840', lineHeight: 1.4 }}>This shows where members <em>prefer</em> to fight. It is <strong style={{ color: '#ffc800' }}>not</strong> a confirmed roster. Final team assignments are made by alliance leadership.</div>
+        </div>
+      </div>
+
       <div className="ahq-tab-row" style={{ padding: '0 20px' }}>
         {['canyon', 'desert'].map(t => (
           <button key={t} className={`ahq-tab${tab === t ? ' active' : ''}`} onClick={() => setTab(t)}>
@@ -1294,6 +1391,17 @@ function EventsView({ members, alliance, myMemberId, showPower }) {
           </button>
         ))}
       </div>
+
+      <div style={{ padding: '0 20px 4px 20px' }}>
+        <div style={{ background: 'rgba(13,21,32,0.7)', border: '1px solid #1e3550', padding: '8px 14px', marginBottom: 14, fontSize: 12, color: '#7a9bb8' }}>
+          <span style={{ color: '#d0e4f4', fontWeight: 700 }}>{eventName}</span>
+          {' — '}
+          <span style={{ color: '#00c8ff' }}>Team A:</span> {slotLabel(tab, cfg[tab].teamA)}
+          <span style={{ margin: '0 12px', color: '#1e3550' }}>|</span>
+          <span style={{ color: '#f0a500' }}>Team B:</span> {slotLabel(tab, cfg[tab].teamB)}
+        </div>
+      </div>
+
       <div style={{ padding: '0 20px 20px' }}>
         <div className="ahq-controls" style={{ marginBottom: 14 }}>
           <select className="ahq-sel" value={filterTroop} onChange={e => setFilterTroop(e.target.value)}>
@@ -1504,6 +1612,7 @@ export default function AllianceHQ() {
               alliance={alliance}
               myMemberId={activeSession?.memberId}
               showPower={showPowerInRoster}
+              canManage={canManage}
             />
           ) : (
             <div className="ahq-panel" style={{ textAlign: 'center', padding: 40, color: '#3a5878' }}>
