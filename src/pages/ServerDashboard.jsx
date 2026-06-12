@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword } from '../lib/auth';
-import { Users, BookOpen, Zap, Shield, LogOut, Settings, ChevronRight, Lock, Plus, Eye, EyeOff } from 'lucide-react';
+import { Users, BookOpen, Zap, Shield, LogOut, Settings, ChevronRight, ChevronDown, Lock, Plus, Eye, EyeOff } from 'lucide-react';
 import ParticleBackground from '../components/ParticleBackground';
 
 export default function ServerDashboard() {
@@ -123,38 +123,48 @@ export default function ServerDashboard() {
         </div>
       </div>
 
-      {/* Hero */}
-      <section style={S.hero}>
+      {/* ── Compact hero: title only ── */}
+      <section style={{ ...S.hero, minHeight: 'unset', padding: '80px 24px 40px' }}>
         <div style={S.inviteBadge}>🔒 INVITE ONLY — AUTHORIZED PERSONNEL</div>
         <h1 style={S.h1}>SERVER {server.server_number}</h1>
         <h2 style={S.h2}>{server.name.toUpperCase()}</h2>
         <div style={S.seasonBadge}><Zap size={12} fill="currentColor" /> LAST WAR: SURVIVAL <Zap size={12} fill="currentColor" /></div>
-        <p style={S.heroSub}>Your alliance's command center. Manage your roster, coordinate train rotations, and plan event teams.</p>
-        <div style={S.heroBtns}>
-          {activeSession ? (
-            <>
-              <button style={S.btnPrimary} onClick={() => navigate(`/server/${serverId}/alliance`)}>ALLIANCE HQ →</button>
-              {(role === 'admin' || role === 'helper') && (
-                <button
-                  style={{ ...S.btnPrimary, background: 'transparent', border: '2px solid #f0a500', color: '#f0a500' }}
-                  onClick={() => navigate(`/server/${serverId}/admin`)}
-                >
-                  {role === 'helper' ? '🔧 HELPER PANEL →' : '⚡ SERVER ADMIN →'}
-                </button>
-              )}
-            </>
-          ) : (
-            <button style={S.btnPrimary} onClick={() => { setAuthView('login'); setAuthError(''); setAuthForm({ password: '', username: '' }); setShowEmergency(false); }}>LOGIN →</button>
-          )}
-        </div>
       </section>
 
-      {/* ── Two-column layout: Alliances LEFT, Guide RIGHT ── */}
-      <section style={{ position: 'relative', zIndex: 1, maxWidth: 1100, margin: '0 auto', padding: '0 24px 60px' }}>
-        <div className="sd-cols" style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
+      {/* ── Two-column layout ── */}
+      <section style={{ position: 'relative', zIndex: 1, maxWidth: 1140, margin: '0 auto', padding: '0 24px 60px' }}>
+        <div className="sd-cols" style={{ display: 'flex', gap: 28, alignItems: 'flex-start' }}>
 
-          {/* LEFT: Alliances */}
+          {/* LEFT: Alliances + action buttons */}
           <div className="sd-left" style={{ flex: '1 1 0', minWidth: 0 }}>
+
+            {/* Action buttons */}
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20, flexWrap: 'wrap' }}>
+              {activeSession ? (
+                <>
+                  <button style={{ ...S.btnPrimary, flex: '1 1 160px', padding: '12px 20px', fontSize: 13 }}
+                    onClick={() => navigate(`/server/${serverId}/alliance`)}>
+                    <Users size={14} style={{ display: 'inline', marginRight: 6, verticalAlign: 'middle' }} />
+                    ALLIANCE HQ →
+                  </button>
+                  {(role === 'admin' || role === 'helper') && (
+                    <button style={{ ...S.btnPrimary, flex: '1 1 160px', padding: '12px 20px', fontSize: 13, background: 'transparent', border: '1px solid rgba(240,165,0,0.5)', color: '#f0a500' }}
+                      onClick={() => navigate(`/server/${serverId}/admin`)}>
+                      {role === 'helper' ? '🔧 HELPER PANEL →' : '⚡ SERVER ADMIN →'}
+                    </button>
+                  )}
+                  <button style={{ ...S.logoutBtn, padding: '12px 16px' }} onClick={logout}>
+                    <LogOut size={13} /> LOG OUT
+                  </button>
+                </>
+              ) : (
+                <button style={{ ...S.btnPrimary, flex: '1 1 200px', padding: '12px 20px', fontSize: 13 }}
+                  onClick={() => { setAuthView('login'); setAuthError(''); setAuthForm({ password: '', username: '' }); setShowEmergency(false); }}>
+                  🔐 LOGIN TO THIS SERVER →
+                </button>
+              )}
+            </div>
+
             <SectionLabel>ALLIANCES ON THIS SERVER</SectionLabel>
             {alliances.length === 0 ? (
               <div style={{ background: 'rgba(13,21,32,0.7)', border: '1px solid #1e3550', padding: '24px', textAlign: 'center', color: '#3a5878', fontSize: 13 }}>
@@ -175,10 +185,8 @@ export default function ServerDashboard() {
                       </div>
                     </div>
                     {al.roster_public ? (
-                      <button
-                        onClick={() => navigate(`/server/${serverId}/alliance/${al.id}/public`)}
-                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${al.color}14`, border: `1px solid ${al.color}50`, color: al.color, padding: '7px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
-                      >
+                      <button onClick={() => navigate(`/server/${serverId}/alliance/${al.id}/public`)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${al.color}14`, border: `1px solid ${al.color}50`, color: al.color, padding: '7px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}>
                         VIEW ROSTER →
                       </button>
                     ) : (
@@ -191,7 +199,7 @@ export default function ServerDashboard() {
                 ))}
               </div>
             )}
-            {/* Role help — below alliances on desktop */}
+
             {activeSession && (
               <div style={{ marginTop: 16 }}>
                 <RoleHelp role={role} serverId={serverId} navigate={navigate} />
@@ -199,28 +207,20 @@ export default function ServerDashboard() {
             )}
           </div>
 
-          {/* RIGHT: Guide / Quick Reference */}
-          <div className="sd-right" style={{ flex: '0 0 340px', minWidth: 0 }}>
-            <SectionLabel>PLATFORM GUIDE</SectionLabel>
-            <div style={{ background: 'rgba(13,21,32,0.85)', border: '1px solid #1e3550' }}>
-              <GuideSection color="#00c8ff" title="For Members">
-                <GuideLine>Find your server → click <strong style={{ color: '#d0e4f4' }}>LOGIN</strong> → enter your username and password.</GuideLine>
-                <GuideLine>First time? Ask your R5 for an <strong style={{ color: '#d0e4f4' }}>invite link</strong> to register.</GuideLine>
-                <GuideLine>After logging in, go to <strong style={{ color: '#d0e4f4' }}>Alliance HQ → My Profile</strong> and fill in your squad power and troop type.</GuideLine>
-              </GuideSection>
-              <GuideSection color="#f0a500" title="For Alliance Owners (R5)">
-                <GuideLine>Your admin sends you a one-time <strong style={{ color: '#d0e4f4' }}>Owner Invite</strong> link. Click it once to create your account.</GuideLine>
-                <GuideLine>In <strong style={{ color: '#d0e4f4' }}>Alliance HQ → Manage → Settings</strong>, copy and share your Member Invite link with your players.</GuideLine>
-                <GuideLine>Promote up to 10 members to <strong style={{ color: '#d0e4f4' }}>Alliance Admin</strong> in Manage → Admins.</GuideLine>
-              </GuideSection>
-              <GuideSection color="#00e87a" title="For Server Admins" last>
-                <GuideLine>Create alliances in the <strong style={{ color: '#d0e4f4' }}>Admin Panel</strong>. Each alliance gets a reusable member link and a one-time owner link.</GuideLine>
-                <GuideLine>Send each R5 their <strong style={{ color: '#d0e4f4' }}>Owner Invite</strong> link — they self-register, no shared passwords.</GuideLine>
-                <GuideLine>To reset a password, edit the member record in <strong style={{ color: '#d0e4f4' }}>Admin Panel → Manage Roster</strong>.</GuideLine>
-              </GuideSection>
+          {/* RIGHT: Collapsible Rules & Guide */}
+          <div className="sd-right" style={{ flex: '0 0 380px', minWidth: 0 }}>
+            <SectionLabel>
+              RULES &amp; GUIDE
+              <button onClick={() => navigate(`/server/${serverId}/rules`)}
+                style={{ marginLeft: 8, background: 'none', border: 'none', color: '#3a5878', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '1px', cursor: 'pointer', padding: 0, textDecoration: 'underline' }}>
+                OPEN FULL PAGE →
+              </button>
+            </SectionLabel>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {RULE_SECTIONS.map((sec, i) => (
+                <CollapsibleRule key={i} section={sec} defaultOpen={i === 0} />
+              ))}
             </div>
-
-            {/* Mobile bounce hint — hidden on desktop via CSS */}
             <div className="sd-scroll-hint" style={{ display: 'none', textAlign: 'center', padding: '16px 0 0', color: '#3a5878', fontSize: 11, letterSpacing: '2px', animation: 'bounce 2s infinite' }}>
               ↓ MORE BELOW
             </div>
@@ -276,29 +276,95 @@ export default function ServerDashboard() {
   );
 }
 
+// Rules data mirrored from Rules.jsx so we can embed it inline
+const RULE_SECTIONS = [
+  {
+    title: 'ROLES & PERMISSIONS', color: '#00c8ff',
+    items: [
+      { h: 'Server Admin', b: 'Manages the server workspace. Creates alliances, manages all members, controls season settings, and handles server handshakes.' },
+      { h: 'Alliance Owner (R5)', b: 'Leader of an alliance. Manages roster, promotes officers, sets up train rotations, and shares invite links. Gets in via a one-time Owner Invite from the server admin.' },
+      { h: 'Alliance Admin (Officer)', b: 'Up to 10 members per alliance. Can edit member profiles and manage the roster. Joins the same way as regular members via the Member Invite link.' },
+      { h: 'Server Helper', b: 'Promoted by the server admin. Can view all members and reassign them between alliances. Cannot change server settings.' },
+      { h: 'Member', b: 'Regular player. Joins via the Member Invite link. Logs in with their own username and password. Can view the roster and update their own profile.' },
+    ],
+  },
+  {
+    title: 'SERVER STRUCTURE', color: '#3a9bff',
+    items: [
+      { h: 'Seasons', b: 'Each server runs seasons 1–6. Between seasons the map resets. Season 0 is pre-season / setup. The server admin sets the active season in the Admin Panel.' },
+      { h: 'Alliances', b: 'Each server hosts multiple alliances. Every member belongs to exactly one alliance per server.' },
+      { h: 'Logging in', b: 'Everyone logs in with a personal username and password. There are no shared passwords. Forgot yours? Ask your Alliance Owner or an Alliance Admin to reset it.' },
+    ],
+  },
+  {
+    title: 'THE WAR MAP', color: '#f0a500',
+    items: [
+      { h: 'Live map', b: 'Shows current territory ownership. Public servers allow anyone to view it; private servers require login.' },
+      { h: 'Planning map', b: 'A private per-alliance layer. Use it to mark attack targets and coordinate before committing on the live map.' },
+      { h: 'Map sharing', b: 'When two servers set up a handshake, they can share live map and/or plan map data. Each alliance controls their own opt-in.' },
+    ],
+  },
+  {
+    title: 'SERVER HANDSHAKES', color: '#c87aff',
+    items: [
+      { h: 'What is a handshake?', b: 'A mutual agreement between two server admins to share data. One admin generates an invite code and sends it to the other to accept.' },
+      { h: 'Sharing caps', b: 'The server admin sets the maximum scope: live map, roster names, or player stats. Alliance Owners decide individually whether to opt in.' },
+      { h: 'Revoking access', b: 'Either server admin can revoke a handshake at any time. Shared data immediately disappears from the partner server.' },
+    ],
+  },
+  {
+    title: 'MEMBER ACCOUNTS', color: '#00e87a',
+    items: [
+      { h: 'Registration', b: 'Members join via the Member Invite link. They choose a unique username and password. Passwords are stored as SHA-256 hashes — never plain text.' },
+      { h: 'Profile data', b: 'Fill in your squad powers, troop types, garrison, profession, and event availability for Canyon Storm and Desert Storm so leadership can build accurate teams.' },
+      { h: 'Password reset', b: 'Ask your Alliance Owner or an Alliance Admin. They can reset it from the MANAGE → ROSTER tab in Alliance HQ.' },
+    ],
+  },
+  {
+    title: 'ETIQUETTE & FAIR PLAY', color: '#ff6080',
+    items: [
+      { h: 'Keep the map accurate', b: 'Update territory ownership promptly after battles. An outdated map misleads your own alliance\'s planning.' },
+      { h: 'Handshake trust', b: 'Only establish handshakes with servers you have a genuine agreement with. Sharing your plan map exposes your attack intent.' },
+      { h: 'Dispute resolution', b: 'Tile disputes should be resolved in your alliance\'s Discord. This planner is a coordination tool, not an arbitration system.' },
+    ],
+  },
+];
+
+function CollapsibleRule({ section, defaultOpen }) {
+  const [open, setOpen] = useState(defaultOpen ?? false);
+  return (
+    <div style={{ background: 'rgba(13,21,32,0.85)', border: `1px solid ${open ? section.color + '40' : '#1e3550'}`, transition: 'border-color 0.2s' }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', padding: '12px 16px', cursor: 'pointer', textAlign: 'left' }}
+      >
+        <span style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '2px', color: section.color }}>
+          {section.title}
+        </span>
+        <ChevronDown size={14} style={{ color: '#3a5878', transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', flexShrink: 0 }} />
+      </button>
+      {open && (
+        <div style={{ padding: '0 16px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {section.items.map((item, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+              <div style={{ width: 4, height: 4, background: section.color + '80', borderRadius: '50%', flexShrink: 0, marginTop: 8 }} />
+              <div>
+                <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, color: '#d0e4f4', marginBottom: 2 }}>{item.h}</div>
+                <div style={{ fontSize: 13, color: '#8aabc8', lineHeight: 1.6 }}>{item.b}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function SectionLabel({ children }) {
   return (
     <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '3px', color: '#3a5878', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
       {children}
       <div style={{ flex: 1, height: 1, background: '#1e3550' }} />
-    </div>
-  );
-}
-
-function GuideSection({ color, title, children, last }) {
-  return (
-    <div style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid #1a2a3a' }}>
-      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', color, marginBottom: 10 }}>{title.toUpperCase()}</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>{children}</div>
-    </div>
-  );
-}
-
-function GuideLine({ children }) {
-  return (
-    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-      <div style={{ width: 4, height: 4, background: '#1e3550', borderRadius: '50%', flexShrink: 0, marginTop: 8 }} />
-      <div style={{ fontSize: 13, color: '#8aabc8', lineHeight: 1.6 }}>{children}</div>
     </div>
   );
 }
