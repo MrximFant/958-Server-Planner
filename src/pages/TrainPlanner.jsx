@@ -647,68 +647,18 @@ export default function TrainPlanner() {
           )}
         </div>
 
-        {/* Row 2: Week Navigator */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px', flexWrap: 'wrap' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: '#3a5878' }}>WEEK START:</span>
-            <input
-              type="date"
-              value={currentWeekKey}
-              onChange={e => {
-                const monday = getMondayDate(new Date(e.target.value + 'T12:00:00'));
-                const key = toDateString(monday);
-                const existing = allSchedules.find(s => s.week_label === key);
-                guardedDateChange(key, existing || null);
-              }}
-              readOnly={!canEdit}
-              style={{ background: '#0a1220', border: '1px solid #1e3550', color: '#7a9bb8', padding: '3px 8px', fontFamily: "'Share Tech Mono',monospace", fontSize: 11 }}
-            />
-          </div>
-
-          <button
-            onClick={() => guardedNavigateWeek(-1)}
-            disabled={sortedScheds.length === 0 || schedIdx <= 0}
-            style={{ ...S.weekNavBtn, opacity: (sortedScheds.length === 0 || schedIdx <= 0) ? 0.3 : 1 }}
-          >
-            ← PREV WEEK
-          </button>
-
-          <div style={{ flex: 1, textAlign: 'center', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', color: '#d0e4f4', minWidth: 160 }}>
+        {/* Row 2: active week label */}
+        <div style={{ height: 32, display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px', borderTop: '1px solid rgba(30,53,80,0.4)' }}>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: '#3a5878' }}>WEEK:</span>
+          <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: '#d0e4f4' }}>
             {currentWeekKey ? formatWeekRange(currentWeekKey) : 'No week selected'}
-            {sortedScheds.length > 1 && (
-              <span style={{ fontSize: 9, color: '#3a5878', marginLeft: 8 }}>
-                ({schedIdx >= 0 ? schedIdx + 1 : '?'}/{sortedScheds.length})
-              </span>
-            )}
-          </div>
-
-          <button
-            onClick={() => guardedNavigateWeek(1)}
-            disabled={sortedScheds.length === 0 || schedIdx >= sortedScheds.length - 1}
-            style={{ ...S.weekNavBtn, opacity: (sortedScheds.length === 0 || schedIdx >= sortedScheds.length - 1) ? 0.3 : 1 }}
-          >
-            NEXT WEEK →
-          </button>
-
-          {canEdit && (
-            <button onClick={createNewWeek} style={{ ...S.weekNavBtn, background: 'rgba(0,200,255,0.06)', border: '1px solid rgba(0,200,255,0.25)', color: '#00c8ff' }}>
-              + NEW WEEK
-            </button>
+          </span>
+          {sortedScheds.length > 1 && schedIdx >= 0 && (
+            <span style={{ fontSize: 9, color: '#3a5878' }}>({schedIdx + 1}/{sortedScheds.length})</span>
           )}
-          {canEdit && scheduleId && (
-            <button onClick={handleDeleteWeek} style={{ ...S.weekNavBtn, background: 'rgba(255,64,96,0.06)', border: '1px solid rgba(255,64,96,0.3)', color: '#ff4060' }} title="Delete this week's schedule from database">
-              🗑 DELETE WEEK
-            </button>
-          )}
-
-          <input
-            value={weekLabelOverride}
-            onChange={e => { setWeekLabelOverride(e.target.value); markDirty(); }}
-            placeholder={displayLabel}
-            style={{ background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', padding: '3px 8px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', width: 130 }}
-            title="Label override (leave blank to auto-generate)"
-            readOnly={!canEdit}
-          />
+          <div style={{ flex: 1 }} />
+          <button onClick={() => guardedNavigateWeek(-1)} disabled={schedIdx <= 0} style={{ ...S.weekNavBtn, opacity: schedIdx <= 0 ? 0.3 : 1, padding: '2px 8px', fontSize: 10 }}>← PREV</button>
+          <button onClick={() => guardedNavigateWeek(1)} disabled={schedIdx >= sortedScheds.length - 1} style={{ ...S.weekNavBtn, opacity: schedIdx >= sortedScheds.length - 1 ? 0.3 : 1, padding: '2px 8px', fontSize: 10 }}>NEXT →</button>
         </div>
       </div>
 
@@ -769,6 +719,61 @@ export default function TrainPlanner() {
               setSlots={setSlots}
               markDirty={markDirty}
             />
+          </div>
+
+          {/* ── Week List ──────────────────────────────────────────── */}
+          <div style={{ flexShrink: 0, borderTop: '1px solid #1e3550' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 6px' }}>
+              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#3a5878' }}>WEEKS ({sortedScheds.length})</div>
+              {canEdit && (
+                <button onClick={createNewWeek} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: '#00c8ff', background: 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.25)', padding: '2px 8px', cursor: 'pointer' }}>+ NEW</button>
+              )}
+            </div>
+            <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+              {sortedScheds.length === 0 && (
+                <div style={{ padding: '8px 12px', fontSize: 10, color: '#3a5878', fontStyle: 'italic' }}>No saved weeks yet. Save to create one.</div>
+              )}
+              {sortedScheds.map((s, i) => {
+                const isActive = s.id === scheduleId;
+                const label = formatWeekRange(s.week_label);
+                return (
+                  <div
+                    key={s.id}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: isActive ? 'rgba(240,165,0,0.07)' : 'transparent', borderLeft: isActive ? '2px solid #f0a500' : '2px solid transparent', cursor: 'pointer' }}
+                    onClick={() => {
+                      if (!isActive) {
+                        if (isDirty) { setPendingNav({ type: 'date', key: s.week_label, sched: s }); }
+                        else applySchedule(s);
+                      }
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 10, color: isActive ? '#f0a500' : '#7a9bb8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                      <div style={{ fontSize: 8, color: '#3a5878', letterSpacing: '1px' }}>WK {i + 1}</div>
+                    </div>
+                    {canEdit && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (isActive) { handleDeleteWeek(); }
+                          else {
+                            if (!confirm('Delete this week\'s schedule?')) return;
+                            supabase.from('train_slots').delete().eq('schedule_id', s.id).then(() =>
+                              supabase.from('train_schedules').delete().eq('id', s.id)
+                            );
+                            setAllSchedules(prev => prev.filter(x => x.id !== s.id));
+                          }
+                        }}
+                        title="Delete week"
+                        style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', padding: '2px 4px', fontSize: 12, opacity: 0.5, flexShrink: 0 }}
+                        onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
+                        onMouseLeave={e => { e.currentTarget.style.opacity = '0.5'; }}
+                      >🗑</button>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 

@@ -100,7 +100,8 @@ export default function Register() {
       allianceRole: isOwnerInvite ? 'owner' : 'member',
     });
 
-    setStep('success');
+    // Send straight to MY PROFILE so they can fill in their stats
+    navigate(`/server/${serverId}/alliance?tab=profile&welcome=1`);
     setBusy(false);
   }
 

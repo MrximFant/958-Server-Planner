@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword, generateInviteCode } from '../lib/auth';
@@ -1323,6 +1323,7 @@ function LoadingScreen() {
 export default function AllianceHQ() {
   const { serverId } = useParams();
   const navigate     = useNavigate();
+  const [searchParams] = useSearchParams();
   const { session }  = useAuth();
   const [toast, showToast] = useToast();
 
@@ -1337,7 +1338,8 @@ export default function AllianceHQ() {
   const [alliance,        setAlliance]        = useState(null);
   const [members,         setMembers]         = useState([]);
   const [loading,         setLoading]         = useState(true);
-  const [mainTab, setMainTab] = useState('home');
+  const initialTab = searchParams.get('tab') || 'home';
+  const [mainTab, setMainTab] = useState(initialTab);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
@@ -1512,12 +1514,19 @@ export default function AllianceHQ() {
 
         {/* 👤 MY PROFILE */}
         {mainTab === 'profile' && activeSession?.memberId && (
-          <MyProfilePanel
-            memberId={activeSession.memberId}
-            members={members}
-            showToast={showToast}
-            onReload={loadAlliance}
-          />
+          <>
+            {searchParams.get('welcome') === '1' && (
+              <div style={{ margin: '16px 24px 0', padding: '14px 18px', background: 'rgba(0,232,122,0.07)', border: '1px solid rgba(0,232,122,0.3)', color: '#00e87a', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: '1px' }}>
+                🎉 WELCOME! Fill in your stats below so your alliance leaders can plan events around you.
+              </div>
+            )}
+            <MyProfilePanel
+              memberId={activeSession.memberId}
+              members={members}
+              showToast={showToast}
+              onReload={loadAlliance}
+            />
+          </>
         )}
 
         {/* ⚙️ MANAGE */}
