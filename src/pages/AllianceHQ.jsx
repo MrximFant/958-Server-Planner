@@ -1247,17 +1247,33 @@ const EVENT_SLOTS = {
 
 function p2(n) { return String(n).padStart(2, '0'); }
 
-// Convert server-time hour+minute (UTC-2) to user local time string
-function serverToLocal(h, m) {
-  const d = new Date(Date.UTC(2000, 0, 6, h + 2, m, 0));
+// Return the date of the next upcoming occurrence of a weekday (0=Sun…6=Sat).
+// Using a real upcoming date ensures the browser applies the correct DST offset.
+function nextWeekday(targetDay) {
+  const now = new Date();
+  const diff = (targetDay - now.getDay() + 7) % 7;
+  const d = new Date(now);
+  d.setDate(now.getDate() + (diff === 0 ? 7 : diff));
+  return d;
+}
+
+// Convert server-time hour+minute (UTC-2, no DST) to user local time string.
+// weekday: 0=Sun … 6=Sat (4=Thursday, 5=Friday)
+function serverToLocal(h, m, weekday) {
+  const ref = nextWeekday(weekday ?? 4);
+  // Server is UTC-2 fixed → UTC = server + 2h
+  const utcMs = Date.UTC(ref.getFullYear(), ref.getMonth(), ref.getDate(), h + 2, m, 0);
+  const d = new Date(utcMs);
   return `${p2(d.getHours())}:${p2(d.getMinutes())}`;
 }
 
 function slotTimeStrings(slot) {
   const srvStart = `${p2(slot.startH)}:${p2(slot.startM)}`;
   const srvEnd   = `${p2(slot.endH)}:${p2(slot.endM)}`;
-  const locStart = serverToLocal(slot.startH, slot.startM);
-  const locEnd   = serverToLocal(slot.endH,   slot.endM);
+  // weekday from slot.day: Thursday=4, Friday=5
+  const wd = slot.day === 'Friday' ? 5 : 4;
+  const locStart = serverToLocal(slot.startH, slot.startM, wd);
+  const locEnd   = serverToLocal(slot.endH,   slot.endM,   wd);
   return { srvStart, srvEnd, locStart, locEnd };
 }
 
