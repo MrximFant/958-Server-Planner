@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../supabaseClient';
 import { generateInviteCode, hashPassword } from '../lib/auth';
 import { Copy, Check, Shield, RefreshCw, Search } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
 
 const SUPER_PASSWORD = import.meta.env.VITE_SUPERADMIN_PASSWORD;
 
@@ -163,6 +164,7 @@ export default function SuperAdmin() {
   if (!authed) {
     return (
       <div style={S.root}>
+        <ParticleBackground />
         <div style={S.box}>
           <div style={S.logo}><Shield size={18} style={{ color: '#ff4060' }} /> SUPER ADMIN</div>
           <p style={{ color: '#3a5878', fontSize: 12, marginBottom: 20 }}>
@@ -191,6 +193,7 @@ export default function SuperAdmin() {
 
   return (
     <div style={{ ...S.root, alignItems: 'flex-start' }}>
+      <ParticleBackground />
       <div style={{ ...S.box, maxWidth: 820 }}>
 
         {/* Header */}

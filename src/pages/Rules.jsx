@@ -1,5 +1,6 @@
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
 
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');`;
 
@@ -67,7 +68,8 @@ export default function RulesPage() {
   const { serverId } = useParams();
 
   return (
-    <div style={{ minHeight: '100vh', background: '#080d14', fontFamily: "'Rajdhani',sans-serif", color: '#d0e4f4' }}>
+    <div style={{ minHeight: '100vh', background: '#080d14', fontFamily: "'Rajdhani',sans-serif", color: '#d0e4f4', position: 'relative' }}>
+      <ParticleBackground />
       <style>{FONT}</style>
 
       {/* Header */}

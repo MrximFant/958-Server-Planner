@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword, generateInviteCode } from '../lib/auth';
 import { Plus, Trash2, Copy, Check, ArrowLeft, Users, Shield, Link, Settings, Edit2, X, Eye, EyeOff, GitMerge } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
 
 const TABS = ['ALLIANCES', 'MEMBERS', 'HANDSHAKES', 'SERVER'];
 
@@ -48,6 +49,7 @@ export default function AdminPanel() {
 
   return (
     <div style={S.root}>
+      <ParticleBackground />
       <div style={S.gridBg} />
 
       {/* Top bar */}

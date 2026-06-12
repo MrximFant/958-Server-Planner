@@ -1,391 +1,188 @@
 import { useNavigate } from 'react-router-dom';
-import { useEffect, useRef } from 'react';
-import { Map, Users, BookOpen, Trophy, Clock, Zap, Shield, ChevronRight } from 'lucide-react';
-
-const FEATURES = [
-  {
-    to: '/map',
-    icon: Map,
-    color: '#00c8ff',
-    glow: 'rgba(0,200,255,0.15)',
-    border: 'rgba(0,200,255,0.3)',
-    label: 'WAR MAP',
-    title: 'Territory Planner',
-    desc: 'Live map of every bank and city. Assign ownership, project vulnerabilities, and plan your next attack in real time.',
-    tag: 'LIVE',
-  },
-  {
-    to: '/alliance',
-    icon: Users,
-    color: '#f0a500',
-    glow: 'rgba(240,165,0,0.15)',
-    border: 'rgba(240,165,0,0.3)',
-    label: 'ALLIANCE HQ',
-    title: 'Member Roster',
-    desc: 'Full alliance roster with squad powers, troop types, Canyon Storm & Desert Storm preferences and season professions.',
-    tag: 'COMMAND',
-  },
-  {
-    to: '/rules',
-    icon: BookOpen,
-    color: '#00e87a',
-    glow: 'rgba(0,232,122,0.15)',
-    border: 'rgba(0,232,122,0.3)',
-    label: 'RULES',
-    title: 'Game Guide',
-    desc: 'Complete rulebook for territory warfare. Banks, cities, attack windows, capture limits and connection rules.',
-    tag: 'GUIDE',
-  },
-  {
-    to: null,
-    icon: Trophy,
-    color: '#a040d0',
-    glow: 'rgba(160,64,208,0.15)',
-    border: 'rgba(160,64,208,0.3)',
-    label: 'LEADERBOARD',
-    title: 'Alliance Rankings',
-    desc: 'Season standings, influence totals, city counts and crystal gold rates across all alliances on the server.',
-    tag: 'SOON',
-    disabled: true,
-  },
-  {
-    to: null,
-    icon: Clock,
-    color: '#ff4060',
-    glow: 'rgba(255,64,96,0.15)',
-    border: 'rgba(255,64,96,0.3)',
-    label: 'SEASONS',
-    title: 'Season History',
-    desc: 'Past season outcomes, territory snapshots and alliance performance trends across every server season.',
-    tag: 'SOON',
-    disabled: true,
-  },
-];
+import { Zap, LogIn, Plus, Key, ChevronRight } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
 
 export default function Landing() {
   const navigate = useNavigate();
-  const canvasRef = useRef(null);
-
-  // Animated particle background
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    let W = canvas.width  = window.innerWidth;
-    let H = canvas.height = window.innerHeight;
-
-    const particles = Array.from({ length: 60 }, () => ({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: (Math.random() - 0.5) * 0.3,
-      r: Math.random() * 1.5 + 0.5,
-      a: Math.random() * 0.4 + 0.1,
-    }));
-
-    let raf;
-    function draw() {
-      ctx.clearRect(0, 0, W, H);
-      particles.forEach(p => {
-        p.x += p.vx; p.y += p.vy;
-        if (p.x < 0) p.x = W; if (p.x > W) p.x = 0;
-        if (p.y < 0) p.y = H; if (p.y > H) p.y = 0;
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0,200,255,${p.a})`;
-        ctx.fill();
-      });
-      // Draw connections
-      for (let i = 0; i < particles.length; i++) {
-        for (let j = i + 1; j < particles.length; j++) {
-          const dx = particles[i].x - particles[j].x;
-          const dy = particles[i].y - particles[j].y;
-          const dist = Math.sqrt(dx*dx + dy*dy);
-          if (dist < 120) {
-            ctx.beginPath();
-            ctx.moveTo(particles[i].x, particles[i].y);
-            ctx.lineTo(particles[j].x, particles[j].y);
-            ctx.strokeStyle = `rgba(0,200,255,${0.06 * (1 - dist/120)})`;
-            ctx.lineWidth = 0.5;
-            ctx.stroke();
-          }
-        }
-      }
-      raf = requestAnimationFrame(draw);
-    }
-    draw();
-
-    const onResize = () => {
-      W = canvas.width  = window.innerWidth;
-      H = canvas.height = window.innerHeight;
-    };
-    window.addEventListener('resize', onResize);
-    return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', onResize); };
-  }, []);
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: '#080d14',
-      color: '#d0e4f4',
-      fontFamily: "'Exo 2', sans-serif",
-      overflowX: 'hidden',
-      position: 'relative',
-    }}>
-      {/* Animated canvas bg */}
-      <canvas ref={canvasRef} style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none' }} />
+    <div style={S.root}>
+      <ParticleBackground />
+      <div style={S.gridBg} />
 
-      {/* Grid overlay */}
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
-        backgroundImage: 'linear-gradient(rgba(0,200,255,.025) 1px,transparent 1px), linear-gradient(90deg,rgba(0,200,255,.025) 1px,transparent 1px)',
-        backgroundSize: '44px 44px',
-      }} />
+      {/* ── TOP BADGE ── */}
+      <div style={S.topBadge}>
+        <Zap size={10} fill="currentColor" />
+        LAST WAR: SURVIVAL — ALLIANCE PLANNER
+        <Zap size={10} fill="currentColor" />
+      </div>
 
-      {/* ── HERO ── */}
-      <section style={{
-        position: 'relative', zIndex: 1,
-        minHeight: '100vh',
-        display: 'flex', flexDirection: 'column',
-        alignItems: 'center', justifyContent: 'center',
-        padding: '80px 24px 60px',
-        textAlign: 'center',
-      }}>
-        {/* Invite-only badge */}
-        <div style={{
-          marginBottom: 32,
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          background: 'rgba(255,64,96,0.1)', border: '1px solid rgba(255,64,96,0.3)',
-          padding: '5px 16px', color: '#ff4060',
-          fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-          fontSize: 11, letterSpacing: '2px',
-        }}>
-          🔒 INVITE ONLY — AUTHORIZED PERSONNEL
-        </div>
-
-        {/* Main title */}
-        <div style={{ marginBottom: 12 }}>
-          <h1 style={{
-            fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-            fontSize: 'clamp(48px, 10vw, 96px)',
-            lineHeight: 1,
-            color: '#fff',
-            letterSpacing: '-1px',
-            textShadow: '0 0 60px rgba(0,200,255,0.4), 0 0 120px rgba(0,200,255,0.15)',
-            margin: 0,
-          }}>
-            958
-          </h1>
-          <h2 style={{
-            fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-            fontSize: 'clamp(28px, 5vw, 52px)',
-            color: '#00c8ff',
-            letterSpacing: '8px',
-            textTransform: 'uppercase',
-            margin: '8px 0 0',
-            textShadow: '0 0 30px rgba(0,200,255,0.5)',
-          }}>
-            MASTERMIND
-          </h2>
-        </div>
-
-        {/* Season badge */}
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8,
-          background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.4)',
-          padding: '7px 20px', marginBottom: 40,
-          fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-          fontSize: 13, letterSpacing: '3px', color: '#f0a500',
-        }}>
-          <Zap size={12} fill="currentColor" />
+      {/* ── TITLE BLOCK ── */}
+      <div style={S.titleBlock}>
+        <h1 style={S.h1}>958</h1>
+        <h2 style={S.h2}>MASTERMIND</h2>
+        <div style={S.seasonBadge}>
+          <Zap size={11} fill="currentColor" />
           SEASON 5 · WILD WEST
-          <Zap size={12} fill="currentColor" />
+          <Zap size={11} fill="currentColor" />
+        </div>
+      </div>
+
+      {/* ── MAIN CONTENT — two columns ── */}
+      <div style={S.body} className="land-body">
+        {/* LEFT — always-visible help */}
+        <div style={S.helpPanel}>
+          <div style={S.helpTitle}>HOW TO GET STARTED</div>
+
+          <HelpSection color="#00c8ff" label="FOR MEMBERS">
+            <HelpStep n="1" title="Find your server">
+              Click <strong style={{ color: '#d0e4f4' }}>Enter Server</strong> on the right and select your server number from the list.
+            </HelpStep>
+            <HelpStep n="2" title="Log in">
+              On the server page, click <strong style={{ color: '#d0e4f4' }}>LOGIN</strong> and enter the username and password you registered with.
+            </HelpStep>
+            <HelpStep n="3" title="First time? Get an invite link">
+              You need an invite link to create your account. Ask your Alliance Owner (R5) — they can find it in Alliance HQ → Settings.
+            </HelpStep>
+          </HelpSection>
+
+          <HelpSection color="#f0a500" label="FOR ALLIANCE OWNERS (R5)">
+            <HelpStep n="1" title="Accept your owner invite">
+              Your server admin will send you a one-time Owner Invite link. Click it to create your account. You automatically receive full owner access to your alliance.
+            </HelpStep>
+            <HelpStep n="2" title="Invite your members">
+              Go to Alliance HQ → Manage → Settings, copy the <strong style={{ color: '#d0e4f4' }}>Member Invite</strong> link and share it with your players. They register themselves — no manual entry needed.
+            </HelpStep>
+            <HelpStep n="3" title="Manage your alliance">
+              Use Alliance HQ to view your roster, set up train rotations, and plan Canyon Storm and Desert Storm event teams.
+            </HelpStep>
+          </HelpSection>
+
+          <HelpSection color="#00e87a" label="FOR SERVER ADMINS">
+            <HelpStep n="1" title="Request a workspace">
+              Click <strong style={{ color: '#d0e4f4' }}>Request Server</strong> → fill in your server number, workspace name, and Discord handle. The platform admin will review and approve it — usually within 24 hours.
+            </HelpStep>
+            <HelpStep n="2" title="Activate your server">
+              Once approved, you receive an activation code via Discord. Click <strong style={{ color: '#d0e4f4' }}>Activate Server</strong> and enter the code to create your workspace and admin account.
+            </HelpStep>
+            <HelpStep n="3" title="Set up alliances">
+              In the Admin Panel, create each alliance and send the one-time Owner Invite link to each R5. They register themselves — no shared passwords.
+            </HelpStep>
+          </HelpSection>
         </div>
 
-        <p style={{
-          maxWidth: 480, color: '#7a9bb8', lineHeight: 1.7,
-          fontSize: 15, marginBottom: 48,
-        }}>
-          Your alliance's command center. Plan territory warfare, coordinate your roster,
-          and dominate the map every season.
-        </p>
+        {/* RIGHT — action buttons */}
+        <div style={S.btnPanel}>
+          <div style={S.btnPanelTitle}>GET STARTED</div>
+          <p style={S.btnPanelSub}>
+            Choose what you need below. Already have an account? Enter your server and log in directly.
+          </p>
 
-        {/* CTA buttons */}
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 80 }}>
-          <button
-            onClick={() => navigate('/map')}
-            style={{
-              background: '#00c8ff', color: '#080d14',
-              border: 'none', padding: '14px 36px',
-              fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-              fontSize: 14, letterSpacing: '2px', textTransform: 'uppercase',
-              cursor: 'pointer',
-              clipPath: 'polygon(8px 0%,100% 0%,calc(100% - 8px) 100%,0% 100%)',
-              transition: 'all 0.2s',
-              boxShadow: '0 0 30px rgba(0,200,255,0.3)',
-            }}
-            onMouseEnter={e => e.currentTarget.style.background = '#fff'}
-            onMouseLeave={e => e.currentTarget.style.background = '#00c8ff'}
-          >
-            ENTER WAR MAP →
-          </button>
-          <button
-            onClick={() => navigate('/alliance')}
-            style={{
-              background: 'transparent', color: '#f0a500',
-              border: '1px solid rgba(240,165,0,0.5)', padding: '14px 36px',
-              fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-              fontSize: 14, letterSpacing: '2px', textTransform: 'uppercase',
-              cursor: 'pointer', transition: 'all 0.2s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = 'rgba(240,165,0,0.1)'; e.currentTarget.style.borderColor = '#f0a500'; }}
-            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'rgba(240,165,0,0.5)'; }}
-          >
-            ALLIANCE HQ
-          </button>
-        </div>
+          <ActionBtn
+            icon={<LogIn size={22} />}
+            color="#00c8ff"
+            title="Enter Server"
+            desc="Find your server and log in with your username and password."
+            onClick={() => navigate('/servers?tab=list')}
+          />
+          <ActionBtn
+            icon={<Plus size={22} />}
+            color="#f0a500"
+            title="Request Server"
+            desc="Server admins: submit a request to get your own workspace approved."
+            onClick={() => navigate('/servers?tab=request')}
+          />
+          <ActionBtn
+            icon={<Key size={22} />}
+            color="#00e87a"
+            title="Activate Server"
+            desc="Already approved? Enter your activation code to create your workspace."
+            onClick={() => navigate('/servers?tab=activate')}
+          />
 
-        {/* Scroll hint */}
-        <div style={{ color: '#3a5878', fontSize: 11, letterSpacing: '2px', animation: 'bounce 2s infinite' }}>
-          ↓ ALL TOOLS
+          <div style={S.securityNote}>
+            🔒 INVITE ONLY — AUTHORIZED PERSONNEL ONLY
+          </div>
         </div>
-      </section>
-
-      {/* ── FEATURE CARDS ── */}
-      <section style={{
-        position: 'relative', zIndex: 1,
-        padding: '60px 24px 80px',
-        maxWidth: 1200, margin: '0 auto',
-      }}>
-        <div style={{
-          textAlign: 'center', marginBottom: 48,
-        }}>
-          <div style={{
-            fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-            fontSize: 11, letterSpacing: '3px', color: '#3a5878',
-            textTransform: 'uppercase', marginBottom: 10,
-          }}>COMMAND CENTER</div>
-          <h3 style={{
-            fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-            fontSize: 28, color: '#d0e4f4', letterSpacing: '1px', margin: 0,
-          }}>ALL TOOLS</h3>
-        </div>
-
-        <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: 16,
-        }}>
-          {FEATURES.map(f => (
-            <FeatureCard key={f.label} feature={f} navigate={navigate} />
-          ))}
-        </div>
-      </section>
+      </div>
 
       {/* ── FOOTER ── */}
-      <footer style={{
-        position: 'relative', zIndex: 1,
-        borderTop: '1px solid #1e3550',
-        padding: '24px',
-        textAlign: 'center',
-        fontFamily: "'Share Tech Mono', monospace",
-        fontSize: 10, color: '#3a5878', letterSpacing: '2px',
-      }}>
+      <footer style={S.footer}>
         958 MASTERMIND · SEASON 5: WILD WEST · AUTHORIZED USE ONLY
       </footer>
 
       <style>{`
-        @keyframes bounce {
-          0%, 100% { transform: translateY(0); opacity: 0.5; }
-          50% { transform: translateY(6px); opacity: 1; }
-        }
         @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&family=Exo+2:wght@400;600&display=swap');
+        .land-body { display: flex; gap: 40px; align-items: flex-start; }
+        @media (max-width: 860px) {
+          .land-body { flex-direction: column; }
+        }
       `}</style>
     </div>
   );
 }
 
-function FeatureCard({ feature: f, navigate }) {
-  const isDisabled = f.disabled;
-
+function HelpSection({ color, label, children }) {
   return (
-    <div
-      onClick={() => !isDisabled && f.to && navigate(f.to)}
-      style={{
-        background: isDisabled ? 'rgba(13,21,32,0.4)' : `rgba(13,21,32,0.8)`,
-        border: `1px solid ${isDisabled ? '#1e3550' : f.border}`,
-        padding: '24px',
-        cursor: isDisabled ? 'default' : 'pointer',
-        transition: 'all 0.2s',
-        opacity: isDisabled ? 0.5 : 1,
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-      onMouseEnter={e => {
-        if (!isDisabled) {
-          e.currentTarget.style.background = f.glow;
-          e.currentTarget.style.transform = 'translateY(-2px)';
-          e.currentTarget.style.boxShadow = `0 8px 30px ${f.glow}`;
-        }
-      }}
-      onMouseLeave={e => {
-        if (!isDisabled) {
-          e.currentTarget.style.background = 'rgba(13,21,32,0.8)';
-          e.currentTarget.style.transform = 'translateY(0)';
-          e.currentTarget.style.boxShadow = 'none';
-        }
-      }}
-    >
-      {/* Tag */}
-      <div style={{
-        position: 'absolute', top: 16, right: 16,
-        fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-        fontSize: 9, letterSpacing: '2px',
-        color: f.color, background: f.glow,
-        border: `1px solid ${f.border}`,
-        padding: '2px 7px',
-      }}>{f.tag}</div>
-
-      {/* Icon */}
-      <div style={{
-        width: 44, height: 44, background: f.glow,
-        border: `1px solid ${f.border}`,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        marginBottom: 16, color: f.color,
-      }}>
-        <f.icon size={20} />
+    <div style={{ marginBottom: 28 }}>
+      <div style={{ display: 'inline-block', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '2px', color, background: `${color}12`, border: `1px solid ${color}35`, padding: '3px 10px', marginBottom: 12 }}>
+        {label}
       </div>
-
-      {/* Label */}
-      <div style={{
-        fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-        fontSize: 10, letterSpacing: '2px', color: f.color,
-        marginBottom: 6, textTransform: 'uppercase',
-      }}>{f.label}</div>
-
-      {/* Title */}
-      <div style={{
-        fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-        fontSize: 20, color: '#d0e4f4', marginBottom: 10,
-        letterSpacing: '0.5px',
-      }}>{f.title}</div>
-
-      {/* Desc */}
-      <p style={{
-        color: '#7a9bb8', fontSize: 13, lineHeight: 1.6,
-        margin: '0 0 20px',
-      }}>{f.desc}</p>
-
-      {/* CTA */}
-      {!isDisabled && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 4,
-          fontFamily: "'Rajdhani', sans-serif", fontWeight: 700,
-          fontSize: 11, letterSpacing: '2px', color: f.color,
-          textTransform: 'uppercase',
-        }}>
-          OPEN <ChevronRight size={12} />
-        </div>
-      )}
+      <div style={{ borderLeft: `2px solid ${color}30`, paddingLeft: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {children}
+      </div>
     </div>
   );
 }
+
+function HelpStep({ n, title, children }) {
+  return (
+    <div style={{ display: 'flex', gap: 10 }}>
+      <div style={{ width: 20, height: 20, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: '#00c8ff', fontFamily: "'Share Tech Mono',monospace", fontSize: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 2 }}>
+        {n}
+      </div>
+      <div>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 14, color: '#d0e4f4', marginBottom: 2 }}>{title}</div>
+        <div style={{ fontSize: 13, color: '#7a9bb8', lineHeight: 1.6 }}>{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function ActionBtn({ icon, color, title, desc, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{ width: '100%', background: 'rgba(13,21,32,0.85)', border: `1px solid ${color}40`, padding: '18px 20px', cursor: 'pointer', textAlign: 'left', marginBottom: 12, transition: 'all 0.18s', display: 'flex', alignItems: 'center', gap: 16 }}
+      onMouseEnter={e => { e.currentTarget.style.background = `${color}10`; e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = 'translateX(3px)'; }}
+      onMouseLeave={e => { e.currentTarget.style.background = 'rgba(13,21,32,0.85)'; e.currentTarget.style.borderColor = `${color}40`; e.currentTarget.style.transform = 'translateX(0)'; }}
+    >
+      <div style={{ width: 48, height: 48, background: `${color}12`, border: `1px solid ${color}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0 }}>
+        {icon}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 18, color: '#ffffff', letterSpacing: '0.5px', marginBottom: 3 }}>{title}</div>
+        <div style={{ fontSize: 13, color: '#7a9bb8', lineHeight: 1.5 }}>{desc}</div>
+      </div>
+      <ChevronRight size={18} style={{ color, flexShrink: 0 }} />
+    </button>
+  );
+}
+
+const S = {
+  root: { minHeight: '100vh', background: '#080d14', color: '#d0e4f4', fontFamily: "'Rajdhani',sans-serif", position: 'relative', overflowX: 'hidden', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '48px 24px 0' },
+  gridBg: { position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', backgroundImage: 'linear-gradient(rgba(0,200,255,.02) 1px,transparent 1px),linear-gradient(90deg,rgba(0,200,255,.02) 1px,transparent 1px)', backgroundSize: '44px 44px' },
+  topBadge: { position: 'relative', zIndex: 1, display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.2)', padding: '5px 18px', color: '#00c8ff', fontWeight: 700, fontSize: 11, letterSpacing: '2px', marginBottom: 32 },
+  titleBlock: { position: 'relative', zIndex: 1, textAlign: 'center', marginBottom: 48 },
+  h1: { fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 'clamp(56px,11vw,108px)', lineHeight: 1, color: '#ffffff', letterSpacing: '-2px', textShadow: '0 0 60px rgba(0,200,255,0.45), 0 0 120px rgba(0,200,255,0.15)', margin: '0 0 4px' },
+  h2: { fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 'clamp(22px,4.5vw,44px)', color: '#00c8ff', letterSpacing: '10px', textTransform: 'uppercase', margin: '0 0 20px', textShadow: '0 0 30px rgba(0,200,255,0.5)' },
+  seasonBadge: { display: 'inline-flex', alignItems: 'center', gap: 8, background: 'rgba(240,165,0,0.09)', border: '1px solid rgba(240,165,0,0.35)', padding: '7px 22px', fontWeight: 700, fontSize: 13, letterSpacing: '3px', color: '#f0a500' },
+  body: { position: 'relative', zIndex: 1, width: '100%', maxWidth: 1100, marginBottom: 60 },
+  helpPanel: { flex: '1 1 0', background: 'rgba(13,21,32,0.75)', border: '1px solid #1e3550', padding: '28px 28px 20px' },
+  helpTitle: { fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '3px', color: '#3a5878', marginBottom: 24, paddingBottom: 12, borderBottom: '1px solid #1e3550' },
+  btnPanel: { flex: '0 0 380px', display: 'flex', flexDirection: 'column' },
+  btnPanelTitle: { fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '3px', color: '#3a5878', marginBottom: 10, paddingBottom: 12, borderBottom: '1px solid #1e3550' },
+  btnPanelSub: { fontSize: 14, color: '#7a9bb8', lineHeight: 1.65, marginBottom: 24, marginTop: 4 },
+  securityNote: { marginTop: 8, fontFamily: "'Share Tech Mono',monospace", fontSize: 10, color: '#2a4058', letterSpacing: '1px', textAlign: 'center', padding: '10px 0' },
+  footer: { position: 'relative', zIndex: 1, width: '100%', borderTop: '1px solid #1e3550', padding: '20px 24px', textAlign: 'center', fontFamily: "'Share Tech Mono',monospace", fontSize: 10, color: '#2a4058', letterSpacing: '2px', marginTop: 'auto' },
+};

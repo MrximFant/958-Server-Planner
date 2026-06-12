@@ -149,58 +149,82 @@ export default function ServerDashboard() {
         </div>
       </section>
 
-      {/* Role help banner */}
-      {activeSession && <RoleHelp role={role} serverId={serverId} navigate={navigate} />}
+      {/* ── Two-column layout: Alliances LEFT, Guide RIGHT ── */}
+      <section style={{ position: 'relative', zIndex: 1, maxWidth: 1100, margin: '0 auto', padding: '0 24px 60px' }}>
+        <div className="sd-cols" style={{ display: 'flex', gap: 24, alignItems: 'flex-start' }}>
 
-      {/* Alliance public roster list */}
-      {alliances.length > 0 && (
-        <section style={{ position: 'relative', zIndex: 1, maxWidth: 860, margin: '0 auto', padding: '0 24px 8px' }}>
-          <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '3px', color: '#3a5878' }}>ALLIANCES ON THIS SERVER</div>
-            <div style={{ flex: 1, height: 1, background: '#1e3550' }} />
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {alliances.map(al => (
-              <div key={al.id} style={{ display: 'flex', alignItems: 'center', gap: 16, background: 'rgba(13,21,32,0.85)', border: `1px solid rgba(30,53,80,0.8)`, borderLeft: `3px solid ${al.color}`, padding: '14px 20px' }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: al.color, flexShrink: 0, boxShadow: `0 0 8px ${al.color}` }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 16, color: '#d0e4f4', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {al.name}
-                    {al.tag && <span style={{ fontSize: 10, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace", border: '1px solid #1e3550', padding: '1px 6px' }}>{al.tag}</span>}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace", marginTop: 2 }}>
-                    {al.memberCount} member{al.memberCount !== 1 ? 's' : ''}
-                  </div>
-                </div>
-                {al.roster_public ? (
-                  <button
-                    onClick={() => navigate(`/server/${serverId}/alliance/${al.id}/public`)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${al.color}14`, border: `1px solid ${al.color}50`, color: al.color, padding: '7px 16px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
-                  >
-                    VIEW ROSTER →
-                  </button>
-                ) : (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#2a4058', fontSize: 12 }}>
-                    <Lock size={12} />
-                    <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 9 }}>PRIVATE</span>
-                  </div>
-                )}
+          {/* LEFT: Alliances */}
+          <div className="sd-left" style={{ flex: '1 1 0', minWidth: 0 }}>
+            <SectionLabel>ALLIANCES ON THIS SERVER</SectionLabel>
+            {alliances.length === 0 ? (
+              <div style={{ background: 'rgba(13,21,32,0.7)', border: '1px solid #1e3550', padding: '24px', textAlign: 'center', color: '#3a5878', fontSize: 13 }}>
+                No alliances yet. Set them up in Server Admin.
               </div>
-            ))}
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {alliances.map(al => (
+                  <div key={al.id} style={{ display: 'flex', alignItems: 'center', gap: 14, background: 'rgba(13,21,32,0.85)', border: '1px solid rgba(30,53,80,0.8)', borderLeft: `3px solid ${al.color}`, padding: '14px 18px' }}>
+                    <div style={{ width: 10, height: 10, borderRadius: '50%', background: al.color, flexShrink: 0, boxShadow: `0 0 8px ${al.color}` }} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 16, color: '#ffffff', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                        {al.name}
+                        {al.tag && <span style={{ fontSize: 10, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace", border: '1px solid #1e3550', padding: '1px 6px' }}>{al.tag}</span>}
+                      </div>
+                      <div style={{ fontSize: 12, color: '#4a6880', fontFamily: "'Share Tech Mono',monospace", marginTop: 3 }}>
+                        {al.memberCount} member{al.memberCount !== 1 ? 's' : ''}
+                      </div>
+                    </div>
+                    {al.roster_public ? (
+                      <button
+                        onClick={() => navigate(`/server/${serverId}/alliance/${al.id}/public`)}
+                        style={{ display: 'flex', alignItems: 'center', gap: 6, background: `${al.color}14`, border: `1px solid ${al.color}50`, color: al.color, padding: '7px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', cursor: 'pointer', flexShrink: 0, whiteSpace: 'nowrap' }}
+                      >
+                        VIEW ROSTER →
+                      </button>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5, color: '#2a4058', fontSize: 11, flexShrink: 0 }}>
+                        <Lock size={11} />
+                        <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 9 }}>PRIVATE</span>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+            {/* Role help — below alliances on desktop */}
+            {activeSession && (
+              <div style={{ marginTop: 16 }}>
+                <RoleHelp role={role} serverId={serverId} navigate={navigate} />
+              </div>
+            )}
           </div>
-        </section>
-      )}
 
-      {/* Feature cards */}
-      <section style={S.cards}>
-        {/* Full-width TOOLS divider */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 0, marginBottom: 40 }}>
-          <div style={{ flex: 1, height: 1, background: 'linear-gradient(to right, transparent, rgba(240,165,0,0.4))' }} />
-          <div style={{ padding: '6px 20px', border: '1px solid rgba(240,165,0,0.4)', background: 'rgba(240,165,0,0.07)', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '3px', color: '#f0a500' }}>TOOLS</div>
-          <div style={{ flex: 1, height: 1, background: 'linear-gradient(to left, transparent, rgba(240,165,0,0.4))' }} />
-        </div>
-        <div style={S.grid2}>
-          {FEATURES.map(f => <FeatureCard key={f.label} feature={f} navigate={navigate} session={activeSession} />)}
+          {/* RIGHT: Guide / Quick Reference */}
+          <div className="sd-right" style={{ flex: '0 0 340px', minWidth: 0 }}>
+            <SectionLabel>PLATFORM GUIDE</SectionLabel>
+            <div style={{ background: 'rgba(13,21,32,0.85)', border: '1px solid #1e3550' }}>
+              <GuideSection color="#00c8ff" title="For Members">
+                <GuideLine>Find your server → click <strong style={{ color: '#d0e4f4' }}>LOGIN</strong> → enter your username and password.</GuideLine>
+                <GuideLine>First time? Ask your R5 for an <strong style={{ color: '#d0e4f4' }}>invite link</strong> to register.</GuideLine>
+                <GuideLine>After logging in, go to <strong style={{ color: '#d0e4f4' }}>Alliance HQ → My Profile</strong> and fill in your squad power and troop type.</GuideLine>
+              </GuideSection>
+              <GuideSection color="#f0a500" title="For Alliance Owners (R5)">
+                <GuideLine>Your admin sends you a one-time <strong style={{ color: '#d0e4f4' }}>Owner Invite</strong> link. Click it once to create your account.</GuideLine>
+                <GuideLine>In <strong style={{ color: '#d0e4f4' }}>Alliance HQ → Manage → Settings</strong>, copy and share your Member Invite link with your players.</GuideLine>
+                <GuideLine>Promote up to 10 members to <strong style={{ color: '#d0e4f4' }}>Alliance Admin</strong> in Manage → Admins.</GuideLine>
+              </GuideSection>
+              <GuideSection color="#00e87a" title="For Server Admins" last>
+                <GuideLine>Create alliances in the <strong style={{ color: '#d0e4f4' }}>Admin Panel</strong>. Each alliance gets a reusable member link and a one-time owner link.</GuideLine>
+                <GuideLine>Send each R5 their <strong style={{ color: '#d0e4f4' }}>Owner Invite</strong> link — they self-register, no shared passwords.</GuideLine>
+                <GuideLine>To reset a password, edit the member record in <strong style={{ color: '#d0e4f4' }}>Admin Panel → Manage Roster</strong>.</GuideLine>
+              </GuideSection>
+            </div>
+
+            {/* Mobile bounce hint — hidden on desktop via CSS */}
+            <div className="sd-scroll-hint" style={{ display: 'none', textAlign: 'center', padding: '16px 0 0', color: '#3a5878', fontSize: 11, letterSpacing: '2px', animation: 'bounce 2s infinite' }}>
+              ↓ MORE BELOW
+            </div>
+          </div>
         </div>
       </section>
 
@@ -238,12 +262,43 @@ export default function ServerDashboard() {
 
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');
+        @keyframes bounce { 0%,100%{transform:translateY(0);opacity:.5}50%{transform:translateY(5px);opacity:1} }
         @media (max-width: 600px) {
           .sd-topbar { padding: 10px 14px !important; flex-wrap: wrap; gap: 8px; }
-          .sd-hero { padding: 90px 16px 40px !important; }
-          .sd-cards { padding: 32px 14px 60px !important; }
+        }
+        @media (max-width: 860px) {
+          .sd-cols { flex-direction: column !important; }
+          .sd-right { flex: none !important; width: 100% !important; }
+          .sd-scroll-hint { display: block !important; }
         }
       `}</style>
+    </div>
+  );
+}
+
+function SectionLabel({ children }) {
+  return (
+    <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '3px', color: '#3a5878', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 10 }}>
+      {children}
+      <div style={{ flex: 1, height: 1, background: '#1e3550' }} />
+    </div>
+  );
+}
+
+function GuideSection({ color, title, children, last }) {
+  return (
+    <div style={{ padding: '16px 18px', borderBottom: last ? 'none' : '1px solid #1a2a3a' }}>
+      <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', color, marginBottom: 10 }}>{title.toUpperCase()}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>{children}</div>
+    </div>
+  );
+}
+
+function GuideLine({ children }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+      <div style={{ width: 4, height: 4, background: '#1e3550', borderRadius: '50%', flexShrink: 0, marginTop: 8 }} />
+      <div style={{ fontSize: 13, color: '#8aabc8', lineHeight: 1.6 }}>{children}</div>
     </div>
   );
 }
@@ -332,8 +387,7 @@ function RoleHelp({ role, serverId, navigate }) {
   if (!help) return null;
   const S = styles;
   return (
-    <section style={{ position: 'relative', zIndex: 1, maxWidth: 860, margin: '0 auto', padding: '0 24px 8px' }}>
-      <div style={{ background: 'rgba(13,21,32,0.85)', border: `1px solid rgba(240,165,0,0.2)` }}>
+    <div style={{ background: 'rgba(13,21,32,0.85)', border: `1px solid rgba(240,165,0,0.2)` }}>
         <button
           onClick={() => setOpen(o => !o)}
           style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'none', border: 'none', color: help.color, padding: '12px 18px', cursor: 'pointer', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1.5px', textAlign: 'left' }}
@@ -359,7 +413,6 @@ function RoleHelp({ role, serverId, navigate }) {
           </div>
         )}
       </div>
-    </section>
   );
 }
 

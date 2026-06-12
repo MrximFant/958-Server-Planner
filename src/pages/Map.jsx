@@ -4,6 +4,7 @@ import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import tilesData from '../data/territories.json';
 import { ArrowLeft, ZoomIn, ZoomOut, Menu, X, Lock, Eye, EyeOff, Map, Crosshair } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
 
 const CANVAS_SIZE = 3000;
 
@@ -384,7 +385,8 @@ export default function MapPage() {
   const isTargetMode = selectedAlliance && canEdit && (canEditAll || selectedAlliance.id === myAllianceId);
 
   return (
-    <div style={{ height: '100vh', background: '#080d14', display: 'flex', flexDirection: 'column', fontFamily: "'Rajdhani',sans-serif", overflow: 'hidden' }}>
+    <div style={{ height: '100vh', background: '#080d14', display: 'flex', flexDirection: 'column', fontFamily: "'Rajdhani',sans-serif", overflow: 'hidden', position: 'relative' }}>
+      <ParticleBackground />
       <style>{FONT}</style>
 
       {/* ── Topbar ───────────────────────────────────────────── */}

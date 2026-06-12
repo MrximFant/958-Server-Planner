@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { ArrowLeft, Shuffle, Lock, Unlock, RotateCcw, Save, Train, Info, Download, ChevronLeft, ChevronRight, Settings, Menu, Users } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
 
 // ── Constants ──────────────────────────────────────────────────────
 const DAYS   = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -704,7 +705,8 @@ export default function TrainPlanner() {
   const schedIdx = sortedScheds.findIndex(s => s.id === scheduleId);
 
   return (
-    <div style={{ height: '100vh', background: '#080d14', display: 'flex', flexDirection: 'column', fontFamily: "'Rajdhani',sans-serif", color: '#d0e4f4', overflow: 'hidden' }}>
+    <div style={{ height: '100vh', background: '#080d14', display: 'flex', flexDirection: 'column', fontFamily: "'Rajdhani',sans-serif", color: '#d0e4f4', overflow: 'hidden', position: 'relative' }}>
+      <ParticleBackground />
       <style>{FONT}
         {`
         @media (max-width: 768px) {

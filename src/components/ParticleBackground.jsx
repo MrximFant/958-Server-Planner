@@ -11,7 +11,7 @@ export default function ParticleBackground() {
     let H = canvas.height = window.innerHeight;
 
     // More particles, slower drift, gentle alpha pulse — no pop-in/out
-    const particles = Array.from({ length: 180 }, () => {
+    const particles = Array.from({ length: 400 }, () => {
       const baseAlpha = Math.random() * 0.35 + 0.06;
       return {
         x:  Math.random() * W,

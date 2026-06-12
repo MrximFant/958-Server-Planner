@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { hashPassword, generateInviteCode } from '../lib/auth';
-import { Server, Plus, LogIn, Zap, Key, Eye, EyeOff, ChevronDown, ChevronUp, Info } from 'lucide-react';
+import { Server, Plus, LogIn, Zap, Key, Eye, EyeOff, Search, Info } from 'lucide-react';
 import ParticleBackground from '../components/ParticleBackground';
 
 const DISCORD_WEBHOOK = import.meta.env.VITE_DISCORD_WEBHOOK;
@@ -40,9 +40,13 @@ async function sendDiscordNotification(r) {
 
 export default function ServerSelect() {
   const navigate  = useNavigate();
+  const [searchParams] = useSearchParams();
+  const initialTab = ['list','request','activate','how'].includes(searchParams.get('tab'))
+    ? searchParams.get('tab') : 'list';
   const [servers,  setServers]  = useState([]);
   const [loading,  setLoading]  = useState(true);
-  const [view,     setView]     = useState('how'); // list | request | activate | how
+  const [view,     setView]     = useState(initialTab);
+  const [search,   setSearch]   = useState('');
 
   // Request form
   const [reqForm,    setReqForm]    = useState({ serverNumber: '', name: '', contactName: '', discordUserId: '', message: '' });
@@ -158,23 +162,34 @@ export default function ServerSelect() {
         <p style={S.sub}>Choose your game server workspace or set up a new one.</p>
 
         <div style={S.tabs} className="ss-tabs">
-          <button style={{ ...S.tab, ...(view === 'how' ? S.tabActiveHow : {}) }} className="ss-tab" onClick={() => setView('how')}>
-            <Info size={14} /> HOW IT WORKS
-          </button>
           <button style={{ ...S.tab, ...(view === 'list' ? S.tabActive : {}) }} className="ss-tab" onClick={() => setView('list')}>
             <LogIn size={14} /> ENTER SERVER
           </button>
           <button style={{ ...S.tab, ...(view === 'request' ? S.tabActive : {}) }} className="ss-tab" onClick={() => { setView('request'); setReqSuccess(false); setReqError(''); }}>
-            <Plus size={14} /> REQUEST A SERVER
+            <Plus size={14} /> REQUEST SERVER
           </button>
           <button style={{ ...S.tab, ...(view === 'activate' ? S.tabActive : {}) }} className="ss-tab" onClick={() => { setView('activate'); setActError(''); }}>
-            <Key size={14} /> ACTIVATE A SERVER
+            <Key size={14} /> ACTIVATE SERVER
+          </button>
+          <button style={{ ...S.tab, ...(view === 'how' ? S.tabActiveHow : {}) }} className="ss-tab" onClick={() => setView('how')}>
+            <Info size={14} /> HOW IT WORKS
           </button>
         </div>
 
         {/* SERVER LIST */}
         {view === 'list' && (
           <div style={S.card}>
+            {/* Search bar */}
+            <div style={{ position: 'relative', marginBottom: 16 }}>
+              <Search size={14} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: '#3a5878', pointerEvents: 'none' }} />
+              <input
+                type="text"
+                placeholder="Search by server number or name…"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ ...S.input, paddingLeft: 34, marginBottom: 0 }}
+              />
+            </div>
             {loading && <p style={S.dim}>Loading servers…</p>}
             {!loading && servers.length === 0 && (
               <div style={{ textAlign: 'center', padding: '20px 0' }}>
@@ -184,22 +199,29 @@ export default function ServerSelect() {
                 </button>
               </div>
             )}
-            {servers.map(s => (
-              <button key={s.id} style={S.serverRow} onClick={() => navigate(`/server/${s.id}`)}>
-                <div style={S.serverIcon}><Server size={18} /></div>
-                <div style={{ flex: 1 }}>
-                  <div style={S.serverName}>Server {s.server_number} — {s.name}</div>
-                  <div style={S.serverSub}>
-                    {SEASON_LABELS[s.current_season ?? 0] ?? `Season ${s.current_season}`}
-                    {' · '}
-                    Since {new Date(s.created_at).toLocaleDateString()}
+            {(() => {
+              const q = search.trim().toLowerCase();
+              const filtered = q
+                ? servers.filter(s => s.server_number.toLowerCase().includes(q) || s.name.toLowerCase().includes(q))
+                : servers;
+              if (!loading && filtered.length === 0 && q) return (
+                <p style={S.dim}>No servers match "{search}".</p>
+              );
+              return filtered.map(s => (
+                <button key={s.id} style={S.serverRow} onClick={() => navigate(`/server/${s.id}`)}>
+                  <div style={S.serverIcon}><Server size={18} /></div>
+                  <div style={{ flex: 1 }}>
+                    <div style={S.serverName}>Server {s.server_number} — {s.name}</div>
+                    <div style={S.serverSub}>
+                      {SEASON_LABELS[s.current_season ?? 0] ?? `Season ${s.current_season}`}
+                      {' · '}
+                      Since {new Date(s.created_at).toLocaleDateString()}
+                    </div>
                   </div>
-                </div>
-                <div style={S.seasonBadge}>
-                  S{s.current_season ?? 0}
-                </div>
-              </button>
-            ))}
+                  <div style={S.seasonBadge}>S{s.current_season ?? 0}</div>
+                </button>
+              ));
+            })()}
             {!loading && servers.length > 0 && (
               <p style={{ color: '#3a5878', fontSize: 11, marginTop: 16, textAlign: 'center' }}>
                 Click your server to open its dashboard, then log in with your username and password.
