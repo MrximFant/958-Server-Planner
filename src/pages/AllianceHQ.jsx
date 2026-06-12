@@ -1232,9 +1232,9 @@ function RosterView({ members, alliance, myMemberId, showPower }) {
 
 const EVENT_SLOTS = {
   canyon: [
-    { id: 'thu_09', label: 'Thursday 09:00–09:30', day: 'Thursday', time: '09:00–09:30' },
-    { id: 'thu_18', label: 'Thursday 18:00–18:30', day: 'Thursday', time: '18:00–18:30' },
-    { id: 'thu_23', label: 'Thursday 23:00–23:30', day: 'Thursday', time: '23:00–23:30' },
+    { id: 'thu_09', label: 'Thursday 09:00–10:00', day: 'Thursday', time: '09:00–10:00' },
+    { id: 'thu_18', label: 'Thursday 18:00–19:00', day: 'Thursday', time: '18:00–19:00' },
+    { id: 'thu_23', label: 'Thursday 23:00–00:00', day: 'Thursday', time: '23:00–00:00' },
   ],
   desert: [
     { id: 'fri_09', label: 'Friday 09:00–09:30', day: 'Friday', time: '09:00–09:30' },
@@ -1243,29 +1243,24 @@ const EVENT_SLOTS = {
   ],
 };
 
-function getEventConfig(allianceId) {
-  try {
-    return JSON.parse(localStorage.getItem(`ev_cfg_${allianceId}`) || 'null') || {
-      canyon: { teamA: 'thu_09', teamB: 'thu_18' },
-      desert: { teamA: 'fri_09', teamB: 'fri_18' },
-    };
-  } catch { return { canyon: { teamA: 'thu_09', teamB: 'thu_18' }, desert: { teamA: 'fri_09', teamB: 'fri_18' } }; }
-}
-
-function saveEventConfig(allianceId, cfg) {
-  localStorage.setItem(`ev_cfg_${allianceId}`, JSON.stringify(cfg));
-}
+const DEFAULT_EVENT_CONFIG = {
+  canyon: { teamA: 'thu_09', teamB: 'thu_18' },
+  desert: { teamA: 'fri_09', teamB: 'fri_18' },
+};
 
 function EventsView({ members, alliance, myMemberId, showPower, canManage }) {
   const [tab, setTab] = useState('canyon');
   const [filterTroop, setFilterTroop] = useState('');
   const [showAdmin, setShowAdmin] = useState(false);
-  const [cfg, setCfg] = useState(() => getEventConfig(alliance?.id));
+  const [cfg, setCfg] = useState(() => alliance?.event_config || DEFAULT_EVENT_CONFIG);
+  const [saving, setSaving] = useState(false);
 
-  function updateSlot(event, team, slotId) {
+  async function updateSlot(event, team, slotId) {
     const next = { ...cfg, [event]: { ...cfg[event], [team]: slotId } };
     setCfg(next);
-    saveEventConfig(alliance.id, next);
+    setSaving(true);
+    await supabase.from('alliances').update({ event_config: next }).eq('id', alliance.id);
+    setSaving(false);
   }
 
   function slotLabel(event, slotId) {
@@ -1371,7 +1366,7 @@ function EventsView({ members, alliance, myMemberId, showPower, canManage }) {
               </div>
             </div>
           ))}
-          <div style={{ fontSize: 11, color: '#3a5878', marginTop: 4 }}>Changes save instantly and apply to all members' event view.</div>
+          <div style={{ fontSize: 11, color: saving ? '#00c8ff' : '#3a5878', marginTop: 4 }}>{saving ? 'Saving…' : 'Changes save instantly and are visible to all members.'}</div>
         </div>
       )}
 

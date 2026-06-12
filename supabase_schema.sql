@@ -40,6 +40,7 @@ CREATE TABLE alliances (
   owner_password   TEXT NOT NULL,                -- SHA-256 hex (legacy emergency access)
   invite_code      TEXT UNIQUE NOT NULL,          -- reusable member self-registration link
   owner_invite_code TEXT UNIQUE,                  -- one-time owner registration link
+  event_config     JSONB,                         -- { canyon: { teamA, teamB }, desert: { teamA, teamB } }
   created_at       TIMESTAMPTZ DEFAULT NOW()
 );
 
