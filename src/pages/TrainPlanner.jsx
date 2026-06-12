@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { ArrowLeft, Shuffle, Lock, Unlock, RotateCcw, Save, Train, Info, Download } from 'lucide-react';
+import { ArrowLeft, Shuffle, Lock, Unlock, RotateCcw, Save, Train, Info, Download, Settings, ChevronLeft, ChevronRight, Menu, Users } from 'lucide-react';
 
 // ── Constants ──────────────────────────────────────────────────────
 const DAYS   = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
@@ -220,6 +220,21 @@ export default function TrainPlanner() {
   const [dragging,    setDragging]    = useState(null);
   const [dragOver,    setDragOver]    = useState(null);
   const [selected,    setSelected]    = useState(null);
+
+  // ── Panel visibility (responsive + foldable) ─────────────────────
+  const [leftOpen,    setLeftOpen]    = useState(true);
+  const [membersOpen, setMembersOpen] = useState(true);
+  const [managingTrain, setManagingTrain] = useState(false);
+
+  // ── Placeholder members (no DB — localStorage) ───────────────────
+  const [placeholders, setPlaceholders] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('tp_ph_' + myAllianceId) || '[]'); }
+    catch { return []; }
+  });
+  const savePlaceholders = (list) => {
+    setPlaceholders(list);
+    localStorage.setItem('tp_ph_' + myAllianceId, JSON.stringify(list));
+  };
 
   // Derived label shown in topbar
   const displayLabel = weekLabelOverride || (currentWeekKey ? weekLabelFromDate(currentWeekKey) : 'Current Week');
@@ -550,7 +565,8 @@ export default function TrainPlanner() {
   }
 
   // ── Derived ───────────────────────────────────────────────────────
-  const memberById = Object.fromEntries(members.map(m => [m.id, m]));
+  const allMembers  = [...members, ...placeholders.map(p => ({ id: p.id, username: p.name, in_game_name: p.name, is_placeholder: true }))];
+  const memberById  = Object.fromEntries(allMembers.map(m => [m.id, m]));
   const assignedIds = new Set(Object.values(slots).map(s => s.memberId).filter(Boolean));
   const currentMode = MODES.find(m => m.id === mode);
 
@@ -623,84 +639,87 @@ export default function TrainPlanner() {
 
       {/* ── Topbar ──────────────────────────────────────────────── */}
       <div style={{ background: 'rgba(8,13,20,0.97)', borderBottom: '1px solid #1e3550', flexShrink: 0, zIndex: 50 }}>
-        {/* Row 1: title + save */}
-        <div style={{ height: 48, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderBottom: '1px solid rgba(30,53,80,0.5)' }}>
+        {/* Row 1: title + actions */}
+        <div style={{ height: 48, display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px' }}>
+          {/* Mobile panel toggles */}
+          <button onClick={() => setLeftOpen(o => !o)} style={{ ...S.iconBtn, display: 'none' }} className="tp-mob-btn tp-left-toggle" title="Mode panel"><Menu size={14} /></button>
           <button onClick={() => navigate(`/server/${serverId}/alliance`)} style={S.iconBtn}><ArrowLeft size={15} /></button>
           <Train size={15} style={{ color: '#f0a500', flexShrink: 0 }} />
-          <div style={{ fontWeight: 700, fontSize: 12, letterSpacing: '2px', color: '#f0a500' }}>TRAIN PLANNER</div>
-          {alliance && <div style={{ fontSize: 11, color: '#3a5878', marginLeft: 4 }}>— {alliance.name}</div>}
+          <div style={{ fontWeight: 700, fontSize: 13, letterSpacing: '2px', color: '#f0a500' }}>TRAIN PLANNER</div>
+          {alliance && <div style={{ fontSize: 12, color: '#8aadcc', marginLeft: 2 }}>— {alliance.name}</div>}
           {isDirty && <div style={{ fontSize: 9, color: '#f0a500', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', padding: '2px 7px', letterSpacing: '1px', fontWeight: 700 }}>UNSAVED</div>}
           <div style={{ flex: 1 }} />
-          <button onClick={handleExport} style={{ ...S.iconBtn, color: '#00c8ff' }} title="Export schedule to clipboard"><Download size={14} /></button>
+          {canEdit && (
+            <button onClick={() => setManagingTrain(true)} style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.4)', color: '#f0a500', padding: '5px 12px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+              <Settings size={13} /> MANAGE TRAIN
+            </button>
+          )}
+          <button onClick={handleExport} style={{ ...S.iconBtn, color: '#00c8ff' }} title="Export to clipboard"><Download size={14} /></button>
           {canEdit && (
             <>
               <button onClick={clearAll} style={{ ...S.iconBtn, color: '#ff6080' }} title="Clear all slots"><RotateCcw size={14} /></button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                style={{ display: 'flex', alignItems: 'center', gap: 6, background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.4)' : 'rgba(240,165,0,0.4)'}`, color: saved ? '#00e87a' : '#f0a500', padding: '5px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: saving ? 'default' : 'pointer' }}
-              >
-                <Save size={13} />
-                {saving ? 'SAVING…' : saved ? 'SAVED ✓' : 'SAVE'}
+              <button onClick={handleSave} disabled={saving} style={{ display: 'flex', alignItems: 'center', gap: 5, background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.4)' : 'rgba(240,165,0,0.4)'}`, color: saved ? '#00e87a' : '#f0a500', padding: '5px 12px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: saving ? 'default' : 'pointer' }}>
+                <Save size={13} />{saving ? 'SAVING…' : saved ? 'SAVED ✓' : 'SAVE'}
               </button>
             </>
           )}
+          <button onClick={() => setMembersOpen(o => !o)} style={{ ...S.iconBtn, display: 'none' }} className="tp-mob-btn tp-members-toggle" title="Members"><Users size={14} /></button>
         </div>
-
-        {/* Row 2: active week label */}
-        <div style={{ height: 32, display: 'flex', alignItems: 'center', gap: 10, padding: '0 12px', borderTop: '1px solid rgba(30,53,80,0.4)' }}>
-          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: '#3a5878' }}>WEEK:</span>
-          <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: '#d0e4f4' }}>
-            {currentWeekKey ? formatWeekRange(currentWeekKey) : 'No week selected'}
+        {/* Row 2: week nav */}
+        <div style={{ height: 30, display: 'flex', alignItems: 'center', gap: 8, padding: '0 10px', borderTop: '1px solid rgba(30,53,80,0.4)', background: 'rgba(5,10,18,0.6)' }}>
+          <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: '#6a8aa8' }}>WEEK:</span>
+          <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: '#d0e4f4', fontWeight: 700 }}>
+            {currentWeekKey ? formatWeekRange(currentWeekKey) : '— no week —'}
           </span>
           {sortedScheds.length > 1 && schedIdx >= 0 && (
-            <span style={{ fontSize: 9, color: '#3a5878' }}>({schedIdx + 1}/{sortedScheds.length})</span>
+            <span style={{ fontSize: 9, color: '#6a8aa8' }}>{schedIdx + 1}/{sortedScheds.length}</span>
           )}
           <div style={{ flex: 1 }} />
-          <button onClick={() => guardedNavigateWeek(-1)} disabled={schedIdx <= 0} style={{ ...S.weekNavBtn, opacity: schedIdx <= 0 ? 0.3 : 1, padding: '2px 8px', fontSize: 10 }}>← PREV</button>
-          <button onClick={() => guardedNavigateWeek(1)} disabled={schedIdx >= sortedScheds.length - 1} style={{ ...S.weekNavBtn, opacity: schedIdx >= sortedScheds.length - 1 ? 0.3 : 1, padding: '2px 8px', fontSize: 10 }}>NEXT →</button>
+          <button onClick={() => guardedNavigateWeek(-1)} disabled={schedIdx <= 0} style={{ ...S.weekNavBtn, opacity: schedIdx <= 0 ? 0.35 : 1 }}><ChevronLeft size={12} /> PREV</button>
+          <button onClick={() => guardedNavigateWeek(1)} disabled={schedIdx >= sortedScheds.length - 1} style={{ ...S.weekNavBtn, opacity: schedIdx >= sortedScheds.length - 1 ? 0.35 : 1 }}>NEXT <ChevronRight size={12} /></button>
         </div>
       </div>
 
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      {/* ── Manage Train modal ──────────────────────────────────── */}
+      {managingTrain && (
+        <ManageTrainModal
+          allianceId={myAllianceId}
+          allSchedules={allSchedules}
+          setAllSchedules={setAllSchedules}
+          placeholders={placeholders}
+          savePlaceholders={savePlaceholders}
+          applySchedule={applySchedule}
+          scheduleId={scheduleId}
+          setScheduleId={setScheduleId}
+          setCurrentWeekKey={setCurrentWeekKey}
+          setSlots={setSlots}
+          onClose={() => setManagingTrain(false)}
+        />
+      )}
 
-        {/* ── Left: Mode Cards + Config ────────────────────────────── */}
-        <div style={{ width: 270, minWidth: 270, background: 'rgba(5,10,18,0.98)', borderRight: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
 
-          {/* Mode cards grid */}
-          <div style={{ flexShrink: 0, borderBottom: '1px solid #1e3550', padding: '10px 10px 8px' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', marginBottom: 8 }}>SCHEDULING MODE</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
-              {MODES.map(m => {
-                const active = mode === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => { if (canEdit && m.id !== mode) { setMode(m.id); markDirty(); } }}
-                    style={{
-                      display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 3,
-                      padding: '8px 9px', background: active ? `${m.color}14` : 'rgba(10,18,30,0.6)',
-                      border: `1px solid ${active ? m.color + '60' : '#1e3550'}`,
-                      cursor: canEdit ? 'pointer' : 'default', textAlign: 'left',
-                      transition: 'border-color 0.15s, background 0.15s',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
-                      <span style={{ fontSize: 13 }}>{m.icon}</span>
-                      <span style={{ fontWeight: 700, fontSize: 10, letterSpacing: '1px', color: active ? m.color : '#d0e4f4' }}>{m.label.toUpperCase()}</span>
-                    </div>
-                    <div style={{ fontSize: 9, color: active ? m.color + 'cc' : '#3a5878', lineHeight: 1.4 }}>{m.desc}</div>
-                  </button>
-                );
-              })}
+        {/* Mobile backdrop for left panel */}
+        <div className="tp-mob-backdrop tp-left-backdrop" onClick={() => setLeftOpen(false)} style={{ display: 'none', position: 'fixed', inset: 0, zIndex: 55, background: 'rgba(0,0,0,0.5)' }} />
+        {/* Mobile backdrop for members panel */}
+        <div className="tp-mob-backdrop tp-members-backdrop" onClick={() => setMembersOpen(false)} style={{ display: 'none', position: 'fixed', inset: 0, zIndex: 55, background: 'rgba(0,0,0,0.5)' }} />
+
+        {/* ── Left: Mode Config + Week List + Mode Tab Bar ─────────── */}
+        <div className={`tp-left-panel${leftOpen ? ' open' : ''}`} style={{ width: 270, minWidth: 270, background: 'rgba(5,10,18,0.98)', borderRight: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}>
+
+          {/* Mode config (scrollable) */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: '10px 12px' }}>
+            {/* Active mode header */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: 16 }}>{currentMode?.icon}</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: currentMode?.color ?? '#d0e4f4', letterSpacing: '1px' }}>{currentMode?.label}</div>
+                <div style={{ fontSize: 10, color: '#8aadcc', lineHeight: 1.4 }}>{currentMode?.detail}</div>
+              </div>
             </div>
-          </div>
-
-          {/* Mode config panel */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
             <ModeConfig
               mode={mode}
-              members={members}
+              members={allMembers}
               memberById={memberById}
               canEdit={canEdit}
               fixedDriver={fixedDriver} setFixedDriver={v => { setFixedDriver(v); markDirty(); }}
@@ -721,53 +740,31 @@ export default function TrainPlanner() {
             />
           </div>
 
-          {/* ── Week List ──────────────────────────────────────────── */}
-          <div style={{ flexShrink: 0, borderTop: '1px solid #1e3550' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px 6px' }}>
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#3a5878' }}>WEEKS ({sortedScheds.length})</div>
-              {canEdit && (
-                <button onClick={createNewWeek} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: '#00c8ff', background: 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.25)', padding: '2px 8px', cursor: 'pointer' }}>+ NEW</button>
-              )}
+          {/* Week List */}
+          <div style={{ flexShrink: 0, borderTop: '1px solid #1e3550', maxHeight: 200, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', borderBottom: '1px solid rgba(30,53,80,0.5)' }}>
+              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8' }}>WEEKS ({sortedScheds.length})</span>
+              {canEdit && <button onClick={createNewWeek} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: '#00c8ff', background: 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.25)', padding: '2px 7px', cursor: 'pointer' }}>+ NEW</button>}
             </div>
-            <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
               {sortedScheds.length === 0 && (
-                <div style={{ padding: '8px 12px', fontSize: 10, color: '#3a5878', fontStyle: 'italic' }}>No saved weeks yet. Save to create one.</div>
+                <div style={{ padding: '8px 12px', fontSize: 11, color: '#6a8aa8' }}>No saved weeks yet. Hit SAVE to create the first one.</div>
               )}
               {sortedScheds.map((s, i) => {
                 const isActive = s.id === scheduleId;
-                const label = formatWeekRange(s.week_label);
                 return (
-                  <div
-                    key={s.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: isActive ? 'rgba(240,165,0,0.07)' : 'transparent', borderLeft: isActive ? '2px solid #f0a500' : '2px solid transparent', cursor: 'pointer' }}
-                    onClick={() => {
-                      if (!isActive) {
-                        if (isDirty) { setPendingNav({ type: 'date', key: s.week_label, sched: s }); }
-                        else applySchedule(s);
-                      }
-                    }}
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', padding: '6px 10px', background: isActive ? 'rgba(240,165,0,0.08)' : 'transparent', borderLeft: `3px solid ${isActive ? '#f0a500' : 'transparent'}`, cursor: 'pointer', gap: 8 }}
+                    onClick={() => { if (!isActive) { if (isDirty) setPendingNav({ type: 'date', key: s.week_label, sched: s }); else applySchedule(s); } }}
                   >
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 10, color: isActive ? '#f0a500' : '#7a9bb8', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-                      <div style={{ fontSize: 8, color: '#3a5878', letterSpacing: '1px' }}>WK {i + 1}</div>
+                      <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 10, color: isActive ? '#f0a500' : '#b0cce4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{formatWeekRange(s.week_label)}</div>
+                      <div style={{ fontSize: 9, color: '#6a8aa8', letterSpacing: '1px' }}>WK {i + 1} · {s.mode || 'manual'}</div>
                     </div>
                     {canEdit && (
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (isActive) { handleDeleteWeek(); }
-                          else {
-                            if (!confirm('Delete this week\'s schedule?')) return;
-                            supabase.from('train_slots').delete().eq('schedule_id', s.id).then(() =>
-                              supabase.from('train_schedules').delete().eq('id', s.id)
-                            );
-                            setAllSchedules(prev => prev.filter(x => x.id !== s.id));
-                          }
-                        }}
-                        title="Delete week"
-                        style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', padding: '2px 4px', fontSize: 12, opacity: 0.5, flexShrink: 0 }}
-                        onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
-                        onMouseLeave={e => { e.currentTarget.style.opacity = '0.5'; }}
+                      <button onClick={e => { e.stopPropagation(); if (isActive) handleDeleteWeek(); else { if (!confirm('Delete this week?')) return; supabase.from('train_slots').delete().eq('schedule_id', s.id); supabase.from('train_schedules').delete().eq('id', s.id); setAllSchedules(p => p.filter(x => x.id !== s.id)); } }}
+                        style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', padding: '2px 4px', fontSize: 13, opacity: 0.45, flexShrink: 0 }}
+                        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={e => e.currentTarget.style.opacity = '0.45'}
                       >🗑</button>
                     )}
                   </div>
@@ -775,10 +772,28 @@ export default function TrainPlanner() {
               })}
             </div>
           </div>
+
+          {/* Mode Tab Bar (bottom) */}
+          <div style={{ flexShrink: 0, borderTop: '1px solid #1e3550', background: 'rgba(3,7,13,0.98)' }}>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#6a8aa8', padding: '5px 10px 2px' }}>SCHEDULING MODE</div>
+            <div style={{ display: 'flex', overflowX: 'auto' }}>
+              {MODES.map(m => {
+                const active = mode === m.id;
+                return (
+                  <button key={m.id} onClick={() => { if (canEdit && m.id !== mode) { setMode(m.id); markDirty(); } }}
+                    style={{ flex: '1 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, padding: '7px 6px 8px', background: active ? `${m.color}18` : 'transparent', borderTop: `2px solid ${active ? m.color : 'transparent'}`, border: 'none', borderTopStyle: 'solid', borderTopWidth: 2, borderTopColor: active ? m.color : 'transparent', cursor: canEdit ? 'pointer' : 'default', minWidth: 48 }}
+                  >
+                    <span style={{ fontSize: 14 }}>{m.icon}</span>
+                    <span style={{ fontSize: 8, fontWeight: 700, letterSpacing: '0.5px', color: active ? m.color : '#8aadcc', whiteSpace: 'nowrap' }}>{m.label.split(' ')[0].toUpperCase()}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
         {/* ── Center: Grid ────────────────────────────────────────── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 12px' }}>
           <ScheduleGrid
             slots={slots}
             days={DAYS}
@@ -798,61 +813,70 @@ export default function TrainPlanner() {
         </div>
 
         {/* ── Right: Member pool ───────────────────────────────────── */}
-        <div
-          style={{ width: 200, minWidth: 200, background: 'rgba(5,10,18,0.98)', borderLeft: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-          onDragOver={e => e.preventDefault()}
-          onDrop={onDropPool}
-        >
-          <div style={{ padding: '10px 12px', borderBottom: '1px solid #1e3550', flexShrink: 0 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#00c8ff', marginBottom: 2 }}>DRAG TO SLOT</div>
-            <div style={{ fontSize: 9, color: '#3a5878', letterSpacing: '1px' }}>MEMBERS — {members.length}</div>
-          </div>
-          {selected && (
-            <div style={{ padding: '6px 12px', background: 'rgba(0,200,255,0.06)', borderBottom: '1px solid rgba(0,200,255,0.2)', fontSize: 10, color: '#00c8ff' }}>
-              ✓ Click a slot to assign
+        {membersOpen ? (
+          <div className="tp-members-panel open" style={{ width: 210, minWidth: 210, background: 'rgba(5,10,18,0.98)', borderLeft: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden', flexShrink: 0 }}
+            onDragOver={e => e.preventDefault()} onDrop={onDropPool}
+          >
+            <div style={{ padding: '8px 10px', borderBottom: '1px solid #1e3550', display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#00c8ff' }}>MEMBERS</div>
+                <div style={{ fontSize: 9, color: '#8aadcc' }}>{allMembers.length} total · drag or click to assign</div>
+              </div>
+              <button onClick={() => setMembersOpen(false)} style={{ ...S.iconBtn, color: '#6a8aa8' }} title="Collapse members"><ChevronRight size={13} /></button>
             </div>
-          )}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
-            {members.map(m => {
-              const isAssigned = assignedIds.has(m.id);
-              const isSel      = selected === m.id;
-              return (
-                <div
-                  key={m.id}
-                  draggable={canEdit}
-                  onDragStart={e => onDragStart(e, m.id)}
-                  onDragEnd={() => setDragging(null)}
-                  onClick={() => onMemberClick(m.id)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', marginBottom: 3,
-                    background: isSel ? 'rgba(0,200,255,0.12)' : isAssigned ? 'rgba(0,200,255,0.05)' : 'transparent',
-                    border: `1px solid ${isSel ? 'rgba(0,200,255,0.5)' : isAssigned ? 'rgba(0,200,255,0.2)' : '#1e3550'}`,
-                    cursor: canEdit ? 'grab' : 'default',
-                    opacity: 1,
-                  }}
-                >
-                  <div style={{ width: 26, height: 26, borderRadius: 2, background: alliance?.color ?? '#1e3550', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#080d14', flexShrink: 0, position: 'relative' }}>
-                    {memberInitials(m)}
-                    {isAssigned && (
-                      <div style={{ position: 'absolute', top: -4, right: -4, width: 8, height: 8, borderRadius: '50%', background: '#00e87a', border: '1px solid #080d14' }} />
-                    )}
-                  </div>
-                  <div style={{ overflow: 'hidden', flex: 1 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: isSel ? '#00c8ff' : isAssigned ? '#a0c8e8' : '#d0e4f4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                      {memberName(m)}
+            {selected && (
+              <div style={{ padding: '5px 10px', background: 'rgba(0,200,255,0.07)', borderBottom: '1px solid rgba(0,200,255,0.2)', fontSize: 10, color: '#00c8ff', fontWeight: 700 }}>
+                ✓ Click a slot to assign
+              </div>
+            )}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '6px' }}>
+              {allMembers.map(m => {
+                const isAssigned = assignedIds.has(m.id);
+                const isSel      = selected === m.id;
+                return (
+                  <div key={m.id} draggable={canEdit} onDragStart={e => onDragStart(e, m.id)} onDragEnd={() => setDragging(null)} onClick={() => onMemberClick(m.id)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '6px 7px', marginBottom: 3, background: isSel ? 'rgba(0,200,255,0.12)' : isAssigned ? 'rgba(0,200,255,0.05)' : 'transparent', border: `1px solid ${isSel ? 'rgba(0,200,255,0.5)' : isAssigned ? 'rgba(0,200,255,0.2)' : '#1e3550'}`, cursor: canEdit ? 'grab' : 'default' }}
+                  >
+                    <div style={{ width: 28, height: 28, borderRadius: 2, background: m.is_placeholder ? '#2a3a50' : (alliance?.color ?? '#1e3550'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: m.is_placeholder ? '#6a8aa8' : '#080d14', flexShrink: 0, position: 'relative' }}>
+                      {memberInitials(m)}
+                      {isAssigned && <div style={{ position: 'absolute', top: -3, right: -3, width: 8, height: 8, borderRadius: '50%', background: '#00e87a', border: '1px solid #080d14' }} />}
                     </div>
-                    {isAssigned && <div style={{ fontSize: 8, color: '#00e87a', fontWeight: 700, letterSpacing: '1px' }}>ASSIGNED</div>}
-                    {m.power1 && !isAssigned && <div style={{ fontSize: 9, color: '#3a5878', fontFamily: "'Share Tech Mono',monospace" }}>{m.power1}B{m.troop1 ? ` · ${m.troop1}` : ''}</div>}
+                    <div style={{ overflow: 'hidden', flex: 1 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: isSel ? '#00c8ff' : isAssigned ? '#c0d8f0' : '#e0f0ff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{memberName(m)}</div>
+                      {m.is_placeholder
+                        ? <div style={{ fontSize: 8, color: '#6a8aa8', letterSpacing: '1px' }}>PLACEHOLDER</div>
+                        : isAssigned
+                          ? <div style={{ fontSize: 8, color: '#00e87a', fontWeight: 700, letterSpacing: '1px' }}>ASSIGNED</div>
+                          : m.power1 && <div style={{ fontSize: 9, color: '#8aadcc', fontFamily: "'Share Tech Mono',monospace" }}>{m.power1}B{m.troop1 ? ` · ${m.troop1}` : ''}</div>
+                      }
+                    </div>
                   </div>
-                </div>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-          <div style={{ padding: '8px 12px', borderTop: '1px solid #1e3550', fontSize: 9, color: '#2a4058', lineHeight: 1.6, flexShrink: 0 }}>
-            Drag to slot · Drag slot→here to remove · Click member then slot to assign
+        ) : (
+          <div className="tp-members-collapsed" style={{ width: 36, background: 'rgba(5,10,18,0.98)', borderLeft: '1px solid #1e3550', display: 'flex', flexDirection: 'column', alignItems: 'center', paddingTop: 10, gap: 8, flexShrink: 0, cursor: 'pointer' }}
+            onClick={() => setMembersOpen(true)} onDragOver={e => e.preventDefault()} onDrop={onDropPool}
+          >
+            <button style={{ ...S.iconBtn, color: '#6a8aa8' }} onClick={() => setMembersOpen(true)}><ChevronLeft size={13} /></button>
+            <div style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)', fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#6a8aa8', userSelect: 'none' }}>MEMBERS ({allMembers.length})</div>
           </div>
-        </div>
+        )}
       </div>
+
+      <style>{`
+        @media (max-width: 768px) {
+          .tp-mob-btn { display: flex !important; }
+          .tp-left-panel { position: fixed !important; top: 80px; left: 0; bottom: 0; z-index: 60; transform: translateX(-100%); transition: transform 0.25s; }
+          .tp-left-panel.open { transform: translateX(0); }
+          .tp-left-panel.open ~ .tp-left-backdrop { display: block !important; }
+          .tp-members-panel { position: fixed !important; top: 80px; right: 0; bottom: 0; z-index: 60; transform: translateX(100%); transition: transform 0.25s; }
+          .tp-members-panel.open { transform: translateX(0); }
+          .tp-members-panel.open ~ .tp-members-backdrop { display: block !important; }
+          .tp-members-collapsed { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }
@@ -1265,11 +1289,164 @@ function SlotMember({ member, role, color, isLocked, canEdit, slotKey, onDragSta
   );
 }
 
+// ── Manage Train Modal ─────────────────────────────────────────────
+function ManageTrainModal({ allianceId, allSchedules, setAllSchedules, placeholders, savePlaceholders, applySchedule, scheduleId, setScheduleId, setCurrentWeekKey, setSlots, onClose }) {
+  const [tab, setTab]             = useState('weeks'); // 'weeks' | 'generate' | 'placeholders'
+  const [startDate, setStartDate] = useState(() => toDateString(getMondayDate()));
+  const [numWeeks, setNumWeeks]   = useState(4);
+  const [generating, setGenerating] = useState(false);
+  const [genMsg, setGenMsg]       = useState('');
+  const [phName, setPhName]       = useState('');
+
+  const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
+
+  async function handleGenerate() {
+    if (!startDate) return;
+    setGenerating(true);
+    setGenMsg('');
+    const monday = getMondayDate(new Date(startDate + 'T12:00:00'));
+    let created = 0, skipped = 0;
+    const newScheds = [];
+    for (let i = 0; i < numWeeks; i++) {
+      const d = new Date(monday.getTime() + i * 7 * 24 * 3600000);
+      const label = toDateString(d);
+      if (allSchedules.some(s => s.week_label === label)) { skipped++; continue; }
+      const { data } = await supabase.from('train_schedules').insert({ alliance_id: allianceId, mode: 'manual', week_label: label, mode_config: {} }).select().single();
+      if (data) { newScheds.push(data); created++; }
+    }
+    setAllSchedules(prev => [...prev, ...newScheds].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || '')));
+    setGenMsg(`✓ Created ${created} week${created !== 1 ? 's' : ''}${skipped ? ` (${skipped} already existed)` : ''}.`);
+    setGenerating(false);
+  }
+
+  async function deleteWeek(s) {
+    if (!confirm(`Delete week ${formatWeekRange(s.week_label)}?`)) return;
+    await supabase.from('train_slots').delete().eq('schedule_id', s.id);
+    await supabase.from('train_schedules').delete().eq('id', s.id);
+    setAllSchedules(prev => prev.filter(x => x.id !== s.id));
+    if (s.id === scheduleId) {
+      const remaining = allSchedules.filter(x => x.id !== s.id).sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
+      if (remaining.length > 0) applySchedule(remaining[remaining.length - 1]);
+      else { setScheduleId(null); setCurrentWeekKey(toDateString(getMondayDate())); setSlots(EMPTY_SLOTS()); }
+    }
+  }
+
+  const TABS = [
+    { id: 'generate', label: '📅 Generate Weeks' },
+    { id: 'weeks',    label: '📋 Manage Weeks' },
+    { id: 'placeholders', label: '👤 Placeholders' },
+  ];
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 300, background: 'rgba(0,0,0,0.8)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }} onClick={onClose}>
+      <div style={{ background: '#0a1220', border: '1px solid rgba(240,165,0,0.4)', width: '100%', maxWidth: 620, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 0 60px rgba(240,165,0,0.1)' }} onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '16px 20px', borderBottom: '1px solid #1e3550' }}>
+          <Settings size={16} style={{ color: '#f0a500' }} />
+          <div style={{ fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 16, letterSpacing: '2px', color: '#f0a500', flex: 1 }}>MANAGE TRAIN</div>
+          <button onClick={onClose} style={{ background: 'none', border: '1px solid #1e3550', color: '#8aadcc', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', fontSize: 16, fontFamily: 'monospace' }}>×</button>
+        </div>
+        {/* Tab bar */}
+        <div style={{ display: 'flex', borderBottom: '1px solid #1e3550' }}>
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} style={{ flex: 1, padding: '10px 8px', background: tab === t.id ? 'rgba(240,165,0,0.08)' : 'transparent', border: 'none', borderBottom: `2px solid ${tab === t.id ? '#f0a500' : 'transparent'}`, color: tab === t.id ? '#f0a500' : '#8aadcc', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
+          {tab === 'generate' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <p style={{ color: '#b0cce4', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                Pick a start date and how many weeks to plan ahead. Existing weeks won't be overwritten.
+              </p>
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ flex: 1, minWidth: 160 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 5 }}>FIRST WEEK STARTS</div>
+                  <input type="date" value={startDate} onChange={e => { const m = getMondayDate(new Date(e.target.value + 'T12:00:00')); setStartDate(toDateString(m)); }}
+                    style={{ width: '100%', background: '#0d1a28', border: '1px solid #2a4058', color: '#d0e4f4', padding: '9px 12px', fontFamily: "'Share Tech Mono',monospace", fontSize: 12, boxSizing: 'border-box' }} />
+                  <div style={{ fontSize: 9, color: '#6a8aa8', marginTop: 3 }}>Auto-snaps to Monday</div>
+                </div>
+                <div style={{ width: 120 }}>
+                  <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 5 }}>WEEKS AHEAD</div>
+                  <input type="number" min={1} max={20} value={numWeeks} onChange={e => setNumWeeks(Math.max(1, Math.min(20, parseInt(e.target.value) || 1)))}
+                    style={{ width: '100%', background: '#0d1a28', border: '1px solid #2a4058', color: '#d0e4f4', padding: '9px 12px', fontFamily: "'Share Tech Mono',monospace", fontSize: 14, boxSizing: 'border-box' }} />
+                </div>
+              </div>
+              {startDate && (
+                <div style={{ background: 'rgba(240,165,0,0.05)', border: '1px solid rgba(240,165,0,0.2)', padding: '10px 14px', fontSize: 12, color: '#c0a060', lineHeight: 1.7 }}>
+                  Will create weeks: {Array.from({ length: numWeeks }, (_, i) => {
+                    const d = new Date(new Date(startDate + 'T12:00:00').getTime() + i * 7 * 24 * 3600000);
+                    return formatWeekRange(toDateString(d));
+                  }).join(' · ')}
+                </div>
+              )}
+              <button onClick={handleGenerate} disabled={generating} style={{ padding: '11px', background: generating ? 'rgba(240,165,0,0.05)' : 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.5)', color: '#f0a500', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, letterSpacing: '2px', cursor: generating ? 'default' : 'pointer' }}>
+                {generating ? 'GENERATING…' : '📅 GENERATE WEEKS'}
+              </button>
+              {genMsg && <div style={{ fontSize: 12, color: '#00e87a', fontWeight: 700 }}>{genMsg}</div>}
+            </div>
+          )}
+
+          {tab === 'weeks' && (
+            <div>
+              <p style={{ color: '#b0cce4', fontSize: 13, lineHeight: 1.6, marginTop: 0 }}>All saved weeks for this alliance. Click a week to load it.</p>
+              {sorted.length === 0 && <div style={{ color: '#6a8aa8', fontSize: 13 }}>No weeks saved yet. Use the Generate tab to create some.</div>}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {sorted.map((s, i) => (
+                  <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: s.id === scheduleId ? 'rgba(240,165,0,0.08)' : 'rgba(13,21,32,0.8)', border: `1px solid ${s.id === scheduleId ? 'rgba(240,165,0,0.4)' : '#1e3550'}`, cursor: 'pointer' }}
+                    onClick={() => { applySchedule(s); onClose(); }}
+                  >
+                    <div style={{ width: 28, height: 28, background: s.id === scheduleId ? 'rgba(240,165,0,0.15)' : 'rgba(30,53,80,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Share Tech Mono',monospace", fontSize: 10, color: s.id === scheduleId ? '#f0a500' : '#7a9bb8', flexShrink: 0 }}>{i + 1}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 12, color: s.id === scheduleId ? '#f0a500' : '#d0e4f4', fontWeight: s.id === scheduleId ? 700 : 400 }}>{formatWeekRange(s.week_label)}</div>
+                      <div style={{ fontSize: 10, color: '#8aadcc', marginTop: 1 }}>Mode: {s.mode || 'manual'}{s.id === scheduleId ? ' · ACTIVE' : ''}</div>
+                    </div>
+                    <button onClick={e => { e.stopPropagation(); deleteWeek(s); }} style={{ background: 'none', border: '1px solid rgba(255,64,96,0.3)', color: '#ff4060', padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, cursor: 'pointer', flexShrink: 0 }}>DELETE</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {tab === 'placeholders' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <p style={{ color: '#b0cce4', fontSize: 13, lineHeight: 1.6, margin: 0 }}>
+                Placeholder members can be assigned to train slots without needing a real account. Useful for reserved spots, TBD players, or recurring guests.
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input value={phName} onChange={e => setPhName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && phName.trim()) { savePlaceholders([...placeholders, { id: 'ph_' + Date.now(), name: phName.trim() }]); setPhName(''); } }}
+                  placeholder="Placeholder name (e.g. TBD, Reserve, Guest)"
+                  style={{ flex: 1, background: '#0d1a28', border: '1px solid #2a4058', color: '#d0e4f4', padding: '9px 12px', fontFamily: "'Rajdhani',sans-serif", fontSize: 13, outline: 'none' }} />
+                <button onClick={() => { if (!phName.trim()) return; savePlaceholders([...placeholders, { id: 'ph_' + Date.now(), name: phName.trim() }]); setPhName(''); }}
+                  style={{ padding: '9px 16px', background: 'rgba(0,200,255,0.1)', border: '1px solid rgba(0,200,255,0.35)', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                  + ADD
+                </button>
+              </div>
+              {placeholders.length === 0 && <div style={{ color: '#6a8aa8', fontSize: 12 }}>No placeholders yet.</div>}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {placeholders.map(p => (
+                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', background: 'rgba(13,21,32,0.8)', border: '1px solid #1e3550' }}>
+                    <span style={{ fontSize: 14 }}>👤</span>
+                    <span style={{ flex: 1, fontSize: 13, color: '#d0e4f4', fontWeight: 700 }}>{p.name}</span>
+                    <button onClick={() => savePlaceholders(placeholders.filter(x => x.id !== p.id))} style={{ background: 'none', border: 'none', color: '#ff4060', fontSize: 16, cursor: 'pointer', padding: '2px 6px' }}>×</button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Styles ─────────────────────────────────────────────────────────
 const S = {
   iconBtn: { background: 'none', border: '1px solid #1e3550', color: '#7a9bb8', width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 },
   backBtn: { display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: '1px solid #1e3550', color: '#7a9bb8', padding: '8px 18px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, letterSpacing: '1px', cursor: 'pointer' },
-  cfgLabel: { fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#3a5878', marginBottom: 6 },
+  cfgLabel: { fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 6 },
   genBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '8px', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' },
   sel: { width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: '6px 8px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11 },
   qBtn: { background: 'none', border: 'none', color: '#3a5878', cursor: 'pointer', padding: '2px 4px', fontSize: 10, fontFamily: 'monospace' },
