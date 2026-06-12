@@ -235,6 +235,80 @@ CREATE TABLE battle_plan_slots (
 
 ### 🔲 Other Planned Features
 
+#### In-depth Contextual Help & Admin Onboarding (Next Session Priority)
+
+The current help system (collapsible role banners on the server dashboard + static Rules page)
+is too passive — admins and owners have to hunt for guidance. The goal is **just-in-time, 
+contextual help that appears exactly where the user needs it**, so the platform feels 
+self-explanatory without a manual.
+
+**Problems to solve:**
+- Server admins setting up for the first time don't know what order to do things in
+- Alliance owners don't know they need to copy and share the invite link before members can join
+- Members don't know to fill in their profile immediately after registering
+- Admins don't know where to find things like "how do I reset a password" or "how do I add an alliance admin"
+- No visual cues pointing to the next required action
+
+**What to build:**
+
+1. **Setup Wizard for new Server Admins**
+   - Shown on first login only (tracked via a `setup_completed` flag on the server record or localStorage)
+   - Step-by-step modal/overlay: Create your first alliance → Copy the Owner Invite link → Send it to your R5 → Done
+   - Each step has a direct action button ("CREATE ALLIANCE →") that takes them there
+   - Can be dismissed and re-opened from a "SETUP GUIDE" button in the topbar
+
+2. **Setup Checklist for Alliance Owners**
+   - Shown in Alliance HQ HOME when `setup_completed` is false for the alliance
+   - Checklist items with green ticks when done:
+     - ✅ / ⬜ Your profile is filled in (in_game_name + at least one power stat)
+     - ✅ / ⬜ At least one member has joined (memberCount > 1)
+     - ✅ / ⬜ Event time slots configured (Canyon + Desert)
+     - ✅ / ⬜ At least one train schedule created
+   - Each incomplete item is a clickable link to where to fix it
+   - Dismiss once all items are green
+
+3. **Inline contextual `?` tooltips throughout the UI**
+   - Small `?` icon next to any label that isn't self-explanatory
+   - On hover/tap: short 1–2 sentence tooltip explaining what it is and why it matters
+   - Priority locations:
+     - Alliance HQ → Manage → Settings: next to "Owner Invite Link" and "Member Invite Link"
+     - Admin Panel → Alliances: next to the invite link copy buttons
+     - Train Planner: next to each mode name (Fixed Driver, Paired Rotation, etc.)
+     - Events: next to "Team A / Team B" slot dropdowns in admin manager
+     - Profile: next to each power field and the Canyon/Desert team preference selects
+   - Tooltips should be a single reusable `<Tooltip text="...">` component that wraps any element
+
+4. **Empty-state guidance**
+   - Every empty list/section should have a helpful empty state — not just "No entries"
+   - Examples:
+     - No alliances yet → "No alliances set up. Go to SERVER ADMIN → ALLIANCES to create your first one."
+     - No train schedule → "No schedule for this week. Click MANAGE to generate weeks."
+     - No members → "No members yet. Share your Member Invite link from MANAGE → SETTINGS."
+     - Events tab with no members → "No members have set event preferences yet. Share your invite link."
+
+5. **Admin Quick Reference card** (visible in Admin Panel + Alliance HQ Manage tab)
+   - Collapsible card titled "QUICK REFERENCE — WHAT TO DO WHEN…"
+   - Covers the most common admin tasks with direct navigation links:
+     - "New player wants to join" → share Member Invite from Settings
+     - "Player forgot their password" → Manage → Roster → edit member → change password
+     - "Promote a player to officer" → Manage → Admins → add name
+     - "Player switched alliance" → Admin Panel → Members → reassign
+     - "New season starting" → Admin Panel → Server → update season number
+     - "Set up Canyon/Desert times" → Alliance HQ → Events → ⚙ Admin Manager
+
+6. **Improved Role Help on Server Dashboard**
+   - Current role help is text-only and collapsed by default
+   - Change to always-visible for first-time visitors (before login)
+   - After login: show role-specific version prominently with actionable next step highlighted
+   - Add visual step indicators (1 → 2 → 3) instead of a plain list
+
+**Implementation notes:**
+- Keep it unobtrusive — guides should be dismissible and not re-appear once dismissed (use localStorage flags per user/alliance)
+- Tooltip component: small floating box, dark background, max 200px wide, appears on hover and on tap (300ms delay on hover to avoid accidental trigger)
+- Wizard/checklist components should be standalone and importable anywhere
+- No new DB tables needed for most of this — localStorage flags are sufficient for "has seen" tracking
+
+
 #### Password Reset via Discord Bot
 - Member sends command to bot → bot DMs a one-time temp password
 - Needs: second Edge Function + slash command registration
