@@ -751,8 +751,8 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
                 <CheckBox
                   checked={showPower}
                   onChange={v => setShowPower(v)}
-                  label="Show T1 power in public roster"
-                  sub="When off, power is hidden from non-members"
+                  label="Show power in public &amp; partner rosters"
+                  sub="When off, power is hidden from outsiders. Your own members always see power."
                 />
               </div>
               <button className="btn-primary" disabled={visibilityBusy} onClick={handleVisibilitySave}>
@@ -1530,7 +1530,9 @@ export default function AllianceHQ() {
   if (loading) return <LoadingScreen />;
 
   const showRoster = canManage || alliance?.roster_public !== false || (role === 'member' && activeSession?.allianceId === effectiveAllianceId);
-  const showPowerInRoster = canManage || alliance?.roster_show_power !== false;
+  // Power is always visible to own alliance members; roster_show_power only controls the public/partner view
+  const isOwnAlliance = activeSession?.allianceId === effectiveAllianceId;
+  const showPowerInRoster = isOwnAlliance || canManage || alliance?.roster_show_power !== false;
 
   // Build nav items for sidebar
   const sidebarNavItems = [
