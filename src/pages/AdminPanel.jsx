@@ -4,6 +4,10 @@ import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
 import { hashPassword, generateInviteCode } from '../lib/auth';
 import { Plus, Trash2, Copy, Check, ArrowLeft, Users, Shield, Link, Settings, Edit2, X, Eye, EyeOff, GitMerge } from 'lucide-react';
+import ParticleBackground from '../components/ParticleBackground';
+import SetupWizard from '../components/SetupWizard';
+import QuickReference from '../components/QuickReference';
+import Tooltip from '../components/Tooltip';
 
 const TABS = ['ALLIANCES', 'MEMBERS', 'HANDSHAKES', 'SERVER'];
 
@@ -18,6 +22,8 @@ export default function AdminPanel() {
   const [alliances,  setAlliances] = useState([]);
   const [members,    setMembers]   = useState([]);
   const [loading,    setLoading]   = useState(true);
+  const [showWizard, setShowWizard] = useState(false);
+  const [wizardDismissed, setWizardDismissed] = useState(() => localStorage.getItem('wizard_dismissed_' + serverId) === '1');
 
   // Guard — must be admin or helper for this server
   useEffect(() => {
@@ -41,14 +47,31 @@ export default function AdminPanel() {
     load();
   }, [serverId]);
 
+  // Auto-show wizard for new admins (no alliances yet)
+  useEffect(() => {
+    if (!loading && !wizardDismissed && alliances.length === 0 && !isHelper) {
+      setShowWizard(true);
+    }
+  }, [loading, wizardDismissed, alliances.length, isHelper]);
+
   if (loading) return <LoadingScreen />;
   if (!server)  return <LoadingScreen error />;
 
   const S = styles;
 
+  function handleWizardDismiss() {
+    localStorage.setItem('wizard_dismissed_' + serverId, '1');
+    setWizardDismissed(true);
+    setShowWizard(false);
+  }
+
   return (
     <div style={S.root}>
       <div style={S.gridBg} />
+
+      {showWizard && (
+        <SetupWizard serverId={serverId} navigate={navigate} onDismiss={handleWizardDismiss} />
+      )}
 
       {/* Top bar */}
       <div style={S.topbar}>
@@ -59,6 +82,14 @@ export default function AdminPanel() {
           <Shield size={14} style={{ color: '#00c8ff' }} />
           {isHelper ? 'HELPER PANEL' : 'SERVER ADMIN'} — SERVER {server.server_number}
         </div>
+        {!isHelper && (
+          <button
+            onClick={() => setShowWizard(true)}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'rgba(0,212,255,0.08)', border: '1px solid rgba(0,212,255,0.3)', color: '#00d4ff', padding: '6px 14px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1.5px', cursor: 'pointer' }}
+          >
+            📋 SETUP GUIDE
+          </button>
+        )}
       </div>
 
       <div style={S.layout} className="ap-layout">
@@ -77,6 +108,9 @@ export default function AdminPanel() {
 
         {/* Content */}
         <div style={S.content} className="ap-content">
+          {!isHelper && (
+            <QuickReference serverId={serverId} navigate={navigate} />
+          )}
           {tab === 'ALLIANCES' && (
             <AlliancesTab
               serverId={serverId}
@@ -233,7 +267,7 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
       )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {alliances.length === 0 && <div style={S.empty}>No alliances yet. Create one above.</div>}
+        {alliances.length === 0 && <div style={S.empty}>No alliances yet. Use the form above to create your first alliance, then share the owner invite link with your R5 leader.</div>}
         {alliances.map(a => (
           <div key={a.id} style={{ border: '1px solid #1e3550' }}>
             <div style={{ ...S.row, border: 'none' }}>
@@ -242,7 +276,7 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
                 <div style={S.rowTitle}>{a.name} {a.tag && <span style={S.tag}>{a.tag}</span>}</div>
                 {a.owner_invite_code && (
                   <div style={{ ...S.rowSub, color: '#f0a500', marginBottom: 2 }}>
-                    👑 Owner invite: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.owner_invite_code}</span>
+                    👑 Owner invite<Tooltip text="One-time link. Send to your R5 leader. They click it to register as Alliance Owner automatically." />: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.owner_invite_code}</span>
                     {' '}
                     <button onClick={() => copyInviteLink(a.owner_invite_code)} style={{ background: 'none', border: 'none', color: '#f0a500', cursor: 'pointer', padding: '0 2px', verticalAlign: 'middle' }}>
                       {copied === a.owner_invite_code ? <Check size={11} style={{ color: '#00e87a' }} /> : <Copy size={11} />}
@@ -250,7 +284,7 @@ function AlliancesTab({ serverId, alliances, setAlliances }) {
                   </div>
                 )}
                 <div style={S.rowSub}>
-                  👥 Member invite: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.invite_code}</span>
+                  👥 Member invite<Tooltip text="Reusable link. Share with all members. Anyone with this link can join your alliance." />: <span style={{ fontFamily: "'Share Tech Mono',monospace" }}>{window.location.origin}/join/{a.invite_code}</span>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

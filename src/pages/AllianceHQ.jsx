@@ -5,6 +5,9 @@ import { useAuth } from '../contexts/AuthContext';
 import { hashPassword, generateInviteCode } from '../lib/auth';
 import { ArrowLeft, Copy, Check, Eye, EyeOff, Trash2, Edit2, Crown, Shield, Settings, ChevronDown, ChevronUp } from 'lucide-react';
 import './AllianceHQ.css';
+import OwnerChecklist from '../components/OwnerChecklist';
+import QuickReference from '../components/QuickReference';
+import Tooltip from '../components/Tooltip';
 
 // ── Helpers ──────────────────────────────────────────────────────
 
@@ -590,7 +593,7 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
               </div>
             ) : (
               <div className="mgmt-member-list">
-                {members.length === 0 && <div className="ahq-empty">No members yet.</div>}
+                {members.length === 0 && <div className="ahq-empty">No members yet. Share your Member Invite link from MANAGE → SETTINGS to invite players.</div>}
                 {members.map(m => (
                   <div key={m.id} className="mgmt-member-row">
                     <div className="mgmt-member-info">
@@ -729,7 +732,10 @@ function ManagementPanel({ alliance, members, isOwner, showToast, onReload }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
             {/* Invite link */}
             <div className="settings-card">
-              <div className="settings-label">ALLIANCE INVITE LINK</div>
+              <div className="settings-label">
+                MEMBER INVITE LINK
+                <Tooltip text="Reusable link. Share with all members. Anyone with this link can join your alliance." />
+              </div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                 <div className="invite-code-box">{inviteUrl}</div>
                 <button className="btn-copy" onClick={copyInvite}>
@@ -1474,6 +1480,18 @@ export default function AllianceHQ() {
             {effectiveAllianceId && alliance ? (
               <>
                 <WorldClock />
+                {isOwner && localStorage.getItem('oc_dismissed_' + effectiveAllianceId) !== '1' && (
+                  <OwnerChecklist
+                    alliance={alliance}
+                    members={members}
+                    serverId={serverId}
+                    navigate={navigate}
+                    onDismiss={(tab) => {
+                      localStorage.setItem('oc_dismissed_' + effectiveAllianceId, '1');
+                      if (tab) setMainTab(tab);
+                    }}
+                  />
+                )}
                 <TrainWeekSummary allianceId={effectiveAllianceId} serverId={serverId} navigate={navigate} canManage={canManage} />
                 {showRoster ? (
                   <RosterView
@@ -1531,13 +1549,16 @@ export default function AllianceHQ() {
 
         {/* ⚙️ MANAGE */}
         {mainTab === 'manage' && canManage && effectiveAllianceId && alliance && (
-          <ManagementPanel
-            alliance={alliance}
-            members={members}
-            isOwner={isOwner}
-            showToast={showToast}
-            onReload={loadAlliance}
-          />
+          <>
+            <QuickReference serverId={serverId} navigate={navigate} />
+            <ManagementPanel
+              alliance={alliance}
+              members={members}
+              isOwner={isOwner}
+              showToast={showToast}
+              onReload={loadAlliance}
+            />
+          </>
         )}
 
       </main>
