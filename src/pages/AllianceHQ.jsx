@@ -1709,7 +1709,7 @@ export default function AllianceHQ() {
         {/* ⚙️ MANAGE */}
         {mainTab === 'manage' && canManage && effectiveAllianceId && alliance && (
           <>
-            <QuickReference serverId={serverId} navigate={navigate} />
+            <QuickReference serverId={serverId} navigate={navigate} role={activeSession?.role || activeSession?.allianceRole} />
             <ManagementPanel
               alliance={alliance}
               members={members}

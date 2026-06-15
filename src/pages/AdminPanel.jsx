@@ -71,7 +71,7 @@ export default function AdminPanel() {
       <div style={S.gridBg} />
 
       {showWizard && (
-        <SetupWizard serverId={serverId} navigate={navigate} onDismiss={handleWizardDismiss} />
+        <SetupWizard serverId={serverId} navigate={navigate} onDismiss={handleWizardDismiss} allianceCount={alliances.length} />
       )}
 
       {/* Top bar */}
@@ -110,7 +110,7 @@ export default function AdminPanel() {
         {/* Content */}
         <div style={S.content} className="ap-content">
           {!isHelper && (
-            <QuickReference serverId={serverId} navigate={navigate} />
+            <QuickReference serverId={serverId} navigate={navigate} role={session?.role} />
           )}
           {tab === 'ALLIANCES' && (
             <AlliancesTab

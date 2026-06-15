@@ -3,40 +3,56 @@ import { useState } from 'react';
 const STEPS = [
   {
     title: 'Create Your First Alliance',
-    description: 'Go to the ALLIANCES tab and click CREATE ALLIANCE. Give it a name and tag.',
+    description: 'Go to the ALLIANCES tab and click CREATE ALLIANCE. Give it a name and tag. Each alliance represents one group within your server.',
     actionLabel: 'GO TO ALLIANCES →',
     actionType: 'alliances',
   },
   {
     title: 'Copy the Owner Invite Link',
-    description: 'After creating an alliance, click the 👑 OWNER LINK button and copy the link.',
+    description: 'In the ALLIANCES tab, click the 👑 OWNER LINK button next to your alliance and copy it. This is a one-time link — once used it becomes inactive.',
     actionLabel: 'GO TO ALLIANCES →',
     actionType: 'alliances',
   },
   {
     title: 'Send It to Your R5 Leader',
-    description: 'Paste the owner invite link in Discord to your R5. They click it to register and become the alliance owner automatically.',
-    actionLabel: 'I\'VE SENT IT →',
+    description: 'Paste the owner invite link in Discord. Your R5 clicks it, registers, and becomes the Alliance Owner automatically — no manual setup needed.',
+    actionLabel: "I'VE SENT IT →",
     actionType: 'next',
   },
   {
-    title: 'You\'re All Set!',
-    description: 'Your R5 will share the member invite link with their players. You can also add more alliances anytime from the Admin Panel.',
+    title: "You're All Set!",
+    description: 'Your R5 will share the member invite link with their players from their Alliance HQ → Manage → Settings page. You can add more alliances anytime.',
     actionLabel: 'CLOSE →',
     actionType: 'close',
   },
 ];
 
-export default function SetupWizard({ serverId, navigate, onDismiss }) {
-  const [currentStep, setCurrentStep] = useState(0);
+// Determine which step to start on based on actual progress
+function getInitialStep(allianceCount, hasOwnerInviteBeenCopied) {
+  if (allianceCount === 0) return 0;
+  if (!hasOwnerInviteBeenCopied) return 1;
+  return 2;
+}
+
+export default function SetupWizard({ serverId, navigate, onDismiss, allianceCount = 0 }) {
+  // Use localStorage to track whether user has copied owner link
+  const copiedKey = 'wizard_owner_copied_' + serverId;
+  const hasOwnerInviteBeenCopied = localStorage.getItem(copiedKey) === '1';
+
+  const [currentStep, setCurrentStep] = useState(() => getInitialStep(allianceCount, hasOwnerInviteBeenCopied));
   const step = STEPS[currentStep];
 
   function handleAction() {
     if (step.actionType === 'alliances') {
+      // Navigate but keep wizard open — user comes back after doing the step
       navigate('/server/' + serverId + '/admin?tab=alliances');
+      // If we're on step 1 (copy owner link), mark it done when they go there
+      if (currentStep === 1) {
+        localStorage.setItem(copiedKey, '1');
+      }
       onDismiss();
     } else if (step.actionType === 'next') {
-      setCurrentStep(s => s + 1);
+      setCurrentStep(s => Math.min(s + 1, STEPS.length - 1));
     } else if (step.actionType === 'close') {
       onDismiss();
     }
@@ -84,12 +100,14 @@ export default function SetupWizard({ serverId, navigate, onDismiss }) {
           {STEPS.map((_, i) => (
             <div
               key={i}
+              onClick={() => setCurrentStep(i)}
               style={{
                 width: 8,
                 height: 8,
                 borderRadius: '50%',
                 background: i === currentStep ? '#00d4ff' : i < currentStep ? 'rgba(0,212,255,0.4)' : '#1e3550',
                 transition: 'all 0.2s',
+                cursor: i < currentStep ? 'pointer' : 'default',
               }}
             />
           ))}
@@ -104,6 +122,13 @@ export default function SetupWizard({ serverId, navigate, onDismiss }) {
         <p style={{ color: '#a0c0d8', fontSize: 15, lineHeight: 1.6, marginBottom: 28 }}>
           {step.description}
         </p>
+
+        {/* Completed step hint */}
+        {currentStep > 0 && currentStep < STEPS.length - 1 && (
+          <div style={{ fontSize: 11, color: 'rgba(0,212,255,0.5)', marginBottom: 16, letterSpacing: '0.5px' }}>
+            ✓ Previous steps completed — pick up from here
+          </div>
+        )}
 
         {/* Action button */}
         <button
