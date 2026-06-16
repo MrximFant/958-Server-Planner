@@ -71,34 +71,28 @@ function matchBuildingToMarker(building) {
   return direct || null;
 }
 
-const PHASE_DOT_COLOR = {
-  phase1: '#00c8ff',
-  phase2: '#f0a500',
-};
-function phaseDotColor(building) {
-  return PHASE_DOT_COLOR[building.phase] || '#7a9bb8'; // substitutes / custom / null -> neutral
-}
+// Palette used to assign each distinct building (or combined group of buildings) its own
+// marker dot color. Buildings sharing a combine_group are really one team, so they share
+// a color; every other distinct building/group gets the next color in the palette, wrapping
+// around if there are ever more distinct keys than palette entries.
+const MARKER_COLOR_PALETTE = ['#00c8ff', '#ff6b35', '#a855f7', '#22d3ee', '#facc15', '#34d399', '#f472b6', '#60a5fa', '#fb923c', '#4ade80', '#c084fc'];
 
-// Palette used to color matched phase1<->phase2 link pairs distinctly & deterministically.
-const LINK_COLOR_PALETTE = ['#00c8ff', '#ff6b35', '#a855f7', '#22d3ee', '#facc15', '#34d399'];
-
-// Given the list of { building } matched to markers, discover phase1->phase2 links (in stable
-// discovery order) and assign each a palette color. Returns a map of buildingId -> color for
-// every building that's part of a link (both ends share the same color).
-function computeLinkColors(matched) {
-  const byBuildingId = Object.fromEntries(matched.map(m => [m.building.id, m]));
+// Given the list of { marker, building } pairs already matched & rendered on the map, assign
+// each distinct building/combined-group a stable, deterministic color. Effective key = building's
+// combine_group if set, else its own id. Order of first appearance in `matched` determines which
+// palette color a key gets. Returns a map of buildingId -> color.
+function computeMarkerColors(matched) {
+  const colorByKey = {};
   const colorByBuildingId = {};
-  let linkIdx = 0;
-  matched
-    .filter(m => m.building.phase === 'phase1' && m.building.links_to_id)
-    .forEach(m => {
-      const target = byBuildingId[m.building.links_to_id];
-      if (!target) return;
-      const color = LINK_COLOR_PALETTE[linkIdx % LINK_COLOR_PALETTE.length];
-      linkIdx += 1;
-      colorByBuildingId[m.building.id] = color;
-      colorByBuildingId[target.building.id] = color;
-    });
+  let idx = 0;
+  matched.forEach(({ building }) => {
+    const key = building.combine_group || building.id;
+    if (!(key in colorByKey)) {
+      colorByKey[key] = MARKER_COLOR_PALETTE[idx % MARKER_COLOR_PALETTE.length];
+      idx += 1;
+    }
+    colorByBuildingId[building.id] = colorByKey[key];
+  });
   return colorByBuildingId;
 }
 
@@ -1474,25 +1468,18 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTi
     matched.push({ marker, building: b });
   });
 
-  const byBuildingId = Object.fromEntries(matched.map(m => [m.building.id, m]));
-
-  // Connector lines: phase1 building -> linked phase2 building, when both are matched to markers.
-  const connectors = matched
-    .filter(m => m.building.phase === 'phase1' && m.building.links_to_id)
-    .map(m => {
-      const target = byBuildingId[m.building.links_to_id];
-      if (!target) return null;
-      return { from: m.marker, to: target.marker, fromId: m.building.id, toId: target.building.id };
-    })
-    .filter(Boolean);
-
-  // Deterministic color per linked pair (both ends + connector share one palette color).
-  const linkColorByBuildingId = computeLinkColors(matched);
-  const connectorColors = {}; // fromId -> color, keyed for connector rendering below
-  connectors.forEach(c => { connectorColors[c.fromId] = linkColorByBuildingId[c.fromId] || '#00c8ff'; });
+  // Distinct color per building/combined-group (buildings sharing a combine_group share a color).
+  const markerColorByBuildingId = computeMarkerColors(matched);
 
   function dotColorFor(building) {
-    return linkColorByBuildingId[building.id] || phaseDotColor(building);
+    return markerColorByBuildingId[building.id] || '#7a9bb8';
+  }
+
+  // True when a building is part of an *active* combine group (2+ members sharing the same
+  // combine_group) — used to give those markers a stronger glow on the map.
+  function isActivelyCombined(building) {
+    if (!building.combine_group) return false;
+    return buildings.some(b => b.id !== building.id && b.combine_group === building.combine_group);
   }
 
   // Substitutes building(s) for the overlay panel.
@@ -1524,38 +1511,20 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTi
       ctx.fillText(titleText, w / 2, titleY + titlePadding / 2);
     }
 
-    // Connectors first (under markers).
-    ctx.lineWidth = Math.max(2, w * 0.0025);
-    connectors.forEach(c => {
-      const color = connectorColors[c.fromId] || '#00c8ff';
-      ctx.strokeStyle = color;
-      const x1 = (c.from.x / 100) * w, y1 = (c.from.y / 100) * h;
-      const x2 = (c.to.x / 100) * w, y2 = (c.to.y / 100) * h;
-      ctx.beginPath();
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-      ctx.stroke();
-      // arrowhead
-      const angle = Math.atan2(y2 - y1, x2 - x1);
-      const headLen = Math.max(10, w * 0.012);
-      ctx.beginPath();
-      ctx.moveTo(x2, y2);
-      ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
-      ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
-    });
-
     // Markers + labels.
     matched.forEach(({ marker, building }) => {
       const cx = (marker.x / 100) * w;
       const cy = (marker.y / 100) * h;
       const dotR = Math.max(5, w * 0.006);
+      const color = dotColorFor(building);
+      const combined = isActivelyCombined(building);
+      ctx.shadowColor = color;
+      ctx.shadowBlur = combined ? 18 : 0;
       ctx.beginPath();
       ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = dotColorFor(building);
+      ctx.fillStyle = color;
       ctx.fill();
+      ctx.shadowBlur = 0;
       ctx.lineWidth = 2;
       ctx.strokeStyle = '#0a1220';
       ctx.stroke();
@@ -1643,36 +1612,13 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTi
             style={{ display: 'block', width: '100%', height: 'auto', objectFit: 'contain' }}
           />
 
-          {imgStatus === 'ok' && (
-            <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-              <defs>
-                {connectors.map((c, i) => {
-                  const color = connectorColors[c.fromId] || '#00c8ff';
-                  return (
-                    <marker key={i} id={`ds-arrowhead-${i}`} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-                      <path d="M0,0 L8,4 L0,8 Z" fill={color} />
-                    </marker>
-                  );
-                })}
-              </defs>
-              {connectors.map((c, i) => (
-                <line
-                  key={i}
-                  x1={`${c.from.x}%`} y1={`${c.from.y}%`}
-                  x2={`${c.to.x}%`} y2={`${c.to.y}%`}
-                  stroke={connectorColors[c.fromId] || '#00c8ff'} strokeWidth={2}
-                  markerEnd={`url(#ds-arrowhead-${i})`}
-                />
-              ))}
-            </svg>
-          )}
-
           {imgStatus === 'ok' && matched.map(({ marker, building }) => {
             const names = markerNameLines(building, memberById, buildings);
             const shownNames = names.slice(0, 3);
             const extra = names.length - shownNames.length;
             const onLeftHalf = marker.x < 50;
             const dotColor = dotColorFor(building);
+            const combined = isActivelyCombined(building);
 
             return (
               <button
@@ -1688,7 +1634,8 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTi
               >
                 <span style={{
                   width: 14, height: 14, borderRadius: '50%', background: dotColor,
-                  border: '2px solid #0a1220', boxShadow: `0 0 6px ${dotColor}`, flexShrink: 0,
+                  border: '2px solid #0a1220', flexShrink: 0,
+                  boxShadow: combined ? `0 0 14px 4px ${dotColor}, 0 0 4px ${dotColor}` : `0 0 6px ${dotColor}`,
                 }} />
                 <div style={{
                   marginTop: 4, background: 'rgba(8,13,20,0.88)', border: '1px solid rgba(122,155,184,0.4)',
