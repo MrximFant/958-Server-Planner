@@ -76,7 +76,7 @@ const PHASE_DOT_COLOR = {
   phase2: '#f0a500',
 };
 function phaseDotColor(building) {
-  return PHASE_DOT_COLOR[building.phase] || '#7a9bb8'; // kill_squad / substitutes / null -> neutral
+  return PHASE_DOT_COLOR[building.phase] || '#7a9bb8'; // substitutes / custom / null -> neutral
 }
 
 // Palette used to color matched phase1<->phase2 link pairs distinctly & deterministically.
@@ -144,14 +144,12 @@ const DEFAULT_BUILDINGS = [
   { name: 'Arsenal',             category: 'arsenal',           phase: 'phase2' },
   { name: 'Mercenary Factory',   category: 'mercenary_factory', phase: 'phase2' },
   { name: 'Nuclear Silo',        category: 'nuclear_silo',      phase: 'phase2' },
-  { name: 'Kill Squad',          category: 'kill_squad',        phase: null },
   { name: 'Substitutes',         category: 'substitutes',       phase: null },
 ];
 
 const SECTIONS = [
   { key: 'phase1',     title: 'PHASE 1 — FIRST 10 MIN',   match: b => b.phase === 'phase1',                         newDefaults: { category: 'custom', phase: 'phase1' } },
   { key: 'phase2',     title: 'PHASE 2 — AFTER MINUTE 10', match: b => b.phase === 'phase2',                         newDefaults: { category: 'custom', phase: 'phase2' } },
-  { key: 'kill_squad', title: 'KILL SQUAD',                match: b => b.category === 'kill_squad' && !b.phase,      newDefaults: { category: 'kill_squad', phase: null } },
   { key: 'substitutes',title: 'SUBSTITUTES',               match: b => b.category === 'substitutes' && !b.phase,     newDefaults: { category: 'substitutes', phase: null } },
 ];
 
@@ -233,6 +231,7 @@ function emptyBuilding(defaults) {
     phase: defaults.phase,
     links_to_id: null,
     sort_order: 0,
+    team_label: '',
     assignments: [], // [{ member_id, role }]
   };
 }
@@ -245,8 +244,16 @@ function seedBuildings() {
     phase: b.phase,
     links_to_id: null,
     sort_order: i,
+    team_label: '',
     assignments: [],
   }));
+}
+
+// Find other buildings sharing the same (case-insensitive, trimmed) team_label.
+function teammateBuildings(building, allBuildings) {
+  const label = (building.team_label || '').trim().toLowerCase();
+  if (!label) return [];
+  return allBuildings.filter(b => b.id !== building.id && (b.team_label || '').trim().toLowerCase() === label);
 }
 
 // ── Main component ─────────────────────────────────────────────────
@@ -278,6 +285,7 @@ export default function BattlePlanner() {
   const [currentWeekKey, setCurrentWeekKey] = useState('');
   const [planId, setPlanId] = useState(null);
   const [rulesText, setRulesText] = useState('');
+  const [planName, setPlanName] = useState('');
   const [buildings, setBuildings] = useState([]); // [{id, name, category, phase, links_to_id, sort_order, assignments:[{member_id,role}]}]
 
   const [pendingNav, setPendingNav] = useState(null);
@@ -291,6 +299,7 @@ export default function BattlePlanner() {
   // No-show tracking
   const [allNoshows, setAllNoshows] = useState([]); // all battle_plan_noshows rows for this alliance
   const [noshowModalOpen, setNoshowModalOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
 
   useEffect(() => {
     function onResize() { setIsMobile(window.innerWidth < 768); }
@@ -365,6 +374,7 @@ export default function BattlePlanner() {
       setPlanId(null);
       setCurrentWeekKey(todayMonday);
       setRulesText('');
+      setPlanName('');
       setBuildings(evt === 'desert' ? seedBuildings() : []);
       setIsDirty(false);
     }
@@ -374,6 +384,7 @@ export default function BattlePlanner() {
     setPlanId(plan.id);
     setCurrentWeekKey(plan.week_label ?? '');
     setRulesText(plan.rules_text ?? '');
+    setPlanName(plan.name ?? '');
     const rows = buildingRows ?? [];
     setBuildings(rows.length > 0 ? rows.map(b => ({ ...b })) : (evt === 'desert' || plan.event_type === 'desert' ? seedBuildings() : []));
     setIsDirty(false);
@@ -402,7 +413,7 @@ export default function BattlePlanner() {
     if (!pid) {
       const { data, error } = await supabase
         .from('battle_plans')
-        .insert({ alliance_id: myAllianceId, event_type: eventType, taskforce, week_label: wLabel, rules_text: rulesText })
+        .insert({ alliance_id: myAllianceId, event_type: eventType, taskforce, week_label: wLabel, rules_text: rulesText, name: planName })
         .select('*').single();
       if (error) { setSaving(false); return; }
       pid = data?.id;
@@ -413,9 +424,9 @@ export default function BattlePlanner() {
     } else {
       const { data } = await supabase
         .from('battle_plans')
-        .update({ rules_text: rulesText, week_label: wLabel })
+        .update({ rules_text: rulesText, week_label: wLabel, name: planName })
         .eq('id', pid).select('*').single();
-      setAllPlans(prev => prev.map(p => p.id === pid ? (data ?? { ...p, rules_text: rulesText, week_label: wLabel }) : p));
+      setAllPlans(prev => prev.map(p => p.id === pid ? (data ?? { ...p, rules_text: rulesText, week_label: wLabel, name: planName }) : p));
     }
 
     if (!pid) { setSaving(false); return; }
@@ -433,6 +444,7 @@ export default function BattlePlanner() {
       phase: b.phase,
       links_to_id: null,
       sort_order: b.sort_order ?? i,
+      team_label: b.team_label || '',
     }));
     const { data: insertedBuildings } = await supabase.from('battle_plan_buildings').insert(buildingInserts).select('*');
 
@@ -472,7 +484,7 @@ export default function BattlePlanner() {
     setSaved(true);
     setIsDirty(false);
     setTimeout(() => setSaved(false), 2500);
-  }, [myAllianceId, planId, currentWeekKey, eventType, taskforce, rulesText, buildings]);
+  }, [myAllianceId, planId, currentWeekKey, eventType, taskforce, rulesText, planName, buildings]);
 
   // ── No-show tracking ────────────────────────────────────────────────
   // Saves a diff against existing battle_plan_noshows rows for the exact
@@ -576,6 +588,7 @@ export default function BattlePlanner() {
       setPlanId(null);
       setCurrentWeekKey(toDateString(getMondayDate()));
       setRulesText('');
+      setPlanName('');
       setBuildings(eventType === 'desert' ? seedBuildings() : []);
       setIsDirty(false);
     }
@@ -613,34 +626,60 @@ export default function BattlePlanner() {
 
   function assignMember(memberId, buildingId) {
     if (!canManage) return;
-    setBuildings(prev => prev.map(b => {
-      if (b.id !== buildingId) return b;
-      if ((b.assignments ?? []).some(a => a.member_id === memberId)) return b;
-      return { ...b, assignments: [...(b.assignments ?? []), { member_id: memberId, role: null }] };
-    }));
+    setBuildings(prev => {
+      const source = prev.find(b => b.id === buildingId);
+      const teammateIds = new Set(teammateBuildings(source ?? { id: buildingId, team_label: '' }, prev).map(b => b.id));
+      return prev.map(b => {
+        if (b.id !== buildingId && !teammateIds.has(b.id)) return b;
+        if ((b.assignments ?? []).some(a => a.member_id === memberId)) return b;
+        return { ...b, assignments: [...(b.assignments ?? []), { member_id: memberId, role: null }] };
+      });
+    });
     markDirty();
     setPicker(null);
     setPickerSearch('');
   }
   function removeMember(memberId, buildingId) {
     if (!canManage) return;
-    setBuildings(prev => prev.map(b => b.id === buildingId ? { ...b, assignments: (b.assignments ?? []).filter(a => a.member_id !== memberId) } : b));
+    setBuildings(prev => {
+      const source = prev.find(b => b.id === buildingId);
+      const teammateIds = new Set(teammateBuildings(source ?? { id: buildingId, team_label: '' }, prev).map(b => b.id));
+      return prev.map(b => {
+        if (b.id !== buildingId && !teammateIds.has(b.id)) return b;
+        return { ...b, assignments: (b.assignments ?? []).filter(a => a.member_id !== memberId) };
+      });
+    });
     markDirty();
   }
   function cycleRole(memberId, buildingId) {
     if (!canManage) return;
-    setBuildings(prev => prev.map(b => {
-      if (b.id !== buildingId) return b;
-      return {
-        ...b,
-        assignments: (b.assignments ?? []).map(a => {
-          if (a.member_id !== memberId) return a;
-          const idx = ROLE_CYCLE.indexOf(a.role);
-          const next = ROLE_CYCLE[(idx + 1) % ROLE_CYCLE.length];
-          return { ...a, role: next };
-        }),
-      };
-    }));
+    setBuildings(prev => {
+      const source = prev.find(b => b.id === buildingId);
+      const teammateIds = new Set(teammateBuildings(source ?? { id: buildingId, team_label: '' }, prev).map(b => b.id));
+      return prev.map(b => {
+        if (b.id !== buildingId && !teammateIds.has(b.id)) return b;
+        return {
+          ...b,
+          assignments: (b.assignments ?? []).map(a => {
+            if (a.member_id !== memberId) return a;
+            const idx = ROLE_CYCLE.indexOf(a.role);
+            const next = ROLE_CYCLE[(idx + 1) % ROLE_CYCLE.length];
+            return { ...a, role: next };
+          }),
+        };
+      });
+    });
+    markDirty();
+  }
+  function setTeamLabel(buildingId, label) {
+    if (!canManage) return;
+    setBuildings(prev => prev.map(b => b.id === buildingId ? { ...b, team_label: label } : b));
+    markDirty();
+  }
+  function clearAllAssignments() {
+    if (!canManage) return;
+    if (!confirm('Clear ALL player assignments for every building this week? Buildings, links, and team labels are kept. You still need to hit SAVE to persist this.')) return;
+    setBuildings(prev => prev.map(b => ({ ...b, assignments: [] })));
     markDirty();
   }
 
@@ -651,6 +690,7 @@ export default function BattlePlanner() {
     const weekRange = currentWeekKey ? formatWeekRange(currentWeekKey) : 'Unknown Week';
     const lines = [
       `${evtMeta?.icon ?? ''} ${evtMeta?.label ?? eventType.toUpperCase()} — TASKFORCE ${taskforce} — ${allianceName}`,
+      ...(planName.trim() ? [`PLAN: ${planName.trim()}`] : []),
       `Week of ${weekRange}`,
       '',
     ];
@@ -764,6 +804,9 @@ export default function BattlePlanner() {
         />
       )}
 
+      {/* ── Guide modal ──────────────────────────────────────────── */}
+      {guideOpen && <GuideModal onClose={() => setGuideOpen(false)} />}
+
       {/* ── No-show modal ────────────────────────────────────────── */}
       {noshowModalOpen && (
         <NoshowModal
@@ -792,6 +835,7 @@ export default function BattlePlanner() {
           {alliance && <div style={{ fontSize: 13, color: '#c0d8f0', marginLeft: 4 }}>— {alliance.name}</div>}
           {isDirty && <div style={{ fontSize: 10, color: '#f0a500', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', padding: '2px 7px', letterSpacing: '1px', fontWeight: 700 }}>UNSAVED</div>}
           <div style={{ flex: 1 }} />
+          <button onClick={() => setGuideOpen(true)} style={{ ...S.smallBtn, color: '#8aadcc' }}>❓ {isMobile ? '' : 'GUIDE'}</button>
           {eventType === 'desert' && (
             <button onClick={handleExport} style={{ ...S.smallBtn, color: '#8aadcc' }}><Download size={12} /> {isMobile ? '' : 'COPY FOR DISCORD'}</button>
           )}
@@ -858,6 +902,9 @@ export default function BattlePlanner() {
                 <button onClick={createNextWeek} style={{ ...S.smallBtn, background: 'rgba(0,232,122,0.1)', border: '1px solid rgba(0,232,122,0.4)', color: '#00e87a' }}>
                   <Plus size={12} /> NEXT WEEK
                 </button>
+                <button onClick={clearAllAssignments} style={{ ...S.smallBtn, background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.4)', color: '#f0a500' }}>
+                  CLEAR ASSIGNMENTS
+                </button>
                 <button onClick={handleDeleteWeek} style={{ ...S.smallBtn, background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.25)', color: '#ff4060' }}>
                   <Trash2 size={12} />
                 </button>
@@ -880,6 +927,21 @@ export default function BattlePlanner() {
           </div>
         ) : (
           <>
+            {/* Plan name */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: '#7a9bb8', marginBottom: 6 }}>PLAN NAME</div>
+              {canManage ? (
+                <input
+                  value={planName}
+                  onChange={e => { setPlanName(e.target.value); markDirty(); }}
+                  placeholder="e.g. Taskforce A — Main Squad"
+                  style={{ width: '100%', maxWidth: 420, background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: '8px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, outline: 'none', boxSizing: 'border-box', minHeight: 40 }}
+                />
+              ) : (
+                <div style={{ fontSize: 14, fontWeight: 700, color: '#f0a500' }}>{planName.trim() || '(no name set)'}</div>
+              )}
+            </div>
+
             {/* List / Map view toggle */}
             <div style={{ display: 'flex', gap: 0, marginBottom: 20, border: '1px solid #1e3550', width: 'fit-content' }}>
               <button
@@ -913,6 +975,8 @@ export default function BattlePlanner() {
                 isMobile={isMobile}
                 taskforce={taskforce}
                 weekLabel={currentWeekKey}
+                planName={planName}
+                onExportText={handleExport}
                 onMarkerClick={(buildingId) => setPicker({ buildingId })}
                 onRemovePlayer={canManage ? removeMember : null}
               />
@@ -950,6 +1014,7 @@ export default function BattlePlanner() {
                           onRename={n => renameBuilding(b.id, n)}
                           onDelete={() => deleteBuilding(b.id)}
                           onSetLinksTo={tid => setLinksTo(b.id, tid)}
+                          onSetTeamLabel={label => setTeamLabel(b.id, label)}
                           onAddPlayer={() => setPicker({ buildingId: b.id })}
                           onRemovePlayer={mid => removeMember(mid, b.id)}
                           onCycleRole={mid => cycleRole(mid, b.id)}
@@ -969,6 +1034,7 @@ export default function BattlePlanner() {
                           onRename={n => renameBuilding(b.id, n)}
                           onDelete={() => deleteBuilding(b.id)}
                           onSetLinksTo={tid => setLinksTo(b.id, tid)}
+                          onSetTeamLabel={label => setTeamLabel(b.id, label)}
                           onAddPlayer={() => setPicker({ buildingId: b.id })}
                           onRemovePlayer={mid => removeMember(mid, b.id)}
                           onCycleRole={mid => cycleRole(mid, b.id)}
@@ -1073,8 +1139,31 @@ function LinksToControl({ building, phase2Options, linkTarget, canManage, onSetL
   );
 }
 
+// ── Team label control (shared roster grouping) ────────────────────
+function TeamLabelControl({ building, canManage, onSetTeamLabel }) {
+  if (!canManage) {
+    if (!building.team_label || !building.team_label.trim()) return null;
+    return (
+      <div style={{ display: 'inline-block', marginTop: 6, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: '#00c8ff', background: 'rgba(0,200,255,0.1)', border: '1px solid rgba(0,200,255,0.3)', padding: '2px 7px' }}>
+        {building.team_label.trim()}
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
+      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: '#7a9bb8' }}>TEAM:</span>
+      <input
+        value={building.team_label || ''}
+        onChange={e => onSetTeamLabel(e.target.value)}
+        placeholder="e.g. Team 1"
+        style={{ flex: 1, background: '#0a1220', border: '1px solid #1e3550', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, padding: '4px 6px', outline: 'none', minHeight: 26 }}
+      />
+    </div>
+  );
+}
+
 // ── Building card (desktop/tablet) ──────────────────────────────────
-function BuildingCard({ building, memberById, canManage, phase2Options, linkTarget, onRename, onDelete, onSetLinksTo, onAddPlayer, onRemovePlayer, onCycleRole }) {
+function BuildingCard({ building, memberById, canManage, phase2Options, linkTarget, onRename, onDelete, onSetLinksTo, onSetTeamLabel, onAddPlayer, onRemovePlayer, onCycleRole }) {
   const meta = categoryMeta(building.category);
   return (
     <div style={{ border: '1px solid #1e3550', background: 'rgba(13,21,32,0.6)', display: 'flex', flexDirection: 'column' }}>
@@ -1087,6 +1176,7 @@ function BuildingCard({ building, memberById, canManage, phase2Options, linkTarg
           )}
         </div>
         <LinksToControl building={building} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
+        <TeamLabelControl building={building} canManage={canManage} onSetTeamLabel={onSetTeamLabel} />
       </div>
       <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {(building.assignments ?? []).map(a => {
@@ -1108,7 +1198,7 @@ function BuildingCard({ building, memberById, canManage, phase2Options, linkTarg
 }
 
 // ── Building accordion (mobile) ──────────────────────────────────────
-function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, phase2Options, linkTarget, onRename, onDelete, onSetLinksTo, onAddPlayer, onRemovePlayer, onCycleRole }) {
+function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, phase2Options, linkTarget, onRename, onDelete, onSetLinksTo, onSetTeamLabel, onAddPlayer, onRemovePlayer, onCycleRole }) {
   const meta = categoryMeta(building.category);
   const count = (building.assignments ?? []).length;
   return (
@@ -1132,6 +1222,7 @@ function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, 
             </div>
           )}
           <LinksToControl building={building} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
+          <TeamLabelControl building={building} canManage={canManage} onSetTeamLabel={onSetTeamLabel} />
           {(building.assignments ?? []).map(a => {
             const m = memberById[a.member_id];
             if (!m) return null;
@@ -1153,17 +1244,12 @@ function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, 
 
 // Build the label lines for a marker: assigned player names only (no building name —
 // the map image already prints it), each prefixed with a role icon when applicable.
-// 👑 for coordinator assignments, 🔥 for any member assigned to a kill_squad building,
-// otherwise fall back to the existing ROLE_META icon for consistency.
+// 👑 for coordinator, 🔥 for lethal (moves to next building) — purely role-driven.
 function markerNameLines(building, memberById, allBuildings) {
-  const isKillSquad = building.category === 'kill_squad';
   const names = (building.assignments ?? []).map(a => {
     const m = memberById[a.member_id];
     if (!m) return null;
-    let icon = '';
-    if (a.role === 'coordinator') icon = '👑 ';
-    else if (isKillSquad) icon = '🔥 ';
-    else if (a.role && ROLE_META[a.role]) icon = ROLE_META[a.role].icon + ' ';
+    const icon = a.role && ROLE_META[a.role] ? ROLE_META[a.role].icon + ' ' : '';
     return `${icon}${memberName(m)}`;
   }).filter(Boolean);
 
@@ -1179,7 +1265,7 @@ function markerNameLines(building, memberById, allBuildings) {
 }
 
 // ── Map view ──────────────────────────────────────────────────────
-function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMarkerClick, onRemovePlayer }) {
+function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planName, onExportText, onMarkerClick, onRemovePlayer }) {
   const [imgStatus, setImgStatus] = useState('loading'); // 'loading' | 'ok' | 'error'
   const imgRef = useRef(null);
   const containerRef = useRef(null);
@@ -1228,6 +1314,21 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
     canvas.height = h;
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0, w, h);
+
+    if (planName && planName.trim()) {
+      const titleFontSize = Math.max(20, Math.round(w * 0.022));
+      ctx.font = `bold ${titleFontSize}px Arial`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const titlePadding = 10;
+      const titleY = 8;
+      const titleText = planName.trim();
+      const titleW = ctx.measureText(titleText).width + titlePadding * 2;
+      ctx.fillStyle = 'rgba(8,13,20,0.85)';
+      ctx.fillRect(w / 2 - titleW / 2, titleY, titleW, titleFontSize + titlePadding);
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(titleText, w / 2, titleY + titlePadding / 2);
+    }
 
     // Connectors first (under markers).
     ctx.lineWidth = Math.max(2, w * 0.0025);
@@ -1306,7 +1407,15 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
 
   return (
     <div style={{ marginBottom: 24 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 10 }}>
+      {planName && planName.trim() && (
+        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '1.5px', color: '#f0a500', marginBottom: 10, textAlign: 'center' }}>{planName.trim()}</div>
+      )}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
+        {onExportText && (
+          <button onClick={onExportText} style={{ ...S.smallBtn, color: '#8aadcc' }}>
+            <Download size={12} /> COPY FOR DISCORD
+          </button>
+        )}
         {imgStatus === 'ok' && (
           <button onClick={handleDownload} style={{ ...S.smallBtn, background: 'rgba(0,232,122,0.1)', border: '1px solid rgba(0,232,122,0.4)', color: '#00e87a' }}>
             <Download size={12} /> DOWNLOAD MAP
@@ -1510,7 +1619,7 @@ function MemberPicker({ members, search, setSearch, isMobile, onPick, onClose, n
                 )}
               </div>
               {m.power1 && (
-                <div style={{ fontSize: 9, color: '#5a7898', fontFamily: "'Share Tech Mono',monospace" }}>{m.power1}M{m.troop1 ? ` · ${m.troop1}` : ''}</div>
+                <div style={{ fontSize: 12, color: '#ffffff', fontFamily: "'Share Tech Mono',monospace" }}>{m.power1}M{m.troop1 ? ` · ${m.troop1}` : ''}</div>
               )}
             </div>
           </button>
@@ -1619,6 +1728,48 @@ function NoshowModal({ members, weekLabel, existingNoshows, isMobile, onSave, on
     <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ background: '#0d1520', border: '1px solid #1e3550', width: 380, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
         {content}
+      </div>
+    </div>
+  );
+}
+
+// ── Guide modal ──────────────────────────────────────────────────
+function GuideModal({ onClose }) {
+  const bullets = [
+    'LIST VIEW shows every building grouped by Phase 1 (first 10 min) and Phase 2 (after minute 10).',
+    'Tap "ADD PLAYER" on any building to assign someone — players can be on multiple buildings at once.',
+    "Tap a player's role icon to cycle: none → 👑 Coordinator → 🔥 Moves to next building.",
+    'Phase 1 buildings have a "→ moves to" dropdown — link it to whichever Phase 2 building your team pushes to after minute 10. 🔥-tagged players will then also show up at that Phase 2 building.',
+    'Give 2+ buildings the same "Team" label to mirror one roster across all of them automatically.',
+    'MAP VIEW shows the same data laid over the real battlefield image, with colored lines connecting linked buildings.',
+    'Use "MARK NO-SHOWS" each week to track attendance — repeat no-shows get a ❗ badge when picking players.',
+    '"+ NEXT WEEK" copies your buildings/links/team setup forward but clears all player assignments, so you can re-assign fresh each week.',
+    'Use "COPY FOR DISCORD" or "DOWNLOAD MAP" to share the plan with your alliance.',
+  ];
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: '#0d1520', border: '1px solid #1e3550', width: 460, maxWidth: '92%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', fontFamily: "'Rajdhani',sans-serif" }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #1e3550' }}>
+          <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '1.5px', color: '#00c8ff' }}>❓ HOW THE BATTLE PLANNER WORKS</div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#7a9bb8', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <X size={18} />
+          </button>
+        </div>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+          <ul style={{ margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {bullets.map((b, i) => (
+              <li key={i} style={{ display: 'flex', gap: 8, color: '#c0d8f0', fontSize: 13, lineHeight: 1.6 }}>
+                <span style={{ color: '#f0a500', flexShrink: 0 }}>•</span>
+                <span>{b}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div style={{ padding: '12px 16px', borderTop: '1px solid #1e3550' }}>
+          <button onClick={onClose} style={{ width: '100%', padding: '9px', background: 'rgba(0,200,255,0.1)', border: '1px solid rgba(0,200,255,0.4)', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>
+            GOT IT
+          </button>
+        </div>
       </div>
     </div>
   );

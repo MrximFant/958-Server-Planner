@@ -85,3 +85,10 @@ CREATE POLICY "battle_plan_noshows_update" ON battle_plan_noshows FOR UPDATE USI
 CREATE POLICY "battle_plan_noshows_delete" ON battle_plan_noshows FOR DELETE USING (true);
 
 ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_noshows;
+
+-- ============================================================
+-- Team binding — mirror a shared roster across 2+ buildings
+-- Run this block separately if the battle_plan_buildings table already exists live.
+-- ============================================================
+
+ALTER TABLE battle_plan_buildings ADD COLUMN IF NOT EXISTS team_label TEXT DEFAULT '';
