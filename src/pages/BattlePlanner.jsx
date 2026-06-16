@@ -16,27 +16,54 @@ const EVENT_TYPES = [
 const TASKFORCES = ['A', 'B'];
 
 const ROLE_META = {
-  coordinator: { label: 'Team Coordinator', icon: '👑', color: '#ffd700' },
-  lethal:      { label: 'Lethal Killer',    icon: '🔥', color: '#ff4060' },
-  science:     { label: 'Science Hub',      icon: '✅', color: '#00e87a' },
-  info:        { label: 'Info Center',      icon: 'ℹ️', color: '#00c8ff' },
+  coordinator: { label: 'Role: Coordinator', icon: '👑', color: '#ffd700' },
+  lethal:      { label: 'Role: Lethal Killer', icon: '🔥', color: '#ff4060' },
+  science:     { label: 'Role: Science',      icon: '✅', color: '#00e87a' },
+  info:        { label: 'Role: Info',         icon: 'ℹ️', color: '#00c8ff' },
 };
 const ROLE_CYCLE = [null, 'coordinator', 'lethal', 'science', 'info'];
 
-const DEFAULT_TEAMS = [
-  { number: 1, label: 'Hospital 1 & 3 → Mercenary Factory' },
-  { number: 2, label: 'Hospital 2 & 4 → Arsenal' },
-  { number: 3, label: 'Oil Refinery 1 → Nuclear Silo' },
-  { number: 4, label: 'Oil Refinery 2 → Nuclear Silo' },
+const CATEGORY_META = {
+  oil_refinery:      { icon: '🛢️', label: 'Oil Refinery' },
+  info_center:       { icon: 'ℹ️', label: 'Info Center' },
+  science_hub:       { icon: '🔬', label: 'Science Hub' },
+  field_hospital:    { icon: '➕', label: 'Field Hospital' },
+  oil_well:          { icon: '🪨', label: 'Oil Well' },
+  arsenal:           { icon: '⚔️', label: 'Arsenal' },
+  mercenary_factory: { icon: '🏭', label: 'Mercenary Factory' },
+  nuclear_silo:      { icon: '☢️', label: 'Nuclear Silo' },
+  kill_squad:        { icon: '💀', label: 'Kill Squad' },
+  substitutes:       { icon: '🔄', label: 'Substitutes' },
+  custom:            { icon: '🏗️', label: 'Custom' },
+};
+
+const DEFAULT_BUILDINGS = [
+  { name: 'Oil Refinery',        category: 'oil_refinery',      phase: 'phase1' },
+  { name: 'Info Center',         category: 'info_center',       phase: 'phase1' },
+  { name: 'Science Hub',         category: 'science_hub',       phase: 'phase1' },
+  { name: 'Field Hospital 1',    category: 'field_hospital',    phase: 'phase1' },
+  { name: 'Field Hospital 2',    category: 'field_hospital',    phase: 'phase1' },
+  { name: 'Arsenal',             category: 'arsenal',           phase: 'phase2' },
+  { name: 'Mercenary Factory',   category: 'mercenary_factory', phase: 'phase2' },
+  { name: 'Nuclear Silo',        category: 'nuclear_silo',      phase: 'phase2' },
+  { name: 'Kill Squad',          category: 'kill_squad',        phase: null },
+  { name: 'Substitutes',         category: 'substitutes',       phase: null },
 ];
 
-function defaultConfig() {
-  return { teams: DEFAULT_TEAMS.map(t => ({ ...t })) };
-}
+const SECTIONS = [
+  { key: 'phase1',     title: 'PHASE 1 — FIRST 10 MIN',   match: b => b.phase === 'phase1',                         newDefaults: { category: 'custom', phase: 'phase1' } },
+  { key: 'phase2',     title: 'PHASE 2 — AFTER MINUTE 10', match: b => b.phase === 'phase2',                         newDefaults: { category: 'custom', phase: 'phase2' } },
+  { key: 'kill_squad', title: 'KILL SQUAD',                match: b => b.category === 'kill_squad' && !b.phase,      newDefaults: { category: 'kill_squad', phase: null } },
+  { key: 'substitutes',title: 'SUBSTITUTES',               match: b => b.category === 'substitutes' && !b.phase,     newDefaults: { category: 'substitutes', phase: null } },
+];
 
 // ── Helpers ────────────────────────────────────────────────────────
 function memberName(m) {
   return m?.in_game_name || m?.username || '?';
+}
+
+function categoryMeta(cat) {
+  return CATEGORY_META[cat] || CATEGORY_META.custom;
 }
 
 function getMondayDate(d = new Date()) {
@@ -72,6 +99,37 @@ function nextWeekDate(weekLabels) {
   return getMondayDate(new Date(Date.now() + 7 * 24 * 3600000));
 }
 
+// Local id generator for not-yet-saved buildings, so links_to_id can reference them client-side.
+let localIdCounter = 0;
+function localId() {
+  localIdCounter += 1;
+  return `local_${Date.now()}_${localIdCounter}`;
+}
+
+function emptyBuilding(defaults) {
+  return {
+    id: localId(),
+    name: 'New Building',
+    category: defaults.category,
+    phase: defaults.phase,
+    links_to_id: null,
+    sort_order: 0,
+    assignments: [], // [{ member_id, role }]
+  };
+}
+
+function seedBuildings() {
+  return DEFAULT_BUILDINGS.map((b, i) => ({
+    id: localId(),
+    name: b.name,
+    category: b.category,
+    phase: b.phase,
+    links_to_id: null,
+    sort_order: i,
+    assignments: [],
+  }));
+}
+
 // ── Main component ─────────────────────────────────────────────────
 export default function BattlePlanner() {
   const { serverId } = useParams();
@@ -95,21 +153,20 @@ export default function BattlePlanner() {
   const [taskforce, setTaskforce] = useState('A');
 
   // All plans for this alliance, keyed for lookup
-  const [allPlans, setAllPlans] = useState([]); // [{id, event_type, taskforce, week_label, config, rules_text}]
-  const [allSlots, setAllSlots] = useState({}); // plan_id -> slot rows
+  const [allPlans, setAllPlans] = useState([]); // [{id, event_type, taskforce, week_label, rules_text}]
+  const [allBuildings, setAllBuildings] = useState({}); // plan_id -> buildings[]
 
   const [currentWeekKey, setCurrentWeekKey] = useState('');
   const [planId, setPlanId] = useState(null);
-  const [config, setConfig] = useState(defaultConfig);
   const [rulesText, setRulesText] = useState('');
-  const [slots, setSlots] = useState([]); // [{team_number, member_id, role, is_sub, slot_order}]
+  const [buildings, setBuildings] = useState([]); // [{id, name, category, phase, links_to_id, sort_order, assignments:[{member_id,role}]}]
 
   const [pendingNav, setPendingNav] = useState(null);
-  const [picker, setPicker] = useState(null); // { teamNumber, isSub } | null
+  const [picker, setPicker] = useState(null); // { buildingId } | null
   const [pickerSearch, setPickerSearch] = useState('');
 
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
-  const [openAccordion, setOpenAccordion] = useState(0);
+  const [openAccordion, setOpenAccordion] = useState({});
 
   useEffect(() => {
     function onResize() { setIsMobile(window.innerWidth < 768); }
@@ -136,12 +193,26 @@ export default function BattlePlanner() {
       let grouped = {};
       const planIds = (plans ?? []).map(p => p.id);
       if (planIds.length > 0) {
-        const { data: slotRows } = await supabase.from('battle_plan_slots').select('*').in('plan_id', planIds);
-        (slotRows ?? []).forEach(s => {
-          if (!grouped[s.plan_id]) grouped[s.plan_id] = [];
-          grouped[s.plan_id].push(s);
+        const { data: buildingRows } = await supabase.from('battle_plan_buildings').select('*').in('plan_id', planIds).order('sort_order');
+        const buildingsByPlan = {};
+        (buildingRows ?? []).forEach(b => {
+          if (!buildingsByPlan[b.plan_id]) buildingsByPlan[b.plan_id] = [];
+          buildingsByPlan[b.plan_id].push({ ...b, assignments: [] });
         });
-        setAllSlots(grouped);
+        const allBuildingIds = (buildingRows ?? []).map(b => b.id);
+        const assignmentsByBuilding = {};
+        if (allBuildingIds.length > 0) {
+          const { data: assignRows } = await supabase.from('battle_plan_assignments').select('*').in('building_id', allBuildingIds).order('sort_order');
+          (assignRows ?? []).forEach(a => {
+            if (!assignmentsByBuilding[a.building_id]) assignmentsByBuilding[a.building_id] = [];
+            assignmentsByBuilding[a.building_id].push({ member_id: a.member_id, role: a.role });
+          });
+        }
+        Object.keys(buildingsByPlan).forEach(pid => {
+          buildingsByPlan[pid] = buildingsByPlan[pid].map(b => ({ ...b, assignments: assignmentsByBuilding[b.id] ?? [] }));
+        });
+        grouped = buildingsByPlan;
+        setAllBuildings(grouped);
       }
 
       applyForEventTaskforce('canyon', 'A', plans ?? [], grouped);
@@ -156,30 +227,29 @@ export default function BattlePlanner() {
       .sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
   }
 
-  function applyForEventTaskforce(evt, tf, plansList, slotsMap) {
+  function applyForEventTaskforce(evt, tf, plansList, buildingsMap) {
     const list = plansFor(evt, tf, plansList);
     const todayMonday = toDateString(getMondayDate());
     let target = list.find(p => p.week_label === todayMonday);
     if (!target && list.length > 0) target = list[list.length - 1];
 
     if (target) {
-      applyPlan(target, slotsMap[target.id] ?? (allSlots[target.id] ?? []));
+      applyPlan(target, buildingsMap[target.id] ?? (allBuildings[target.id] ?? []), evt);
     } else {
       setPlanId(null);
       setCurrentWeekKey(todayMonday);
-      setConfig(defaultConfig());
       setRulesText('');
-      setSlots([]);
+      setBuildings(evt === 'desert' ? seedBuildings() : []);
       setIsDirty(false);
     }
   }
 
-  function applyPlan(plan, slotRows) {
+  function applyPlan(plan, buildingRows, evt) {
     setPlanId(plan.id);
     setCurrentWeekKey(plan.week_label ?? '');
-    setConfig(plan.config && plan.config.teams ? plan.config : defaultConfig());
     setRulesText(plan.rules_text ?? '');
-    setSlots((slotRows ?? []).map(s => ({ team_number: s.team_number, member_id: s.member_id, role: s.role, is_sub: s.is_sub, slot_order: s.slot_order })));
+    const rows = buildingRows ?? [];
+    setBuildings(rows.length > 0 ? rows.map(b => ({ ...b })) : (evt === 'desert' || plan.event_type === 'desert' ? seedBuildings() : []));
     setIsDirty(false);
   }
 
@@ -192,7 +262,7 @@ export default function BattlePlanner() {
   function doSwitchTo(evt, tf) {
     setEventType(evt);
     setTaskforce(tf);
-    applyForEventTaskforce(evt, tf, allPlans, allSlots);
+    applyForEventTaskforce(evt, tf, allPlans, allBuildings);
   }
 
   // ── Save ──────────────────────────────────────────────────────────
@@ -206,7 +276,7 @@ export default function BattlePlanner() {
     if (!pid) {
       const { data, error } = await supabase
         .from('battle_plans')
-        .insert({ alliance_id: myAllianceId, event_type: eventType, taskforce, week_label: wLabel, config, rules_text: rulesText })
+        .insert({ alliance_id: myAllianceId, event_type: eventType, taskforce, week_label: wLabel, rules_text: rulesText })
         .select('*').single();
       if (error) { setSaving(false); return; }
       pid = data?.id;
@@ -217,33 +287,66 @@ export default function BattlePlanner() {
     } else {
       const { data } = await supabase
         .from('battle_plans')
-        .update({ config, rules_text: rulesText, week_label: wLabel })
+        .update({ rules_text: rulesText, week_label: wLabel })
         .eq('id', pid).select('*').single();
-      setAllPlans(prev => prev.map(p => p.id === pid ? (data ?? { ...p, config, rules_text: rulesText, week_label: wLabel }) : p));
+      setAllPlans(prev => prev.map(p => p.id === pid ? (data ?? { ...p, rules_text: rulesText, week_label: wLabel }) : p));
     }
 
     if (!pid) { setSaving(false); return; }
 
-    // Replace all slots for this plan
-    await supabase.from('battle_plan_slots').delete().eq('plan_id', pid);
-    if (slots.length > 0) {
-      const rows = slots.map((s, i) => ({
-        plan_id: pid,
-        team_number: s.team_number,
-        member_id: s.member_id ?? null,
-        role: s.role ?? null,
-        is_sub: !!s.is_sub,
-        slot_order: s.slot_order ?? i,
-      }));
-      await supabase.from('battle_plan_slots').insert(rows);
+    // Replace all buildings + assignments for this plan.
+    // Map local (client-generated) ids to real DB ids so links_to_id resolves correctly.
+    await supabase.from('battle_plan_buildings').delete().eq('plan_id', pid);
+
+    const idMap = {};
+    // Insert buildings first without links_to_id, then update links in a second pass.
+    const buildingInserts = buildings.map((b, i) => ({
+      plan_id: pid,
+      name: b.name,
+      category: b.category,
+      phase: b.phase,
+      links_to_id: null,
+      sort_order: b.sort_order ?? i,
+    }));
+    const { data: insertedBuildings } = await supabase.from('battle_plan_buildings').insert(buildingInserts).select('*');
+
+    (insertedBuildings ?? []).forEach((row, i) => {
+      idMap[buildings[i].id] = row.id;
+    });
+
+    // Second pass: set links_to_id using the id map.
+    const linkUpdates = buildings
+      .map((b) => ({ realId: idMap[b.id], linksTo: b.links_to_id ? idMap[b.links_to_id] : null }))
+      .filter(u => u.realId && u.linksTo);
+    await Promise.all(linkUpdates.map(u => supabase.from('battle_plan_buildings').update({ links_to_id: u.linksTo }).eq('id', u.realId)));
+
+    // Insert assignments for each building.
+    const assignmentRows = [];
+    buildings.forEach((b) => {
+      const realBuildingId = idMap[b.id];
+      if (!realBuildingId) return;
+      (b.assignments ?? []).forEach((a, ai) => {
+        assignmentRows.push({ building_id: realBuildingId, member_id: a.member_id, role: a.role ?? null, sort_order: ai });
+      });
+    });
+    if (assignmentRows.length > 0) {
+      await supabase.from('battle_plan_assignments').insert(assignmentRows);
     }
-    setAllSlots(prev => ({ ...prev, [pid]: slots.map((s, i) => ({ plan_id: pid, team_number: s.team_number, member_id: s.member_id ?? null, role: s.role ?? null, is_sub: !!s.is_sub, slot_order: s.slot_order ?? i })) }));
+
+    // Update local state to reflect real ids.
+    const newBuildings = buildings.map(b => ({
+      ...b,
+      id: idMap[b.id] ?? b.id,
+      links_to_id: b.links_to_id ? (idMap[b.links_to_id] ?? b.links_to_id) : null,
+    }));
+    setBuildings(newBuildings);
+    setAllBuildings(prev => ({ ...prev, [pid]: newBuildings }));
 
     setSaving(false);
     setSaved(true);
     setIsDirty(false);
     setTimeout(() => setSaved(false), 2500);
-  }, [myAllianceId, planId, currentWeekKey, eventType, taskforce, config, rulesText, slots]);
+  }, [myAllianceId, planId, currentWeekKey, eventType, taskforce, rulesText, buildings]);
 
   // ── Unsaved changes guard ─────────────────────────────────────────
   async function handleUnsavedSave() {
@@ -276,8 +379,8 @@ export default function BattlePlanner() {
   function navigateWeek(dir) {
     const list = plansFor(eventType, taskforce, allPlans);
     const idx = list.findIndex(p => p.id === planId);
-    if (dir === -1 && idx > 0) applyPlan(list[idx - 1], allSlots[list[idx - 1].id] ?? []);
-    else if (dir === 1 && idx < list.length - 1) applyPlan(list[idx + 1], allSlots[list[idx + 1].id] ?? []);
+    if (dir === -1 && idx > 0) applyPlan(list[idx - 1], allBuildings[list[idx - 1].id] ?? [], eventType);
+    else if (dir === 1 && idx < list.length - 1) applyPlan(list[idx + 1], allBuildings[list[idx + 1].id] ?? [], eventType);
   }
 
   function createNextWeek() {
@@ -292,86 +395,96 @@ export default function BattlePlanner() {
 
     setPlanId(null);
     setCurrentWeekKey(newKey);
-    // Keep team labels, clear player assignments
-    setConfig(prev => ({ teams: (prev.teams ?? DEFAULT_TEAMS).map(t => ({ ...t })) }));
-    setSlots([]);
+    // Duplicate building names/categories/phases/links, clear assignments.
+    setBuildings(prev => {
+      const idMap = {};
+      const cloned = prev.map(b => {
+        const newBid = localId();
+        idMap[b.id] = newBid;
+        return { ...b, id: newBid, assignments: [] };
+      });
+      return cloned.map(b => ({ ...b, links_to_id: b.links_to_id ? (idMap[b.links_to_id] ?? null) : null }));
+    });
     setIsDirty(true);
   }
 
   async function handleDeleteWeek() {
     if (!planId) { alert('This week has not been saved yet — nothing to delete.'); return; }
     if (!confirm('Delete this entire week\'s plan? This cannot be undone.')) return;
-    await supabase.from('battle_plan_slots').delete().eq('plan_id', planId);
+    await supabase.from('battle_plan_buildings').delete().eq('plan_id', planId);
     await supabase.from('battle_plans').delete().eq('id', planId);
     const remaining = allPlans.filter(p => p.id !== planId);
     setAllPlans(remaining);
     const list = plansFor(eventType, taskforce, remaining);
-    if (list.length > 0) applyPlan(list[list.length - 1], allSlots[list[list.length - 1].id] ?? []);
+    if (list.length > 0) applyPlan(list[list.length - 1], allBuildings[list[list.length - 1].id] ?? [], eventType);
     else {
       setPlanId(null);
       setCurrentWeekKey(toDateString(getMondayDate()));
-      setConfig(defaultConfig());
       setRulesText('');
-      setSlots([]);
+      setBuildings(eventType === 'desert' ? seedBuildings() : []);
       setIsDirty(false);
     }
   }
 
-  // ── Team config editing ──────────────────────────────────────────
-  function updateTeamLabel(teamNumber, label) {
+  // ── Building editing ──────────────────────────────────────────────
+  function addBuilding(sectionKey) {
     if (!canManage) return;
-    setConfig(prev => ({ teams: (prev.teams ?? []).map(t => t.number === teamNumber ? { ...t, label } : t) }));
+    const section = SECTIONS.find(s => s.key === sectionKey);
+    if (!section) return;
+    setBuildings(prev => [...prev, { ...emptyBuilding(section.newDefaults), sort_order: prev.length }]);
     markDirty();
   }
-  function addTeam() {
+  function renameBuilding(buildingId, name) {
     if (!canManage) return;
-    setConfig(prev => {
-      const teams = prev.teams ?? [];
-      const nextNum = teams.length > 0 ? Math.max(...teams.map(t => t.number)) + 1 : 1;
-      return { teams: [...teams, { number: nextNum, label: `Team ${nextNum}` }] };
-    });
+    setBuildings(prev => prev.map(b => b.id === buildingId ? { ...b, name } : b));
     markDirty();
   }
-  function removeTeam(teamNumber) {
+  function deleteBuilding(buildingId) {
     if (!canManage) return;
-    if (!confirm('Remove this team? Assigned players in it will be moved to substitutes.')) return;
-    setConfig(prev => ({ teams: (prev.teams ?? []).filter(t => t.number !== teamNumber) }));
-    setSlots(prev => prev.map(s => s.team_number === teamNumber ? { ...s, team_number: teamNumber, is_sub: true } : s));
+    if (!confirm('Delete this building? Assigned players will be removed from it.')) return;
+    setBuildings(prev => prev
+      .filter(b => b.id !== buildingId)
+      .map(b => b.links_to_id === buildingId ? { ...b, links_to_id: null } : b));
+    markDirty();
+  }
+  function setLinksTo(buildingId, targetId) {
+    if (!canManage) return;
+    setBuildings(prev => prev.map(b => b.id === buildingId ? { ...b, links_to_id: targetId || null } : b));
     markDirty();
   }
 
-  // ── Slot helpers ──────────────────────────────────────────────────
-  const assignedMemberIds = new Set(slots.map(s => s.member_id).filter(Boolean));
+  // ── Assignment helpers ──────────────────────────────────────────────
   const memberById = Object.fromEntries(members.map(m => [m.id, m]));
 
-  function teamSlots(teamNumber) {
-    return slots.filter(s => s.team_number === teamNumber && !s.is_sub);
-  }
-  function subSlots() {
-    return slots.filter(s => s.is_sub);
-  }
-
-  function assignMember(memberId, teamNumber, isSub) {
+  function assignMember(memberId, buildingId) {
     if (!canManage) return;
-    setSlots(prev => [...prev, { team_number: isSub ? 0 : teamNumber, member_id: memberId, role: null, is_sub: isSub, slot_order: prev.length }]);
+    setBuildings(prev => prev.map(b => {
+      if (b.id !== buildingId) return b;
+      if ((b.assignments ?? []).some(a => a.member_id === memberId)) return b;
+      return { ...b, assignments: [...(b.assignments ?? []), { member_id: memberId, role: null }] };
+    }));
     markDirty();
     setPicker(null);
     setPickerSearch('');
   }
-  function removeMember(memberId, teamNumber, isSub) {
+  function removeMember(memberId, buildingId) {
     if (!canManage) return;
-    setSlots(prev => prev.filter(s => !(s.member_id === memberId && s.team_number === (isSub ? 0 : teamNumber) && s.is_sub === isSub)));
+    setBuildings(prev => prev.map(b => b.id === buildingId ? { ...b, assignments: (b.assignments ?? []).filter(a => a.member_id !== memberId) } : b));
     markDirty();
   }
-  function cycleRole(memberId, teamNumber) {
+  function cycleRole(memberId, buildingId) {
     if (!canManage) return;
-    setSlots(prev => prev.map(s => {
-      if (s.member_id === memberId && s.team_number === teamNumber && !s.is_sub) {
-        const idx = ROLE_CYCLE.indexOf(s.role);
-        const next = ROLE_CYCLE[(idx + 1) % ROLE_CYCLE.length];
-        return { ...s, role: next };
-      }
-      return s;
+    setBuildings(prev => prev.map(b => {
+      if (b.id !== buildingId) return b;
+      return {
+        ...b,
+        assignments: (b.assignments ?? []).map(a => {
+          if (a.member_id !== memberId) return a;
+          const idx = ROLE_CYCLE.indexOf(a.role);
+          const next = ROLE_CYCLE[(idx + 1) % ROLE_CYCLE.length];
+          return { ...a, role: next };
+        }),
+      };
     }));
     markDirty();
   }
@@ -386,31 +499,33 @@ export default function BattlePlanner() {
       `Week of ${weekRange}`,
       '',
     ];
-    (config.teams ?? []).forEach(team => {
-      lines.push(`TEAM ${team.number} — ${team.label}`);
-      const ts = teamSlots(team.number);
-      if (ts.length === 0) lines.push('(no players assigned)');
-      ts.forEach(s => {
-        const m = memberById[s.member_id];
+
+    function lineForBuilding(b) {
+      const meta = categoryMeta(b.category);
+      const linkTarget = b.links_to_id ? buildings.find(x => x.id === b.links_to_id) : null;
+      const arrow = linkTarget ? ` → ${categoryMeta(linkTarget.category).icon} ${linkTarget.name}` : '';
+      lines.push(`${meta.icon} ${b.name}${arrow}`);
+      const assigns = b.assignments ?? [];
+      if (assigns.length === 0) lines.push('  (no players assigned)');
+      assigns.forEach(a => {
+        const m = memberById[a.member_id];
         if (!m) return;
-        const meta = s.role ? ROLE_META[s.role] : null;
-        const icon = meta ? meta.icon + ' ' : '';
+        const roleMeta = a.role ? ROLE_META[a.role] : null;
+        const icon = roleMeta ? roleMeta.icon + ' ' : '';
         const power = m.power1 ? `${m.power1}M` : '?';
         const troop = m.troop1 ? `, ${m.troop1}` : '';
-        lines.push(`${icon}${memberName(m)} (${power}${troop})`);
+        lines.push(`  ${icon}${memberName(m)} (${power}${troop})`);
       });
+    }
+
+    SECTIONS.forEach(section => {
+      const list = buildings.filter(section.match);
       lines.push('');
+      lines.push(section.title);
+      if (list.length === 0) lines.push('(none)');
+      list.forEach(lineForBuilding);
     });
-    const subs = subSlots();
-    lines.push('SUBSTITUTES');
-    if (subs.length === 0) lines.push('(none)');
-    subs.forEach(s => {
-      const m = memberById[s.member_id];
-      if (!m) return;
-      const power = m.power1 ? `${m.power1}M` : '?';
-      const troop = m.troop1 ? `, ${m.troop1}` : '';
-      lines.push(`${memberName(m)} (${power}${troop})`);
-    });
+
     lines.push('');
     lines.push('RULES');
     lines.push(rulesText.trim() || '(none)');
@@ -444,7 +559,7 @@ export default function BattlePlanner() {
     </div>
   );
 
-  const teams = config.teams ?? [];
+  const phase2Buildings = buildings.filter(b => b.phase === 'phase2');
 
   return (
     <div style={{ minHeight: '100vh', background: '#080d14', display: 'flex', flexDirection: 'column', fontFamily: "'Rajdhani',sans-serif", color: '#d0e4f4', position: 'relative' }}>
@@ -469,11 +584,11 @@ export default function BattlePlanner() {
       {/* ── Member picker ────────────────────────────────────────── */}
       {picker && (
         <MemberPicker
-          members={members.filter(m => !assignedMemberIds.has(m.id))}
+          members={members.filter(m => !(buildings.find(b => b.id === picker.buildingId)?.assignments ?? []).some(a => a.member_id === m.id))}
           search={pickerSearch}
           setSearch={setPickerSearch}
           isMobile={isMobile}
-          onPick={(memberId) => assignMember(memberId, picker.teamNumber, picker.isSub)}
+          onPick={(memberId) => assignMember(memberId, picker.buildingId)}
           onClose={() => { setPicker(null); setPickerSearch(''); }}
         />
       )}
@@ -494,8 +609,10 @@ export default function BattlePlanner() {
           {alliance && <div style={{ fontSize: 13, color: '#c0d8f0', marginLeft: 4 }}>— {alliance.name}</div>}
           {isDirty && <div style={{ fontSize: 10, color: '#f0a500', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', padding: '2px 7px', letterSpacing: '1px', fontWeight: 700 }}>UNSAVED</div>}
           <div style={{ flex: 1 }} />
-          <button onClick={handleExport} style={{ ...S.smallBtn, color: '#8aadcc' }}><Download size={12} /> {isMobile ? '' : 'COPY FOR DISCORD'}</button>
-          {canManage && (
+          {eventType === 'desert' && (
+            <button onClick={handleExport} style={{ ...S.smallBtn, color: '#8aadcc' }}><Download size={12} /> {isMobile ? '' : 'COPY FOR DISCORD'}</button>
+          )}
+          {eventType === 'desert' && canManage && (
             <button onClick={handleSave} disabled={saving} style={{ ...S.smallBtn, background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.5)' : 'rgba(240,165,0,0.5)'}`, color: saved ? '#00e87a' : '#f0a500' }}>
               <Save size={12} />{saving ? 'SAVING…' : saved ? 'SAVED ✓' : 'SAVE'}
             </button>
@@ -520,137 +637,142 @@ export default function BattlePlanner() {
           ))}
         </div>
 
-        {/* Taskforce sub-tabs + week nav */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderTop: '1px solid rgba(30,53,80,0.4)', background: 'rgba(5,10,18,0.5)', flexWrap: 'wrap' }}>
-          {TASKFORCES.map(tf => (
-            <button
-              key={tf}
-              onClick={() => switchTo(eventType, tf)}
-              style={{
-                padding: '6px 14px', background: taskforce === tf ? 'rgba(0,200,255,0.12)' : 'transparent',
-                border: `1px solid ${taskforce === tf ? 'rgba(0,200,255,0.4)' : '#1e3550'}`,
-                color: taskforce === tf ? '#00c8ff' : '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700,
-                fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 36,
-              }}
-            >
-              TASKFORCE {tf}
-            </button>
-          ))}
-          <div style={{ width: 1, height: 20, background: '#1e3550', margin: '0 4px' }} />
-          <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: '#8aadcc' }}>WEEK:</span>
-          <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 12, color: '#ffffff', fontWeight: 700 }}>
-            {currentWeekKey ? formatWeekRange(currentWeekKey) : '— no week —'}
-          </span>
-          {weekList.length > 1 && weekIdx >= 0 && (
-            <span style={{ fontSize: 10, color: '#8aadcc' }}>{weekIdx + 1}/{weekList.length}</span>
-          )}
-          <button onClick={() => guardedNavigateWeek(-1)} disabled={weekIdx <= 0} style={{ ...S.weekNavBtn, opacity: weekIdx <= 0 ? 0.3 : 1 }}><ChevronLeft size={12} /></button>
-          <button onClick={() => guardedNavigateWeek(1)} disabled={weekIdx >= weekList.length - 1} style={{ ...S.weekNavBtn, opacity: weekIdx >= weekList.length - 1 ? 0.3 : 1 }}><ChevronRight size={12} /></button>
-          <div style={{ flex: 1 }} />
-          {canManage && (
-            <>
-              <button onClick={createNextWeek} style={{ ...S.smallBtn, background: 'rgba(0,232,122,0.1)', border: '1px solid rgba(0,232,122,0.4)', color: '#00e87a' }}>
-                <Plus size={12} /> NEXT WEEK
+        {/* Taskforce sub-tabs + week nav — only relevant for desert storm */}
+        {eventType === 'desert' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', borderTop: '1px solid rgba(30,53,80,0.4)', background: 'rgba(5,10,18,0.5)', flexWrap: 'wrap' }}>
+            {TASKFORCES.map(tf => (
+              <button
+                key={tf}
+                onClick={() => switchTo(eventType, tf)}
+                style={{
+                  padding: '6px 14px', background: taskforce === tf ? 'rgba(0,200,255,0.12)' : 'transparent',
+                  border: `1px solid ${taskforce === tf ? 'rgba(0,200,255,0.4)' : '#1e3550'}`,
+                  color: taskforce === tf ? '#00c8ff' : '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700,
+                  fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 36,
+                }}
+              >
+                TASKFORCE {tf}
               </button>
-              <button onClick={handleDeleteWeek} style={{ ...S.smallBtn, background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.25)', color: '#ff4060' }}>
-                <Trash2 size={12} />
-              </button>
-            </>
-          )}
-        </div>
+            ))}
+            <div style={{ width: 1, height: 20, background: '#1e3550', margin: '0 4px' }} />
+            <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: '#8aadcc' }}>WEEK:</span>
+            <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 12, color: '#ffffff', fontWeight: 700 }}>
+              {currentWeekKey ? formatWeekRange(currentWeekKey) : '— no week —'}
+            </span>
+            {weekList.length > 1 && weekIdx >= 0 && (
+              <span style={{ fontSize: 10, color: '#8aadcc' }}>{weekIdx + 1}/{weekList.length}</span>
+            )}
+            <button onClick={() => guardedNavigateWeek(-1)} disabled={weekIdx <= 0} style={{ ...S.weekNavBtn, opacity: weekIdx <= 0 ? 0.3 : 1 }}><ChevronLeft size={12} /></button>
+            <button onClick={() => guardedNavigateWeek(1)} disabled={weekIdx >= weekList.length - 1} style={{ ...S.weekNavBtn, opacity: weekIdx >= weekList.length - 1 ? 0.3 : 1 }}><ChevronRight size={12} /></button>
+            <div style={{ flex: 1 }} />
+            {canManage && (
+              <>
+                <button onClick={createNextWeek} style={{ ...S.smallBtn, background: 'rgba(0,232,122,0.1)', border: '1px solid rgba(0,232,122,0.4)', color: '#00e87a' }}>
+                  <Plus size={12} /> NEXT WEEK
+                </button>
+                <button onClick={handleDeleteWeek} style={{ ...S.smallBtn, background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.25)', color: '#ff4060' }}>
+                  <Trash2 size={12} />
+                </button>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Body ────────────────────────────────────────────────── */}
       <div style={{ flex: 1, padding: isMobile ? '12px 10px 40px' : '20px 24px 40px', maxWidth: 1400, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
 
-        {canManage && (
-          <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
-            <button onClick={addTeam} style={{ ...S.smallBtn, border: '1px solid #1e3550', color: '#7a9bb8' }}>
-              <Plus size={12} /> ADD TEAM
-            </button>
-          </div>
-        )}
-
-        {isMobile ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            {teams.map((team, i) => (
-              <TeamAccordion
-                key={team.number}
-                team={team}
-                isOpen={openAccordion === i}
-                onToggle={() => setOpenAccordion(openAccordion === i ? -1 : i)}
-                slots={teamSlots(team.number)}
-                memberById={memberById}
-                canManage={canManage}
-                onLabelChange={l => updateTeamLabel(team.number, l)}
-                onRemoveTeam={() => removeTeam(team.number)}
-                onAddPlayer={() => setPicker({ teamNumber: team.number, isSub: false })}
-                onRemovePlayer={mid => removeMember(mid, team.number, false)}
-                onCycleRole={mid => cycleRole(mid, team.number)}
-              />
-            ))}
+        {eventType === 'canyon' ? (
+          <div style={{ border: '1px solid #1e3550', background: 'rgba(20,35,55,0.25)', padding: '48px 24px', textAlign: 'center' }}>
+            <div style={{ fontSize: 32, marginBottom: 12 }}>🚧</div>
+            <div style={{ fontSize: 16, fontWeight: 700, letterSpacing: '1.5px', color: '#f0a500', marginBottom: 8 }}>WORK IN PROGRESS</div>
+            <p style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6, maxWidth: 420, margin: '0 auto' }}>
+              Canyon Storm planner coming soon — building layouts differ from Desert Storm.
+            </p>
           </div>
         ) : (
-          <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(teams.length, 4) || 1}, 1fr)`, gap: 14 }}>
-            {teams.map(team => (
-              <TeamCard
-                key={team.number}
-                team={team}
-                slots={teamSlots(team.number)}
-                memberById={memberById}
-                canManage={canManage}
-                onLabelChange={l => updateTeamLabel(team.number, l)}
-                onRemoveTeam={() => removeTeam(team.number)}
-                onAddPlayer={() => setPicker({ teamNumber: team.number, isSub: false })}
-                onRemovePlayer={mid => removeMember(mid, team.number, false)}
-                onCycleRole={mid => cycleRole(mid, team.number)}
-              />
-            ))}
-            {teams.length === 0 && (
-              <div style={{ color: '#5a7898', fontSize: 12, fontStyle: 'italic' }}>No teams configured yet.{canManage ? ' Click ADD TEAM to start.' : ''}</div>
-            )}
-          </div>
-        )}
-
-        {/* Substitutes */}
-        <div style={{ marginTop: 24, border: '1px solid #1e3550', background: 'rgba(20,35,55,0.25)', padding: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 12 }}>SUBSTITUTES</div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {subSlots().map(s => {
-              const m = memberById[s.member_id];
-              if (!m) return null;
+          <>
+            {SECTIONS.map(section => {
+              const list = buildings.filter(section.match).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
               return (
-                <PlayerRow key={s.member_id} member={m} canManage={canManage} onRemove={() => removeMember(s.member_id, 0, true)} />
+                <div key={section.key} style={{ marginBottom: 24 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8' }}>{section.title}</div>
+                    {canManage && (
+                      <button onClick={() => addBuilding(section.key)} style={{ ...S.smallBtn, border: '1px solid #1e3550', color: '#7a9bb8' }}>
+                        <Plus size={12} /> ADD BUILDING
+                      </button>
+                    )}
+                  </div>
+
+                  {list.length === 0 && (
+                    <div style={{ color: '#5a7898', fontSize: 12, fontStyle: 'italic' }}>No buildings in this section yet.</div>
+                  )}
+
+                  {isMobile ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {list.map(b => (
+                        <BuildingAccordion
+                          key={b.id}
+                          building={b}
+                          isOpen={!!openAccordion[b.id]}
+                          onToggle={() => setOpenAccordion(prev => ({ ...prev, [b.id]: !prev[b.id] }))}
+                          memberById={memberById}
+                          canManage={canManage}
+                          phase2Options={phase2Buildings}
+                          linkTarget={b.links_to_id ? buildings.find(x => x.id === b.links_to_id) : null}
+                          onRename={n => renameBuilding(b.id, n)}
+                          onDelete={() => deleteBuilding(b.id)}
+                          onSetLinksTo={tid => setLinksTo(b.id, tid)}
+                          onAddPlayer={() => setPicker({ buildingId: b.id })}
+                          onRemovePlayer={mid => removeMember(mid, b.id)}
+                          onCycleRole={mid => cycleRole(mid, b.id)}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(list.length, 4) || 1}, 1fr)`, gap: 14 }}>
+                      {list.map(b => (
+                        <BuildingCard
+                          key={b.id}
+                          building={b}
+                          memberById={memberById}
+                          canManage={canManage}
+                          phase2Options={phase2Buildings}
+                          linkTarget={b.links_to_id ? buildings.find(x => x.id === b.links_to_id) : null}
+                          onRename={n => renameBuilding(b.id, n)}
+                          onDelete={() => deleteBuilding(b.id)}
+                          onSetLinksTo={tid => setLinksTo(b.id, tid)}
+                          onAddPlayer={() => setPicker({ buildingId: b.id })}
+                          onRemovePlayer={mid => removeMember(mid, b.id)}
+                          onCycleRole={mid => cycleRole(mid, b.id)}
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
               );
             })}
-            {subSlots().length === 0 && (
-              <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic' }}>No substitutes added.</div>
-            )}
-          </div>
-          {canManage && (
-            <button onClick={() => setPicker({ teamNumber: 0, isSub: true })} style={{ ...S.addPlayerBtn, marginTop: 10 }}>
-              <Plus size={13} /> ADD PLAYER
-            </button>
-          )}
-        </div>
 
-        {/* Rules */}
-        <div style={{ marginTop: 24, border: '1px solid #1e3550', background: 'rgba(20,35,55,0.25)', padding: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 12 }}>RULES</div>
-          {canManage ? (
-            <textarea
-              value={rulesText}
-              onChange={e => { setRulesText(e.target.value); markDirty(); }}
-              placeholder="Enter rules for this taskforce…"
-              rows={5}
-              style={{ width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: 10, fontFamily: "'Rajdhani',sans-serif", fontWeight: 600, fontSize: 13, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box', resize: 'vertical' }}
-            />
-          ) : (
-            <p style={{ color: '#a8c4dc', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0 }}>
-              {rulesText.trim() || 'No rules set.'}
-            </p>
-          )}
-        </div>
+            {/* Rules */}
+            <div style={{ marginTop: 24, border: '1px solid #1e3550', background: 'rgba(20,35,55,0.25)', padding: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 12 }}>RULES</div>
+              {canManage ? (
+                <textarea
+                  value={rulesText}
+                  onChange={e => { setRulesText(e.target.value); markDirty(); }}
+                  placeholder="Enter rules for this taskforce…"
+                  rows={5}
+                  style={{ width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: 10, fontFamily: "'Rajdhani',sans-serif", fontWeight: 600, fontSize: 13, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box', resize: 'vertical' }}
+                />
+              ) : (
+                <p style={{ color: '#a8c4dc', fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap', margin: 0 }}>
+                  {rulesText.trim() || 'No rules set.'}
+                </p>
+              )}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -684,32 +806,69 @@ function PlayerRow({ member, role, canManage, onRemove, onCycleRole }) {
   );
 }
 
-// ── Team card (desktop/tablet) ──────────────────────────────────────
-function TeamCard({ team, slots, memberById, canManage, onLabelChange, onRemoveTeam, onAddPlayer, onRemovePlayer, onCycleRole }) {
+// ── Building name editor (inline, admin only) ──────────────────────
+function BuildingNameEditor({ name, canManage, onRename, style }) {
+  if (!canManage) {
+    return <span style={{ fontSize: 12, fontWeight: 700, color: '#d0e4f4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', ...style }}>{name}</span>;
+  }
+  return (
+    <input
+      value={name}
+      onChange={e => onRename(e.target.value)}
+      style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: '1px dashed #2a4058', color: '#d0e4f4', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, outline: 'none', padding: '2px 0', minWidth: 0, ...style }}
+    />
+  );
+}
+
+// ── Phase transition link control ───────────────────────────────────
+function LinksToControl({ building, phase2Options, linkTarget, canManage, onSetLinksTo }) {
+  if (building.phase !== 'phase1') return null;
+  if (!canManage) {
+    if (!linkTarget) return null;
+    return (
+      <div style={{ fontSize: 10, color: '#8aadcc', marginTop: 6 }}>
+        → {categoryMeta(linkTarget.category).icon} {linkTarget.name}
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 6 }}>
+      <select
+        value={building.links_to_id || ''}
+        onChange={e => onSetLinksTo(e.target.value || null)}
+        style={{ width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#8aadcc', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, padding: '6px 6px', outline: 'none', minHeight: 32 }}
+      >
+        <option value="">→ moves to: (none)</option>
+        {phase2Options.map(opt => (
+          <option key={opt.id} value={opt.id}>→ {opt.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+// ── Building card (desktop/tablet) ──────────────────────────────────
+function BuildingCard({ building, memberById, canManage, phase2Options, linkTarget, onRename, onDelete, onSetLinksTo, onAddPlayer, onRemovePlayer, onCycleRole }) {
+  const meta = categoryMeta(building.category);
   return (
     <div style={{ border: '1px solid #1e3550', background: 'rgba(13,21,32,0.6)', display: 'flex', flexDirection: 'column' }}>
-      <div style={{ padding: '10px 12px', borderBottom: '1px solid #1e3550', display: 'flex', alignItems: 'center', gap: 6 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#00c8ff', flexShrink: 0 }}>T{team.number}</span>
-        {canManage ? (
-          <input
-            value={team.label}
-            onChange={e => onLabelChange(e.target.value)}
-            style={{ flex: 1, background: 'transparent', border: 'none', borderBottom: '1px dashed #2a4058', color: '#d0e4f4', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, outline: 'none', padding: '2px 0', minWidth: 0 }}
-          />
-        ) : (
-          <span style={{ fontSize: 12, fontWeight: 700, color: '#d0e4f4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{team.label}</span>
-        )}
-        {canManage && (
-          <button onClick={onRemoveTeam} title="Remove team" style={{ background: 'none', border: 'none', color: '#5a7898', cursor: 'pointer', fontSize: 13, padding: '2px', minWidth: 24, minHeight: 24, flexShrink: 0 }}>×</button>
-        )}
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid #1e3550' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 14, flexShrink: 0 }}>{meta.icon}</span>
+          <BuildingNameEditor name={building.name} canManage={canManage} onRename={onRename} />
+          {canManage && (
+            <button onClick={onDelete} title="Delete building" style={{ background: 'none', border: 'none', color: '#5a7898', cursor: 'pointer', fontSize: 13, padding: '2px', minWidth: 24, minHeight: 24, flexShrink: 0 }}>×</button>
+          )}
+        </div>
+        <LinksToControl building={building} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
       </div>
       <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
-        {slots.map(s => {
-          const m = memberById[s.member_id];
+        {(building.assignments ?? []).map(a => {
+          const m = memberById[a.member_id];
           if (!m) return null;
-          return <PlayerRow key={s.member_id} member={m} role={s.role} canManage={canManage} onRemove={() => onRemovePlayer(s.member_id)} onCycleRole={() => onCycleRole(s.member_id)} />;
+          return <PlayerRow key={a.member_id} member={m} role={a.role} canManage={canManage} onRemove={() => onRemovePlayer(a.member_id)} onCycleRole={() => onCycleRole(a.member_id)} />;
         })}
-        {slots.length === 0 && (
+        {(building.assignments ?? []).length === 0 && (
           <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic' }}>No players assigned.</div>
         )}
         {canManage && (
@@ -722,34 +881,37 @@ function TeamCard({ team, slots, memberById, canManage, onLabelChange, onRemoveT
   );
 }
 
-// ── Team accordion (mobile) ──────────────────────────────────────────
-function TeamAccordion({ team, isOpen, onToggle, slots, memberById, canManage, onLabelChange, onRemoveTeam, onAddPlayer, onRemovePlayer, onCycleRole }) {
+// ── Building accordion (mobile) ──────────────────────────────────────
+function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, phase2Options, linkTarget, onRename, onDelete, onSetLinksTo, onAddPlayer, onRemovePlayer, onCycleRole }) {
+  const meta = categoryMeta(building.category);
+  const count = (building.assignments ?? []).length;
   return (
     <div style={{ border: '1px solid #1e3550', background: 'rgba(13,21,32,0.6)' }}>
       <button onClick={onToggle} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', minHeight: 44, textAlign: 'left' }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#00c8ff', flexShrink: 0 }}>T{team.number}</span>
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#d0e4f4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{team.label}</span>
-        <span style={{ fontSize: 10, color: '#5a7898' }}>{slots.length} {isOpen ? '▲' : '▼'}</span>
+        <span style={{ fontSize: 14, flexShrink: 0 }}>{meta.icon}</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#d0e4f4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{building.name}</span>
+        <span style={{ fontSize: 10, color: '#5a7898' }}>{count} {isOpen ? '▲' : '▼'}</span>
       </button>
       {isOpen && (
         <div style={{ padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
           {canManage && (
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <input
-                value={team.label}
-                onChange={e => onLabelChange(e.target.value)}
-                placeholder="Team label…"
+                value={building.name}
+                onChange={e => onRename(e.target.value)}
+                placeholder="Building name…"
                 style={{ flex: 1, background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, outline: 'none', padding: '8px', minHeight: 40 }}
               />
-              <button onClick={onRemoveTeam} title="Remove team" style={{ background: 'none', border: '1px solid #1e3550', color: '#ff4060', cursor: 'pointer', fontSize: 13, minWidth: 40, minHeight: 40 }}>×</button>
+              <button onClick={onDelete} title="Delete building" style={{ background: 'none', border: '1px solid #1e3550', color: '#ff4060', cursor: 'pointer', fontSize: 13, minWidth: 40, minHeight: 40 }}>×</button>
             </div>
           )}
-          {slots.map(s => {
-            const m = memberById[s.member_id];
+          <LinksToControl building={building} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
+          {(building.assignments ?? []).map(a => {
+            const m = memberById[a.member_id];
             if (!m) return null;
-            return <PlayerRow key={s.member_id} member={m} role={s.role} canManage={canManage} onRemove={() => onRemovePlayer(s.member_id)} onCycleRole={() => onCycleRole(s.member_id)} />;
+            return <PlayerRow key={a.member_id} member={m} role={a.role} canManage={canManage} onRemove={() => onRemovePlayer(a.member_id)} onCycleRole={() => onCycleRole(a.member_id)} />;
           })}
-          {slots.length === 0 && (
+          {(building.assignments ?? []).length === 0 && (
             <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic' }}>No players assigned.</div>
           )}
           {canManage && (

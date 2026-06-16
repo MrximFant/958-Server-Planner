@@ -5,7 +5,8 @@
 -- ============================================================
 
 -- ── Clean slate ──────────────────────────────────────────────
-DROP TABLE IF EXISTS battle_plan_slots           CASCADE;
+DROP TABLE IF EXISTS battle_plan_assignments     CASCADE;
+DROP TABLE IF EXISTS battle_plan_buildings       CASCADE;
 DROP TABLE IF EXISTS battle_plans                CASCADE;
 DROP TABLE IF EXISTS train_slots                 CASCADE;
 DROP TABLE IF EXISTS train_schedules             CASCADE;
@@ -216,21 +217,33 @@ CREATE TABLE battle_plans (
   week_label   DATE NOT NULL,
   taskforce    TEXT NOT NULL CHECK (taskforce IN ('A', 'B')),
   name         TEXT,
-  config       JSONB DEFAULT '{}',
   rules_text   TEXT DEFAULT '',
   created_at   TIMESTAMPTZ DEFAULT NOW(),
   UNIQUE(alliance_id, event_type, taskforce, week_label)
 );
 
--- ── battle_plan_slots ─────────────────────────────────────────
-CREATE TABLE battle_plan_slots (
+-- ── battle_plan_buildings ─────────────────────────────────────
+-- One row per building defined by the admin for a plan
+CREATE TABLE battle_plan_buildings (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   plan_id      UUID NOT NULL REFERENCES battle_plans(id) ON DELETE CASCADE,
-  team_number  INTEGER NOT NULL,
-  member_id    UUID REFERENCES members(id) ON DELETE SET NULL,
+  name         TEXT NOT NULL,
+  category     TEXT NOT NULL DEFAULT 'custom', -- oil_refinery|info_center|science_hub|field_hospital|oil_well|arsenal|mercenary_factory|nuclear_silo|kill_squad|substitutes|custom
+  phase        TEXT, -- 'phase1' | 'phase2' | NULL (kill squad / substitutes have NULL phase)
+  links_to_id  UUID REFERENCES battle_plan_buildings(id) ON DELETE SET NULL, -- phase1 building -> phase2 building it transitions to
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  created_at   TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ── battle_plan_assignments ───────────────────────────────────
+-- Many-to-many: a member can be assigned to multiple buildings
+CREATE TABLE battle_plan_assignments (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  building_id  UUID NOT NULL REFERENCES battle_plan_buildings(id) ON DELETE CASCADE,
+  member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
   role         TEXT CHECK (role IN ('coordinator', 'lethal', 'science', 'info') OR role IS NULL),
-  is_sub       BOOLEAN NOT NULL DEFAULT FALSE,
-  slot_order   INTEGER NOT NULL DEFAULT 0
+  sort_order   INTEGER NOT NULL DEFAULT 0,
+  UNIQUE(building_id, member_id)
 );
 
 -- ============================================================
@@ -242,7 +255,8 @@ ALTER PUBLICATION supabase_realtime ADD TABLE members;
 ALTER PUBLICATION supabase_realtime ADD TABLE train_schedules;
 ALTER PUBLICATION supabase_realtime ADD TABLE train_slots;
 ALTER PUBLICATION supabase_realtime ADD TABLE battle_plans;
-ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_slots;
+ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_buildings;
+ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_assignments;
 ALTER PUBLICATION supabase_realtime ADD TABLE territories;
 ALTER PUBLICATION supabase_realtime ADD TABLE alliance_plans;
 ALTER PUBLICATION supabase_realtime ADD TABLE season_map_servers;
@@ -267,7 +281,8 @@ ALTER TABLE alliance_handshake_settings ENABLE ROW LEVEL SECURITY;
 ALTER TABLE train_schedules             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE train_slots                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE battle_plans                ENABLE ROW LEVEL SECURITY;
-ALTER TABLE battle_plan_slots           ENABLE ROW LEVEL SECURITY;
+ALTER TABLE battle_plan_buildings       ENABLE ROW LEVEL SECURITY;
+ALTER TABLE battle_plan_assignments     ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "servers_select"   ON servers   FOR SELECT USING (true);
 CREATE POLICY "servers_insert"   ON servers   FOR INSERT WITH CHECK (true);
@@ -329,7 +344,12 @@ CREATE POLICY "battle_plans_insert" ON battle_plans FOR INSERT WITH CHECK (true)
 CREATE POLICY "battle_plans_update" ON battle_plans FOR UPDATE USING (true);
 CREATE POLICY "battle_plans_delete" ON battle_plans FOR DELETE USING (true);
 
-CREATE POLICY "battle_plan_slots_select" ON battle_plan_slots FOR SELECT USING (true);
-CREATE POLICY "battle_plan_slots_insert" ON battle_plan_slots FOR INSERT WITH CHECK (true);
-CREATE POLICY "battle_plan_slots_update" ON battle_plan_slots FOR UPDATE USING (true);
-CREATE POLICY "battle_plan_slots_delete" ON battle_plan_slots FOR DELETE USING (true);
+CREATE POLICY "battle_plan_buildings_select" ON battle_plan_buildings FOR SELECT USING (true);
+CREATE POLICY "battle_plan_buildings_insert" ON battle_plan_buildings FOR INSERT WITH CHECK (true);
+CREATE POLICY "battle_plan_buildings_update" ON battle_plan_buildings FOR UPDATE USING (true);
+CREATE POLICY "battle_plan_buildings_delete" ON battle_plan_buildings FOR DELETE USING (true);
+
+CREATE POLICY "battle_plan_assignments_select" ON battle_plan_assignments FOR SELECT USING (true);
+CREATE POLICY "battle_plan_assignments_insert" ON battle_plan_assignments FOR INSERT WITH CHECK (true);
+CREATE POLICY "battle_plan_assignments_update" ON battle_plan_assignments FOR UPDATE USING (true);
+CREATE POLICY "battle_plan_assignments_delete" ON battle_plan_assignments FOR DELETE USING (true);
