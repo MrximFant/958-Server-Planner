@@ -1,57 +1,22 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { ArrowLeft, Shuffle, Lock, Unlock, RotateCcw, Save, Train, Info, Download, ChevronLeft, ChevronRight, Settings, Menu, Users } from 'lucide-react';
+import {
+  ArrowLeft, Lock, RotateCcw, Save, Train, Download, ChevronLeft, ChevronRight,
+  Settings, Menu, Search, X, Shuffle, ArrowUp, ArrowDown, Plus,
+} from 'lucide-react';
 import ParticleBackground from '../components/ParticleBackground';
 
 // ── Constants ──────────────────────────────────────────────────────
-const DAYS   = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
-const ROLES  = ['driver', 'vip'];
-const FONT   = `@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');`;
+const DAYS    = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+const ROLES   = ['driver', 'vip'];
+const FONT    = `@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');`;
 
-const MODES = [
-  {
-    id: 'manual',
-    label: 'Manual',
-    icon: '✋',
-    color: '#00c8ff',
-    desc: 'Full control. Drag members into any slot.',
-    detail: 'Best for alliances with specific rules each week or changing circumstances.',
-  },
-  {
-    id: 'fixed_driver',
-    label: 'Fixed Driver',
-    icon: '🚂',
-    color: '#00e87a',
-    desc: 'One person drives every day. VIPs rotate.',
-    detail: 'Best when one dedicated player always drives and VIPs are rotated fairly.',
-  },
-  {
-    id: 'paired',
-    label: 'Paired Rotation',
-    icon: '🔁',
-    color: '#f0a500',
-    desc: 'Members paired as (Driver, VIP). Roles swap each cycle.',
-    detail: 'Pairs rotate through days. Once everyone has gone, Driver↔VIP swap for the next cycle.',
-  },
-  {
-    id: 'round_robin',
-    label: 'Round Robin',
-    icon: '🎯',
-    color: '#c87aff',
-    desc: 'Separate Driver queue and VIP queue, each cycling independently.',
-    detail: 'Pure fair rotation. Add members to each queue; they cycle through the days automatically.',
-  },
-  {
-    id: 'priority',
-    label: 'Priority Days',
-    icon: '🏆',
-    color: '#ff6080',
-    desc: 'Lock specific days for event winners. Rest auto-fills.',
-    detail: 'Mark important days with specific members (canyon winners, etc.). Other days fill via round robin.',
-  },
-];
+const ROLE_META = {
+  driver: { label: 'DRIVER', icon: '🚂', color: '#f0a500' },
+  vip:    { label: 'VIP',    icon: '⭐', color: '#c87aff' },
+};
 
 const EMPTY_SLOTS = () => {
   const s = {};
@@ -80,65 +45,43 @@ function memberInitials(m) {
   return n.slice(0, 2).toUpperCase();
 }
 
-// Auto-fill algorithms
-function genFixedDriver(members, driverMemberId, vipPool) {
-  const slots = EMPTY_SLOTS();
-  DAYS.forEach((_, d) => {
-    slots[`${d}-driver`] = { memberId: driverMemberId, locked: false };
-  });
-  vipPool.forEach((m, i) => {
-    if (i < 7) slots[`${i}-vip`] = { memberId: m.id, locked: false };
-  });
-  return slots;
-}
-
-function genPaired(pairs, startDate) {
-  const slots = EMPTY_SLOTS();
-  if (!pairs.length) return slots;
-  let offset = 0;
-  if (startDate) {
-    const start = new Date(startDate + 'T00:00:00');
-    const now = getMondayDate();
-    const diffMs = now - start;
-    const diffWeeks = Math.floor(diffMs / (7 * 24 * 3600 * 1000));
-    const cycleLen = pairs.length;
-    if (cycleLen > 0) {
-      const totalDays = diffWeeks * 7;
-      offset = Math.floor(totalDays / cycleLen) % cycleLen;
-      const fullCycles = Math.floor(totalDays / cycleLen);
-      if (fullCycles % 2 === 1) {
-        pairs = pairs.map(p => ({ driver: p.vip, vip: p.driver }));
-      }
-    }
+// Derive driverQueue/vipQueue from old mode_config shapes, best-effort.
+function deriveQueuesFromLegacy(cfg) {
+  if (!cfg) return { driverQueue: [], vipQueue: [] };
+  if (Array.isArray(cfg.driverQueue) || Array.isArray(cfg.vipQueue)) {
+    return { driverQueue: cfg.driverQueue ?? [], vipQueue: cfg.vipQueue ?? [] };
   }
-  pairs.forEach((pair, i) => {
-    const dayIdx = (i + offset) % 7;
-    if (dayIdx < 7) {
-      slots[`${dayIdx}-driver`] = { memberId: pair.driver, locked: false };
-      slots[`${dayIdx}-vip`]    = { memberId: pair.vip,    locked: false };
-    }
-  });
-  return slots;
+  // old round_robin shape already covered above (driverQueue/vipQueue keys)
+  // old fixed_driver shape: fixedDriver (single id) + vipPool (array of member OBJECTS)
+  if (cfg.fixedDriver || (Array.isArray(cfg.vipPool) && cfg.vipPool.length)) {
+    const driverQueue = cfg.fixedDriver ? [cfg.fixedDriver] : [];
+    const vipQueue = Array.isArray(cfg.vipPool) ? cfg.vipPool.map(p => (typeof p === 'string' ? p : p?.id)).filter(Boolean) : [];
+    return { driverQueue, vipQueue };
+  }
+  // old paired shape: pairs = [{driver,vip}]
+  if (Array.isArray(cfg.pairs) && cfg.pairs.length) {
+    return {
+      driverQueue: cfg.pairs.map(p => p.driver).filter(Boolean),
+      vipQueue: cfg.pairs.map(p => p.vip).filter(Boolean),
+    };
+  }
+  return { driverQueue: [], vipQueue: [] };
 }
 
-function genRoundRobin(driverQueue, vipQueue) {
-  const slots = EMPTY_SLOTS();
-  DAYS.forEach((_, d) => {
-    if (driverQueue.length) slots[`${d}-driver`] = { memberId: driverQueue[d % driverQueue.length], locked: false };
-    if (vipQueue.length)    slots[`${d}-vip`]    = { memberId: vipQueue[d % vipQueue.length],       locked: false };
-  });
-  return slots;
-}
-
-function genPriority(existing, driverPool, vipPool) {
-  const slots = { ...existing };
+// Auto-fill: walk each queue across the 7 days, skipping locked slots.
+function autoFillSlots(existingSlots, driverQueue, vipQueue) {
+  const slots = { ...existingSlots };
   let di = 0, vi = 0;
   DAYS.forEach((_, d) => {
-    if (!slots[`${d}-driver`]?.locked && !slots[`${d}-driver`]?.memberId) {
-      if (driverPool.length) { slots[`${d}-driver`] = { memberId: driverPool[di % driverPool.length], locked: false }; di++; }
+    const dKey = `${d}-driver`;
+    const vKey = `${d}-vip`;
+    if (!slots[dKey]?.locked) {
+      if (driverQueue.length) { slots[dKey] = { memberId: driverQueue[di % driverQueue.length], locked: false }; di++; }
+      else slots[dKey] = { memberId: null, locked: false };
     }
-    if (!slots[`${d}-vip`]?.locked && !slots[`${d}-vip`]?.memberId) {
-      if (vipPool.length) { slots[`${d}-vip`] = { memberId: vipPool[vi % vipPool.length], locked: false }; vi++; }
+    if (!slots[vKey]?.locked) {
+      if (vipQueue.length) { slots[vKey] = { memberId: vipQueue[vi % vipQueue.length], locked: false }; vi++; }
+      else slots[vKey] = { memberId: null, locked: false };
     }
   });
   return slots;
@@ -169,9 +112,14 @@ function formatWeekRange(mondayStr) {
   return `${fmt(mon)} – ${fmt(sun)} ${sun.getFullYear()}`;
 }
 
-function weekLabelFromDate(dateStr) {
-  const d = new Date(dateStr + 'T00:00:00');
-  return 'Week of ' + d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+function nextWeekDate(sortedScheds) {
+  if (sortedScheds.length > 0) {
+    const lastLabel = sortedScheds[sortedScheds.length - 1].week_label;
+    const parsed = new Date(lastLabel + 'T00:00:00');
+    if (!isNaN(parsed.getTime())) return getMondayDate(new Date(parsed.getTime() + 7 * 24 * 3600000));
+    return getMondayDate(new Date(Date.now() + 7 * 24 * 3600000));
+  }
+  return getMondayDate();
 }
 
 // ── Main component ─────────────────────────────────────────────────
@@ -197,60 +145,65 @@ export default function TrainPlanner() {
   const [allSchedules,    setAllSchedules]    = useState([]);
   const [currentWeekKey,  setCurrentWeekKey]  = useState('');
   const [scheduleId,      setScheduleId]      = useState(null);
-  const [weekLabelOverride, setWeekLabelOverride] = useState('');
 
   // ── Schedule state ───────────────────────────────────────────────
-  const [mode,        setMode]        = useState('manual');
   const [slots,       setSlots]       = useState(EMPTY_SLOTS);
-
-  // Mode-specific config state
-  const [fixedDriver,     setFixedDriver]     = useState(null);
-  const [vipPool,         setVipPool]         = useState([]);
-  const [pairs,           setPairs]           = useState([]);
-  const [pairedStartDate, setPairedStartDate] = useState('');
-  const [driverQueue,     setDriverQueue]     = useState([]);
-  const [vipQueue,        setVipQueue]        = useState([]);
-  // priorityDays: [{dayIdx, description}] — shared across all modes
-  const [priorityDays,   setPriorityDays]    = useState([]);
+  const [driverQueue, setDriverQueue] = useState([]);
+  const [vipQueue,    setVipQueue]    = useState([]);
 
   // ── Unsaved changes dialog ────────────────────────────────────────
   const [pendingNav, setPendingNav] = useState(null);
 
-  // ── Drag state ───────────────────────────────────────────────────
-  const [dragging,    setDragging]    = useState(null);
-  const [dragOver,    setDragOver]    = useState(null);
-  const [selected,    setSelected]    = useState(null);
+  // ── Cell popover / mobile sheet state ─────────────────────────────
+  const [activeCell, setActiveCell] = useState(null); // { day, role } | null
+  const [pickerOpen, setPickerOpen] = useState(false); // member picker for activeCell
+
+  // ── Mobile view state ──────────────────────────────────────────────
+  const [mobileDay,      setMobileDay]      = useState(0);
+  const [mobileGridView, setMobileGridView] = useState(false);
+  const [isMobile,       setIsMobile]       = useState(typeof window !== 'undefined' && window.innerWidth < 768);
 
   // ── Panel state ──────────────────────────────────────────────────
-  const [membersOpen, setMembersOpen] = useState(true);
   const [leftOpen,    setLeftOpen]    = useState(true);
 
-  // ── Manage Train modal ───────────────────────────────────────────
-  const [managingTrain, setManagingTrain] = useState(false);
+  // ── Manage Train (flattened) ──────────────────────────────────────
+  const [managePanelOpen, setManagePanelOpen] = useState(false); // advanced section
   const [placeholders,  setPlaceholders]  = useState([]);
   const [newPlaceholderName, setNewPlaceholderName] = useState('');
-  // Manage Train modal sub-state
   const [mtFirstWeek,   setMtFirstWeek]   = useState('');
   const [mtWeeksAhead,  setMtWeeksAhead]  = useState(4);
   const [mtGenerating,  setMtGenerating]  = useState(false);
 
-  // Derived label shown in topbar
-  const displayLabel = weekLabelOverride || (currentWeekKey ? weekLabelFromDate(currentWeekKey) : 'Current Week');
-
   function markDirty() { setIsDirty(true); }
+
+  useEffect(() => {
+    function onResize() { setIsMobile(window.innerWidth < 768); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   // ── Load placeholders ─────────────────────────────────────────────
   useEffect(() => {
     if (!myAllianceId) return;
-    const stored = localStorage.getItem(`tp_placeholders_${myAllianceId}`);
+    const stored = localStorage.getItem(`tp_ph_${myAllianceId}`);
     if (stored) {
       try { setPlaceholders(JSON.parse(stored)); } catch {}
+    } else {
+      // Migrate from older key name if present
+      const legacy = localStorage.getItem(`tp_placeholders_${myAllianceId}`);
+      if (legacy) {
+        try {
+          const parsed = JSON.parse(legacy);
+          setPlaceholders(parsed);
+          localStorage.setItem(`tp_ph_${myAllianceId}`, legacy);
+        } catch {}
+      }
     }
   }, [myAllianceId]);
 
   function savePlaceholders(newList) {
     setPlaceholders(newList);
-    if (myAllianceId) localStorage.setItem(`tp_placeholders_${myAllianceId}`, JSON.stringify(newList));
+    if (myAllianceId) localStorage.setItem(`tp_ph_${myAllianceId}`, JSON.stringify(newList));
   }
 
   function addPlaceholder() {
@@ -302,6 +255,8 @@ export default function TrainPlanner() {
         setCurrentWeekKey(todayMonday);
         setScheduleId(null);
         setSlots(EMPTY_SLOTS());
+        setDriverQueue([]);
+        setVipQueue([]);
       }
       setLoading(false);
     }
@@ -311,17 +266,11 @@ export default function TrainPlanner() {
   function applySchedule(sched) {
     setScheduleId(sched.id);
     setCurrentWeekKey(sched.week_label ?? '');
-    setWeekLabelOverride('');
-    setMode(sched.mode ?? 'manual');
 
     const cfg = sched.mode_config ?? {};
-    if (cfg.fixedDriver !== undefined)      setFixedDriver(cfg.fixedDriver);
-    if (cfg.vipPool !== undefined)          setVipPool(cfg.vipPool);
-    if (cfg.pairs !== undefined)            setPairs(cfg.pairs);
-    if (cfg.pairedStartDate !== undefined)  setPairedStartDate(cfg.pairedStartDate);
-    if (cfg.driverQueue !== undefined)      setDriverQueue(cfg.driverQueue);
-    if (cfg.vipQueue !== undefined)         setVipQueue(cfg.vipQueue);
-    if (cfg.priorityDays !== undefined)     setPriorityDays(cfg.priorityDays); else setPriorityDays([]);
+    const { driverQueue: dq, vipQueue: vq } = deriveQueuesFromLegacy(cfg);
+    setDriverQueue(dq);
+    setVipQueue(vq);
 
     supabase
       .from('train_slots')
@@ -338,19 +287,19 @@ export default function TrainPlanner() {
     if (!myAllianceId) return;
     setSaving(true);
 
-    const modeConfig = { fixedDriver, vipPool, pairs, pairedStartDate, driverQueue, vipQueue, priorityDays };
+    const modeConfig = { driverQueue, vipQueue };
     const wLabel = currentWeekKey || toDateString(getMondayDate());
 
     let sid = scheduleId;
     if (!sid) {
       const { data } = await supabase
         .from('train_schedules')
-        .insert({ alliance_id: myAllianceId, mode, week_label: wLabel, mode_config: modeConfig })
+        .insert({ alliance_id: myAllianceId, mode: 'unified', week_label: wLabel, mode_config: modeConfig })
         .select('id').single();
       sid = data?.id;
       if (sid) {
         setScheduleId(sid);
-        const newSched = { id: sid, alliance_id: myAllianceId, mode, week_label: wLabel, mode_config: modeConfig };
+        const newSched = { id: sid, alliance_id: myAllianceId, mode: 'unified', week_label: wLabel, mode_config: modeConfig };
         setAllSchedules(prev => {
           const filtered = prev.filter(s => s.week_label !== wLabel);
           return [...filtered, newSched].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
@@ -358,9 +307,9 @@ export default function TrainPlanner() {
       }
     } else {
       await supabase.from('train_schedules')
-        .update({ mode, week_label: wLabel, mode_config: modeConfig })
+        .update({ mode: 'unified', week_label: wLabel, mode_config: modeConfig })
         .eq('id', sid);
-      setAllSchedules(prev => prev.map(s => s.id === sid ? { ...s, mode, week_label: wLabel, mode_config: modeConfig } : s));
+      setAllSchedules(prev => prev.map(s => s.id === sid ? { ...s, mode: 'unified', week_label: wLabel, mode_config: modeConfig } : s));
     }
 
     if (!sid) { setSaving(false); return; }
@@ -378,18 +327,12 @@ export default function TrainPlanner() {
     setSaved(true);
     setIsDirty(false);
     setTimeout(() => setSaved(false), 2500);
-  }, [myAllianceId, scheduleId, currentWeekKey, mode, slots, fixedDriver, vipPool, pairs, pairedStartDate, driverQueue, vipQueue, priorityDays]);
+  }, [myAllianceId, scheduleId, currentWeekKey, slots, driverQueue, vipQueue]);
 
   // ── Unsaved changes guard ─────────────────────────────────────────
   function guardedNavigateWeek(dir) {
     if (isDirty) { setPendingNav({ type: 'week', dir }); return; }
     navigateWeek(dir);
-  }
-
-  function guardedDateChange(key, existingSched) {
-    if (isDirty) { setPendingNav({ type: 'date', key, sched: existingSched }); return; }
-    if (existingSched) applySchedule(existingSched);
-    else { setScheduleId(null); setCurrentWeekKey(key); setWeekLabelOverride(''); setSlots(EMPTY_SLOTS()); setIsDirty(false); }
   }
 
   async function handleUnsavedSave() {
@@ -411,7 +354,9 @@ export default function TrainPlanner() {
     if (nav.type === 'week') navigateWeek(nav.dir);
     else if (nav.type === 'date') {
       if (nav.sched) applySchedule(nav.sched);
-      else { setScheduleId(null); setCurrentWeekKey(nav.key); setWeekLabelOverride(''); setSlots(EMPTY_SLOTS()); setIsDirty(false); }
+      else { setScheduleId(null); setCurrentWeekKey(nav.key); setSlots(EMPTY_SLOTS()); setIsDirty(false); }
+    } else if (nav.type === 'newweek') {
+      doCreateNextWeek();
     }
   }
 
@@ -437,129 +382,61 @@ export default function TrainPlanner() {
       setScheduleId(null);
       setCurrentWeekKey(toDateString(getMondayDate()));
       setSlots(EMPTY_SLOTS());
+      setDriverQueue([]);
+      setVipQueue([]);
       setIsDirty(false);
     }
   }
 
-  function createNewWeek() {
-    const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
-    let baseDate;
-    if (sorted.length > 0) {
-      const lastLabel = sorted[sorted.length - 1].week_label;
-      const parsed = new Date(lastLabel + 'T00:00:00');
-      if (!isNaN(parsed.getTime())) baseDate = getMondayDate(new Date(parsed.getTime() + 7 * 24 * 3600000));
-      else baseDate = getMondayDate(new Date(Date.now() + 7 * 24 * 3600000));
-    } else { baseDate = getMondayDate(); }
+  // ── "+ NEXT WEEK" — one-click: duplicate queues, clear locks, advance label ──
+  function createNextWeek() {
+    if (isDirty) { setPendingNav({ type: 'newweek' }); return; }
+    doCreateNextWeek();
+  }
 
+  function doCreateNextWeek() {
+    const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
+    const baseDate = nextWeekDate(sorted);
     const newKey = toDateString(baseDate);
     if (allSchedules.some(s => s.week_label === newKey)) { alert('A schedule for that week already exists.'); return; }
 
     setScheduleId(null);
     setCurrentWeekKey(newKey);
-    setWeekLabelOverride('');
+    // Duplicate current queues; clear per-slot locks/assignments for the new week
     setSlots(EMPTY_SLOTS());
-    setIsDirty(false);
+    setIsDirty(true);
   }
 
-  // ── Auto-generate based on mode ───────────────────────────────────
+  // ── Auto-fill ──────────────────────────────────────────────────────
   function generate() {
-    if (mode === 'fixed_driver') {
-      setSlots(genFixedDriver(members, fixedDriver, vipPool));
-    } else if (mode === 'paired') {
-      setSlots(genPaired(pairs, pairedStartDate));
-    } else if (mode === 'round_robin') {
-      setSlots(genRoundRobin(driverQueue, vipQueue));
-    } else if (mode === 'priority') {
-      const dPool = members.filter(m => !Object.values(slots).some(s => s.locked && s.memberId === m.id)).map(m => m.id);
-      const vPool = [...dPool];
-      setSlots(genPriority(slots, dPool, vPool));
-    }
-    markDirty();
-  }
-
-  // ── Fixed Driver roll-to-next-week ───────────────────────────────
-  function rollVipToNextWeek() {
-    if (vipPool.length < 2) return;
-    const next = [...vipPool.slice(1), vipPool[0]];
-    setVipPool(next);
-    setSlots(genFixedDriver(members, fixedDriver, next));
+    setSlots(prev => autoFillSlots(prev, driverQueue, vipQueue));
     markDirty();
   }
 
   // ── Slot assignment ───────────────────────────────────────────────
-  function assignSlot(key, memberId) {
+  function lockSlot(key, memberId) {
     if (!canEdit) return;
-    setSlots(prev => ({ ...prev, [key]: { ...prev[key], memberId } }));
+    setSlots(prev => ({ ...prev, [key]: { memberId, locked: true } }));
     markDirty();
+  }
+
+  function setSlotAuto(key) {
+    if (!canEdit) return;
+    setSlots(prev => ({ ...prev, [key]: { ...prev[key], locked: false } }));
+    markDirty();
+    generateAfter();
+  }
+
+  function generateAfter() {
+    setTimeout(() => {
+      setSlots(prev => autoFillSlots(prev, driverQueue, vipQueue));
+    }, 0);
   }
 
   function clearSlot(key) {
     if (!canEdit) return;
-    setSlots(prev => ({ ...prev, [key]: { ...prev[key], memberId: null } }));
+    setSlots(prev => ({ ...prev, [key]: { memberId: null, locked: false } }));
     markDirty();
-  }
-
-  function toggleLock(key) {
-    if (!canEdit) return;
-    setSlots(prev => ({ ...prev, [key]: { ...prev[key], locked: !prev[key]?.locked } }));
-    markDirty();
-  }
-
-  function clearAll() {
-    if (!confirm('Clear all slots?')) return;
-    setSlots(EMPTY_SLOTS());
-    markDirty();
-  }
-
-  // ── Drag handlers ─────────────────────────────────────────────────
-  function onDragStart(e, memberId, fromSlot = null) {
-    setDragging({ memberId, fromSlot });
-    e.dataTransfer.effectAllowed = 'move';
-  }
-  function onDragOver(e, key) {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    setDragOver(key);
-  }
-  function onDragLeave() { setDragOver(null); }
-  function onDrop(e, key) {
-    e.preventDefault();
-    setDragOver(null);
-    if (!dragging || !canEdit) return;
-    const { memberId, fromSlot } = dragging;
-    if (fromSlot && fromSlot !== key) {
-      setSlots(prev => {
-        const targetMemberId = prev[key]?.memberId ?? null;
-        return {
-          ...prev,
-          [fromSlot]: { ...prev[fromSlot], memberId: targetMemberId },
-          [key]:      { ...prev[key],      memberId },
-        };
-      });
-    } else {
-      assignSlot(key, memberId);
-    }
-    setDragging(null);
-    setSelected(null);
-    markDirty();
-  }
-  function onDropPool(e) {
-    e.preventDefault();
-    if (!dragging?.fromSlot) return;
-    clearSlot(dragging.fromSlot);
-    setDragging(null);
-  }
-
-  function onMemberClick(memberId) {
-    if (!canEdit) return;
-    setSelected(s => s === memberId ? null : memberId);
-  }
-  function onSlotClick(key) {
-    if (!canEdit) return;
-    if (selected) {
-      assignSlot(key, selected);
-      setSelected(null);
-    }
   }
 
   // ── Export ────────────────────────────────────────────────────────
@@ -594,7 +471,7 @@ export default function TrainPlanner() {
     }
   }
 
-  // ── Generate weeks (Manage Train modal) ──────────────────────────
+  // ── Bulk generate weeks ───────────────────────────────────────────
   async function handleGenerateWeeks() {
     if (!myAllianceId || !mtFirstWeek) return;
     setMtGenerating(true);
@@ -607,7 +484,7 @@ export default function TrainPlanner() {
       if (reloaded.some(s => s.week_label === label)) continue;
       const { data } = await supabase
         .from('train_schedules')
-        .insert({ alliance_id: myAllianceId, mode: 'manual', week_label: label, mode_config: {} })
+        .insert({ alliance_id: myAllianceId, mode: 'unified', week_label: label, mode_config: { driverQueue, vipQueue } })
         .select('*').single();
       if (data) reloaded = [...reloaded, data];
     }
@@ -637,52 +514,45 @@ export default function TrainPlanner() {
     }
   }
 
-  function handleAddSingleWeek() {
-    const sorted = [...allSchedules].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || ''));
-    let baseDate;
-    if (sorted.length > 0) {
-      const lastLabel = sorted[sorted.length - 1].week_label;
-      const parsed = new Date(lastLabel + 'T00:00:00');
-      if (!isNaN(parsed.getTime())) baseDate = getMondayDate(new Date(parsed.getTime() + 7 * 24 * 3600000));
-      else baseDate = getMondayDate(new Date(Date.now() + 7 * 24 * 3600000));
-    } else { baseDate = getMondayDate(); }
-    const newKey = toDateString(baseDate);
-    if (allSchedules.some(s => s.week_label === newKey)) { alert('A schedule for that week already exists.'); return; }
-    supabase.from('train_schedules')
-      .insert({ alliance_id: myAllianceId, mode: 'manual', week_label: newKey, mode_config: {} })
-      .select('*').single()
-      .then(({ data }) => {
-        if (data) {
-          setAllSchedules(prev => [...prev, data].sort((a, b) => (a.week_label || '').localeCompare(b.week_label || '')));
-        }
-      });
-  }
-
   // ── Derived ───────────────────────────────────────────────────────
   const memberById = Object.fromEntries(allMembers.map(m => [m.id, m]));
-  const assignedIds = new Set(Object.values(slots).map(s => s.memberId).filter(Boolean));
-  const currentMode = MODES.find(m => m.id === mode);
-
-  // ── Pairs helpers ─────────────────────────────────────────────────
-  function addPair(driverId, vipId) {
-    if (!driverId || !vipId) return;
-    setPairs(p => [...p, { driver: driverId, vip: vipId }]);
-    markDirty();
-  }
-  function removePair(i) { setPairs(p => p.filter((_, j) => j !== i)); markDirty(); }
-  function swapPairs() { setPairs(p => p.map(pair => ({ driver: pair.vip, vip: pair.driver }))); markDirty(); }
 
   // ── Queue helpers ─────────────────────────────────────────────────
-  function toggleQueue(arr, setArr, memberId) {
-    setArr(a => a.includes(memberId) ? a.filter(id => id !== memberId) : [...a, memberId]);
+  function addToQueue(which, memberId) {
+    const setArr = which === 'driver' ? setDriverQueue : setVipQueue;
+    setArr(a => a.includes(memberId) ? a : [...a, memberId]);
     markDirty();
   }
-  function moveQueue(arr, setArr, i, dir) {
+  function removeFromQueue(which, memberId) {
+    const setArr = which === 'driver' ? setDriverQueue : setVipQueue;
+    setArr(a => a.filter(id => id !== memberId));
+    markDirty();
+  }
+  function moveQueueItem(which, i, dir) {
+    const arr = which === 'driver' ? driverQueue : vipQueue;
+    const setArr = which === 'driver' ? setDriverQueue : setVipQueue;
     const n = [...arr];
     const j = i + dir;
     if (j < 0 || j >= n.length) return;
     [n[i], n[j]] = [n[j], n[i]];
     setArr(n);
+    markDirty();
+  }
+  function reverseQueue(which) {
+    const setArr = which === 'driver' ? setDriverQueue : setVipQueue;
+    setArr(a => [...a].reverse());
+    markDirty();
+  }
+  function shuffleQueue(which) {
+    const setArr = which === 'driver' ? setDriverQueue : setVipQueue;
+    setArr(a => {
+      const n = [...a];
+      for (let i = n.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [n[i], n[j]] = [n[j], n[i]];
+      }
+      return n;
+    });
     markDirty();
   }
 
@@ -712,8 +582,7 @@ export default function TrainPlanner() {
         @media (max-width: 768px) {
           .tp-left-panel { position: fixed !important; top: 0; left: 0; height: 100vh; z-index: 60; transform: translateX(var(--left-tx, -100%)); transition: transform 0.2s; }
           .tp-left-panel.open { transform: translateX(0) !important; }
-          .tp-right-panel { position: fixed !important; top: 0; right: 0; height: 100vh; z-index: 60; transform: translateX(var(--right-tx, 100%)); transition: transform 0.2s; }
-          .tp-right-panel.open { transform: translateX(0) !important; }
+          .tp-mobile-only { display: flex !important; }
         }
         `}
       </style>
@@ -723,34 +592,32 @@ export default function TrainPlanner() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 200, background: 'rgba(0,0,0,0.75)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: '#0d1520', border: '1px solid rgba(240,165,0,0.4)', padding: '28px 32px', maxWidth: 380, width: '90%' }}>
             <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '2px', color: '#f0a500', marginBottom: 12 }}>UNSAVED CHANGES</div>
-            <p style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>You have unsaved changes. Save before switching weeks?</p>
+            <p style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6, marginBottom: 20 }}>You have unsaved changes. Save before continuing?</p>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handleUnsavedSave} style={{ flex: 1, padding: '9px', background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.4)', color: '#f0a500', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' }}>SAVE</button>
-              <button onClick={handleUnsavedDiscard} style={{ flex: 1, padding: '9px', background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.3)', color: '#ff4060', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' }}>DISCARD</button>
-              <button onClick={() => setPendingNav(null)} style={{ flex: 1, padding: '9px', background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' }}>CANCEL</button>
+              <button onClick={handleUnsavedSave} style={{ flex: 1, padding: '9px', background: 'rgba(240,165,0,0.12)', border: '1px solid rgba(240,165,0,0.4)', color: '#f0a500', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>SAVE</button>
+              <button onClick={handleUnsavedDiscard} style={{ flex: 1, padding: '9px', background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.3)', color: '#ff4060', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>DISCARD</button>
+              <button onClick={() => setPendingNav(null)} style={{ flex: 1, padding: '9px', background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>CANCEL</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── MANAGE TRAIN Modal ───────────────────────────────────── */}
-      {managingTrain && (
+      {/* ── Advanced panel (bulk generate + placeholders) ───────── */}
+      {managePanelOpen && (
         <div
           style={{ position: 'fixed', inset: 0, zIndex: 210, background: 'rgba(0,0,0,0.85)', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', overflowY: 'auto', padding: '20px 0' }}
-          onClick={e => { if (e.target === e.currentTarget) setManagingTrain(false); }}
+          onClick={e => { if (e.target === e.currentTarget) setManagePanelOpen(false); }}
         >
-          <div style={{ background: '#0d1520', border: '1px solid #1e3550', width: '90%', maxWidth: 680, padding: '0 0 24px', position: 'relative', margin: '0 auto' }}>
-            {/* Header */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #1e3550', marginBottom: 0 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '2px', color: '#f0a500' }}>⚙ MANAGE TRAIN</div>
-              <button onClick={() => setManagingTrain(false)} style={{ background: 'none', border: 'none', color: '#7a9bb8', cursor: 'pointer', fontSize: 18, lineHeight: 1 }}>×</button>
+          <div style={{ background: '#0d1520', border: '1px solid #1e3550', width: '90%', maxWidth: 560, padding: '0 0 24px', position: 'relative', margin: '0 auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid #1e3550' }}>
+              <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '2px', color: '#f0a500' }}>⚙ ADVANCED</div>
+              <button onClick={() => setManagePanelOpen(false)} style={{ background: 'none', border: 'none', color: '#7a9bb8', cursor: 'pointer', fontSize: 18, lineHeight: 1, minWidth: 44, minHeight: 44 }}>×</button>
             </div>
 
             <div style={{ padding: '20px 20px 0' }}>
-
-              {/* Section A: Schedule Setup */}
+              {/* Bulk generate weeks */}
               <div style={{ marginBottom: 24 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 12, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>A. SCHEDULE SETUP</div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 12, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>BULK GENERATE WEEKS</div>
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
                   <div>
                     <div style={{ fontSize: 9, color: '#5a7898', fontWeight: 700, letterSpacing: '1.5px', marginBottom: 4 }}>FIRST WEEK STARTS ON (MONDAY)</div>
@@ -758,12 +625,11 @@ export default function TrainPlanner() {
                       type="date"
                       value={mtFirstWeek}
                       onChange={e => {
-                        // Snap to Monday
                         const d = new Date(e.target.value + 'T00:00:00');
                         const monday = getMondayDate(d);
                         setMtFirstWeek(toDateString(monday));
                       }}
-                      style={{ ...S.sel, width: 'auto', minWidth: 160 }}
+                      style={{ ...S.sel, width: 'auto', minWidth: 160, minHeight: 44 }}
                     />
                   </div>
                   <div>
@@ -773,27 +639,22 @@ export default function TrainPlanner() {
                       min={1} max={20}
                       value={mtWeeksAhead}
                       onChange={e => setMtWeeksAhead(Math.max(1, Math.min(20, parseInt(e.target.value) || 4)))}
-                      style={{ ...S.sel, width: 80 }}
+                      style={{ ...S.sel, width: 80, minHeight: 44 }}
                     />
                   </div>
                   <button
                     onClick={handleGenerateWeeks}
                     disabled={!mtFirstWeek || mtGenerating}
-                    style={{ ...S.genBtn, width: 'auto', padding: '8px 16px', opacity: !mtFirstWeek ? 0.5 : 1 }}
+                    style={{ ...S.genBtn, width: 'auto', padding: '8px 16px', opacity: !mtFirstWeek ? 0.5 : 1, minHeight: 44 }}
                   >
                     {mtGenerating ? 'GENERATING…' : 'GENERATE WEEKS'}
                   </button>
                 </div>
               </div>
 
-              {/* Section B: Existing Weeks */}
+              {/* All weeks table */}
               <div style={{ marginBottom: 24 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8' }}>B. EXISTING WEEKS ({sortedScheds.length})</div>
-                  {canEdit && (
-                    <button onClick={handleAddSingleWeek} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: '#00c8ff', background: 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.25)', padding: '3px 10px', cursor: 'pointer' }}>+ ADD SINGLE WEEK</button>
-                  )}
-                </div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 12, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>ALL WEEKS ({sortedScheds.length})</div>
                 {sortedScheds.length === 0 ? (
                   <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic' }}>No weeks saved yet.</div>
                 ) : (
@@ -802,24 +663,21 @@ export default function TrainPlanner() {
                       <tr style={{ borderBottom: '1px solid #1e3550' }}>
                         <th style={{ textAlign: 'left', padding: '4px 8px', color: '#5a7898', fontSize: 9, letterSpacing: '1.5px', fontWeight: 700 }}>WK #</th>
                         <th style={{ textAlign: 'left', padding: '4px 8px', color: '#5a7898', fontSize: 9, letterSpacing: '1.5px', fontWeight: 700 }}>DATE RANGE</th>
-                        <th style={{ textAlign: 'left', padding: '4px 8px', color: '#5a7898', fontSize: 9, letterSpacing: '1.5px', fontWeight: 700 }}>MODE</th>
                         <th style={{ textAlign: 'right', padding: '4px 8px', color: '#5a7898', fontSize: 9, letterSpacing: '1.5px', fontWeight: 700 }}>ACTIONS</th>
                       </tr>
                     </thead>
                     <tbody>
                       {sortedScheds.map((s, i) => {
                         const isActive = s.id === scheduleId;
-                        const modeInfo = MODES.find(m => m.id === (s.mode || 'manual'));
                         return (
                           <tr key={s.id} style={{ borderBottom: '1px solid rgba(30,53,80,0.5)', background: isActive ? 'rgba(240,165,0,0.05)' : 'transparent' }}>
                             <td style={{ padding: '6px 8px', color: isActive ? '#f0a500' : '#7a9bb8', fontWeight: 700 }}>{i + 1}</td>
                             <td style={{ padding: '6px 8px', fontFamily: "'Share Tech Mono',monospace", color: isActive ? '#f0a500' : '#d0e4f4', fontSize: 10 }}>{formatWeekRange(s.week_label)}</td>
-                            <td style={{ padding: '6px 8px', color: modeInfo?.color || '#7a9bb8', fontSize: 10 }}>{modeInfo?.icon} {modeInfo?.label}</td>
                             <td style={{ padding: '6px 8px', textAlign: 'right' }}>
                               {canEdit && (
                                 <button
                                   onClick={() => handleDeleteWeekFromModal(s)}
-                                  style={{ background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.25)', color: '#ff4060', cursor: 'pointer', padding: '2px 8px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9 }}
+                                  style={{ background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.25)', color: '#ff4060', cursor: 'pointer', padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, minHeight: 32 }}
                                 >
                                   DELETE
                                 </button>
@@ -833,9 +691,9 @@ export default function TrainPlanner() {
                 )}
               </div>
 
-              {/* Section C: Placeholder Members */}
+              {/* Placeholder Members */}
               <div>
-                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>C. PLACEHOLDER MEMBERS</div>
+                <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #1e3550' }}>PLACEHOLDER MEMBERS</div>
                 <p style={{ fontSize: 11, color: '#5a7898', lineHeight: 1.6, marginBottom: 12 }}>
                   Placeholder members can be assigned to train slots without being real accounts. Useful for reserved spots.
                 </p>
@@ -845,7 +703,7 @@ export default function TrainPlanner() {
                       <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 10px', marginBottom: 3, background: 'rgba(90,120,152,0.1)', border: '1px solid rgba(90,120,152,0.25)' }}>
                         <span style={{ flex: 1, fontSize: 11, color: '#d0e4f4', fontWeight: 700 }}>{p.name}</span>
                         <span style={{ fontSize: 9, color: '#5a7898', fontWeight: 700 }}>(P)</span>
-                        <button onClick={() => removePlaceholder(p.id)} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px' }}>×</button>
+                        <button onClick={() => removePlaceholder(p.id)} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: '0 2px', minWidth: 32, minHeight: 32 }}>×</button>
                       </div>
                     ))}
                   </div>
@@ -857,12 +715,11 @@ export default function TrainPlanner() {
                     value={newPlaceholderName}
                     onChange={e => setNewPlaceholderName(e.target.value)}
                     onKeyDown={e => e.key === 'Enter' && addPlaceholder()}
-                    style={{ ...S.sel, flex: 1 }}
+                    style={{ ...S.sel, flex: 1, minHeight: 44 }}
                   />
-                  <button onClick={addPlaceholder} style={{ ...S.genBtn, width: 'auto', padding: '6px 16px' }}>ADD</button>
+                  <button onClick={addPlaceholder} style={{ ...S.genBtn, width: 'auto', padding: '6px 16px', minHeight: 44 }}>ADD</button>
                 </div>
               </div>
-
             </div>
           </div>
         </div>
@@ -877,18 +734,15 @@ export default function TrainPlanner() {
 
       {/* ── Topbar ──────────────────────────────────────────────── */}
       <div style={{ background: 'rgba(8,13,20,0.97)', borderBottom: '1px solid #1e3550', flexShrink: 0, zIndex: 50 }}>
-        {/* Row 1: title */}
         <div style={{ height: 48, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px' }}>
-          <button className="tp-mobile-only" onClick={() => setLeftOpen(o => !o)} style={{ ...S.iconBtn, display: 'none' }} title="Toggle mode panel"><Menu size={14} /></button>
+          <button className="tp-mobile-only" onClick={() => setLeftOpen(o => !o)} style={{ ...S.iconBtn, display: 'none' }} title="Toggle weeks panel"><Menu size={14} /></button>
           <button onClick={() => navigate(`/server/${serverId}/alliance`)} style={S.iconBtn}><ArrowLeft size={15} /></button>
           <Train size={15} style={{ color: '#f0a500', flexShrink: 0 }} />
           <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '2px', color: '#f0a500' }}>TRAIN PLANNER</div>
           {alliance && <div style={{ fontSize: 13, color: '#c0d8f0', marginLeft: 4 }}>— {alliance.name}</div>}
           {isDirty && <div style={{ fontSize: 10, color: '#f0a500', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.3)', padding: '2px 7px', letterSpacing: '1px', fontWeight: 700 }}>UNSAVED</div>}
           <div style={{ flex: 1 }} />
-          <button onClick={() => setMembersOpen(o => !o)} style={{ ...S.iconBtn, display: 'none' }} className="tp-mobile-only" title="Toggle members panel"><Users size={14} /></button>
         </div>
-        {/* Row 2: active week */}
         <div style={{ height: 32, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px', borderTop: '1px solid rgba(30,53,80,0.4)', background: 'rgba(5,10,18,0.5)' }}>
           <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: '#8aadcc' }}>WEEK:</span>
           <span style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 12, color: '#ffffff', fontWeight: 700 }}>
@@ -905,595 +759,294 @@ export default function TrainPlanner() {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
 
-        {/* ── Left: Config (top, scrollable) + Week list (middle) + Mode tab bar (bottom) */}
+        {/* ── Left: Week sidebar ─────────────────────────────────── */}
         <div
           className={`tp-left-panel${leftOpen ? ' open' : ''}`}
-          style={{ width: 270, minWidth: 270, background: 'rgba(5,10,18,0.98)', borderRight: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+          style={{ width: 240, minWidth: 240, background: 'rgba(5,10,18,0.98)', borderRight: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         >
-          {/* Mode config panel — flex:1, scrollable */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px' }}>
-            <ModeConfig
-              mode={mode}
-              members={allMembers}
-              memberById={memberById}
-              canEdit={canEdit}
-              fixedDriver={fixedDriver} setFixedDriver={v => { setFixedDriver(v); markDirty(); }}
-              vipPool={vipPool}        setVipPool={v => { setVipPool(v); markDirty(); }}
-              pairs={pairs}            addPair={addPair} removePair={removePair} swapPairs={swapPairs}
-              pairedStartDate={pairedStartDate} setPairedStartDate={v => { setPairedStartDate(v); markDirty(); }}
-              driverQueue={driverQueue} setDriverQueue={v => { setDriverQueue(v); markDirty(); }}
-              vipQueue={vipQueue}       setVipQueue={v => { setVipQueue(v); markDirty(); }}
-              priorityDays={priorityDays} setPriorityDays={v => { setPriorityDays(v); markDirty(); }}
-              toggleQueue={toggleQueue}
-              moveDriverQueue={(i, d) => moveQueue(driverQueue, setDriverQueue, i, d)}
-              moveVipQueue={(i, d) => moveQueue(vipQueue, setVipQueue, i, d)}
-              generate={generate}
-              rollVipToNextWeek={rollVipToNextWeek}
-              currentMode={currentMode}
-              slots={slots}
-              setSlots={setSlots}
-              markDirty={markDirty}
-            />
-          </div>
-
-          {/* Week List + Actions */}
-          <div style={{ flexShrink: 0, borderTop: '1px solid #1e3550' }}>
-            {/* Action buttons row */}
-            <div style={{ display: 'flex', gap: 5, padding: '8px 10px 6px', borderBottom: '1px solid rgba(30,53,80,0.5)', flexWrap: 'wrap' }}>
+          <div style={{ flexShrink: 0, padding: '10px 10px 6px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {canEdit && (
+              <button onClick={createNextWeek} style={{ ...S.genBtn, background: 'rgba(0,232,122,0.1)', border: '1px solid rgba(0,232,122,0.4)', color: '#00e87a', minHeight: 44 }}>
+                <Plus size={13} /> NEXT WEEK
+              </button>
+            )}
+            <div style={{ display: 'flex', gap: 5 }}>
               {canEdit && (
-                <button onClick={() => setManagingTrain(true)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '6px 4px', background: 'transparent', border: '1px solid #00e87a', color: '#00e87a', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: 'pointer' }}>
-                  <Settings size={11} /> MANAGE
+                <button onClick={() => setManagePanelOpen(true)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '8px 4px', background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '1px', cursor: 'pointer', minHeight: 40 }}>
+                  <Settings size={11} /> ADVANCED
                 </button>
               )}
-              <button onClick={handleExport} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '6px 4px', background: 'transparent', border: '1px solid #1e3550', color: '#8aadcc', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: 'pointer' }}>
+              <button onClick={handleExport} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '8px 4px', background: 'transparent', border: '1px solid #1e3550', color: '#8aadcc', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '1px', cursor: 'pointer', minHeight: 40 }}>
                 <Download size={11} /> EXPORT
               </button>
-              {canEdit && (
-                <>
-                  <button onClick={clearAll} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '6px 4px', background: 'transparent', border: '1px solid rgba(255,64,96,0.35)', color: '#ff6080', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: 'pointer' }}>
-                    <RotateCcw size={11} /> CLEAR
-                  </button>
-                  <button onClick={handleSave} disabled={saving} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '6px 4px', background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.5)' : 'rgba(240,165,0,0.5)'}`, color: saved ? '#00e87a' : '#f0a500', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: saving ? 'default' : 'pointer' }}>
-                    <Save size={11} />{saving ? 'SAVING…' : saved ? 'SAVED ✓' : 'SAVE'}
-                  </button>
-                </>
-              )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px 4px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#8aadcc' }}>WEEKS ({sortedScheds.length})</div>
-              {canEdit && (
-                <button onClick={createNewWeek} style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1px', color: '#00c8ff', background: 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.25)', padding: '2px 8px', cursor: 'pointer' }}>+ NEW</button>
-              )}
-            </div>
-            <div style={{ maxHeight: 180, overflowY: 'auto' }}>
-              {sortedScheds.length === 0 && (
-                <div style={{ padding: '8px 12px', fontSize: 10, color: '#5a7898', fontStyle: 'italic' }}>No saved weeks yet. Save to create one.</div>
-              )}
-              {sortedScheds.map((s, i) => {
-                const isActive = s.id === scheduleId;
-                const label = formatWeekRange(s.week_label);
-                return (
-                  <div
-                    key={s.id}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 10px', background: isActive ? 'rgba(240,165,0,0.07)' : 'transparent', borderLeft: isActive ? '2px solid #f0a500' : '2px solid transparent', cursor: 'pointer' }}
-                    onClick={() => {
-                      if (!isActive) {
-                        if (isDirty) { setPendingNav({ type: 'date', key: s.week_label, sched: s }); }
-                        else applySchedule(s);
-                      }
-                    }}
-                  >
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: isActive ? '#f0a500' : '#c0d8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
-                      <div style={{ fontSize: 9, color: '#8aadcc', letterSpacing: '1px' }}>WK {i + 1}</div>
-                    </div>
-                    {canEdit && (
-                      <button
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (isActive) { handleDeleteWeek(); }
-                          else {
-                            if (!confirm('Delete this week\'s schedule?')) return;
-                            supabase.from('train_slots').delete().eq('schedule_id', s.id).then(() =>
-                              supabase.from('train_schedules').delete().eq('id', s.id)
-                            );
-                            setAllSchedules(prev => prev.filter(x => x.id !== s.id));
-                          }
-                        }}
-                        title="Delete week"
-                        style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', padding: '2px 4px', fontSize: 12, opacity: 0.5, flexShrink: 0 }}
-                        onMouseEnter={e => { e.currentTarget.style.opacity = '1'; }}
-                        onMouseLeave={e => { e.currentTarget.style.opacity = '0.5'; }}
-                      >🗑</button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Mode selector tab bar — bottom strip */}
-          <div style={{ flexShrink: 0, borderTop: '1px solid #1e3550', background: 'rgba(5,10,18,0.99)', padding: '6px 8px' }}>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 5 }}>SCHEDULING MODE</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-              {MODES.map(m => {
-                const active = mode === m.id;
-                return (
-                  <button
-                    key={m.id}
-                    onClick={() => { if (canEdit && m.id !== mode) { setMode(m.id); markDirty(); } }}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 4,
-                      padding: '5px 8px',
-                      background: active ? `${m.color}18` : 'rgba(10,18,30,0.6)',
-                      border: `1px solid ${active ? m.color + '70' : '#1e3550'}`,
-                      color: active ? m.color : '#7a9bb8',
-                      fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '0.5px',
-                      cursor: canEdit ? 'pointer' : 'default',
-                      transition: 'border-color 0.15s, background 0.15s, color 0.15s',
-                    }}
-                  >
-                    <span style={{ fontSize: 11 }}>{m.icon}</span>
-                    <span>{m.label.toUpperCase()}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* ── Center: Grid ────────────────────────────────────────── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 16px' }}>
-          <ScheduleGrid
-            slots={slots}
-            days={DAYS}
-            memberById={memberById}
-            canEdit={canEdit}
-            dragOver={dragOver}
-            selected={selected}
-            mode={mode}
-            onDragStart={onDragStart}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={onDrop}
-            onSlotClick={onSlotClick}
-            clearSlot={clearSlot}
-            toggleLock={toggleLock}
-          />
-        </div>
-
-        {/* ── Right: Member pool ───────────────────────────────────── */}
-        {membersOpen ? (
-          <div
-            className="tp-right-panel open"
-            style={{ width: 220, minWidth: 220, background: 'rgba(5,10,18,0.98)', borderLeft: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
-            onDragOver={e => e.preventDefault()}
-            onDrop={onDropPool}
-          >
-            <div style={{ padding: '10px 12px', borderBottom: '1px solid #1e3550', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8', marginBottom: 2 }}>DRAG TO SLOT</div>
-                <div style={{ fontSize: 9, color: '#5a7898', letterSpacing: '1px' }}>MEMBERS — {allMembers.length}</div>
-              </div>
-              <button
-                onClick={() => setMembersOpen(false)}
-                style={{ background: 'none', border: '1px solid #1e3550', color: '#5a7898', cursor: 'pointer', padding: '3px 5px', display: 'flex', alignItems: 'center' }}
-                title="Collapse members panel"
-              >
-                <ChevronRight size={13} />
+            {canEdit && (
+              <button onClick={handleSave} disabled={saving} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '8px 4px', background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.5)' : 'rgba(240,165,0,0.5)'}`, color: saved ? '#00e87a' : '#f0a500', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: saving ? 'default' : 'pointer', minHeight: 44 }}>
+                <Save size={11} />{saving ? 'SAVING…' : saved ? 'SAVED ✓' : 'SAVE'}
               </button>
-            </div>
-            {selected && (
-              <div style={{ padding: '6px 12px', background: 'rgba(0,200,255,0.06)', borderBottom: '1px solid rgba(0,200,255,0.2)', fontSize: 10, color: '#00c8ff' }}>
-                ✓ Click a slot to assign
-              </div>
             )}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '8px 8px' }}>
-              {allMembers.map(m => {
-                const isAssigned = assignedIds.has(m.id);
-                const isSel      = selected === m.id;
-                const isPlaceholder = m.is_placeholder;
-                return (
-                  <div
-                    key={m.id}
-                    draggable={canEdit}
-                    onDragStart={e => onDragStart(e, m.id)}
-                    onDragEnd={() => setDragging(null)}
-                    onClick={() => onMemberClick(m.id)}
-                    style={{
-                      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px', marginBottom: 3,
-                      background: isSel ? 'rgba(0,200,255,0.12)' : isAssigned ? 'rgba(0,200,255,0.05)' : 'transparent',
-                      border: `1px solid ${isSel ? 'rgba(0,200,255,0.5)' : isAssigned ? 'rgba(0,200,255,0.2)' : '#1e3550'}`,
-                      cursor: canEdit ? 'grab' : 'default',
-                      opacity: 1,
-                    }}
-                  >
-                    <div style={{ width: 26, height: 26, borderRadius: 2, background: isPlaceholder ? '#2a4058' : (alliance?.color ?? '#1e3550'), display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700, color: '#080d14', flexShrink: 0, position: 'relative' }}>
-                      {memberInitials(m)}
-                      {isAssigned && (
-                        <div style={{ position: 'absolute', top: -4, right: -4, width: 8, height: 8, borderRadius: '50%', background: '#00e87a', border: '1px solid #080d14' }} />
-                      )}
-                    </div>
-                    <div style={{ overflow: 'hidden', flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: isSel ? '#00c8ff' : isAssigned ? '#a0c8e8' : '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {memberName(m)}
-                        </div>
-                        {isPlaceholder && <span style={{ fontSize: 8, color: '#5a7898', fontWeight: 700, background: 'rgba(90,120,152,0.15)', padding: '1px 3px', flexShrink: 0 }}>(P)</span>}
-                      </div>
-                      {isAssigned && <div style={{ fontSize: 8, color: '#00e87a', fontWeight: 700, letterSpacing: '1px' }}>ASSIGNED</div>}
-                      {m.power1 && !isAssigned && !isPlaceholder && <div style={{ fontSize: 9, color: '#5a7898', fontFamily: "'Share Tech Mono',monospace" }}>{m.power1}B{m.troop1 ? ` · ${m.troop1}` : ''}</div>}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-            <div style={{ padding: '8px 12px', borderTop: '1px solid #1e3550', fontSize: 9, color: '#2a4058', lineHeight: 1.6, flexShrink: 0 }}>
-              Drag to slot · Drag slot→here to remove · Click member then slot to assign
-            </div>
           </div>
-        ) : (
-          /* Collapsed members strip */
-          <div
-            style={{ width: 36, minWidth: 36, background: 'rgba(5,10,18,0.98)', borderLeft: '1px solid #1e3550', display: 'flex', flexDirection: 'column', alignItems: 'center', overflow: 'hidden' }}
-            onDragOver={e => e.preventDefault()}
-            onDrop={onDropPool}
-          >
-            <button
-              onClick={() => setMembersOpen(true)}
-              style={{ background: 'none', border: 'none', color: '#5a7898', cursor: 'pointer', padding: '8px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%' }}
-              title="Expand members panel"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#5a7898', writingMode: 'vertical-rl', transform: 'rotate(180deg)', userSelect: 'none' }}>MEMBERS</div>
-            </div>
+
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 10px 4px' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#8aadcc' }}>WEEKS ({sortedScheds.length})</div>
           </div>
-        )}
-      </div>
-
-      {/* Mobile overlay backdrops */}
-      <style>{`
-        @media (max-width: 768px) {
-          .tp-mobile-only { display: flex !important; }
-          .tp-left-panel { --left-tx: -100%; }
-          .tp-right-panel { --right-tx: 100%; }
-        }
-      `}</style>
-    </div>
-  );
-}
-
-// ── Mode Config Panel ──────────────────────────────────────────────
-function ModeConfig({ mode, members, memberById, canEdit, fixedDriver, setFixedDriver, vipPool, setVipPool, pairs, addPair, removePair, swapPairs, pairedStartDate, setPairedStartDate, driverQueue, setDriverQueue, vipQueue, setVipQueue, priorityDays, setPriorityDays, moveDriverQueue, moveVipQueue, toggleQueue, generate, rollVipToNextWeek, currentMode, slots, setSlots, markDirty }) {
-  const [pairDriver, setPairDriver] = useState('');
-  const [pairVip,    setPairVip]    = useState('');
-
-  const sel = (label, value, onChange, list = members) => (
-    <select value={value} onChange={e => onChange(e.target.value)} style={S.sel} disabled={!canEdit}>
-      <option value="">— {label} —</option>
-      {list.map(m => <option key={m.id} value={m.id}>{m.in_game_name || m.username}</option>)}
-    </select>
-  );
-
-  const ordinal = (n) => {
-    const s = ['th','st','nd','rd'];
-    const v = n % 100;
-    return n + (s[(v - 20) % 10] || s[v] || s[0]);
-  };
-
-  return (
-    <div>
-      {/* Mode info */}
-      <div style={{ fontSize: 11, color: '#5a7898', lineHeight: 1.6, marginBottom: 14, padding: '8px 10px', border: `1px solid ${currentMode?.color}25`, background: `${currentMode?.color}08` }}>
-        {currentMode?.detail}
-      </div>
-
-      {/* Priority days banner — shown in all modes when priority days are set */}
-      {priorityDays.length > 0 && mode !== 'priority' && (
-        <div style={{ marginBottom: 12, padding: '8px 10px', background: 'rgba(255,96,128,0.06)', border: '1px solid rgba(255,96,128,0.3)' }}>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#ff6080', letterSpacing: '1.5px', marginBottom: 6 }}>🏆 PRIORITY DAYS ACTIVE</div>
-          {priorityDays.map(pd => (
-            <div key={pd.dayIdx} style={{ fontSize: 11, color: '#e0b0b8', marginBottom: 3 }}>
-              <span style={{ fontWeight: 700, color: '#ff8090' }}>{DAYS[pd.dayIdx]}</span> — {pd.description || 'Special day'}
-            </div>
-          ))}
-          <div style={{ fontSize: 9, color: '#8a5060', marginTop: 4 }}>These days have priority requirements. Switch to Priority Days mode to edit them.</div>
-        </div>
-      )}
-
-      {/* MANUAL */}
-      {mode === 'manual' && (
-        <div style={{ fontSize: 12, color: '#8aadcc', lineHeight: 1.7 }}>
-          Drag members from the pool on the right into any slot, or click a member then click a slot. Use the lock icon to protect a slot from being cleared. Dragging a member from one slot to another will swap them.
-        </div>
-      )}
-
-      {/* FIXED DRIVER */}
-      {mode === 'fixed_driver' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div>
-            <div style={S.cfgLabel}>FIXED DRIVER</div>
-            {sel('select driver', fixedDriver ?? '', setFixedDriver)}
-          </div>
-          <div>
-            <div style={S.cfgLabel}>VIP ROTATION ORDER</div>
-            <p style={{ fontSize: 10, color: '#2a4058', marginBottom: 8 }}>Click to add/remove from VIP pool. Order = rotation sequence.</p>
-            {vipPool.length > 0 && (
-              <div style={{ marginBottom: 8 }}>
-                {vipPool.map((p, i) => (
-                  <div key={p.id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 8px', marginBottom: 3, background: 'rgba(0,232,122,0.08)', border: '1px solid rgba(0,232,122,0.25)' }}>
-                    <span style={{ fontSize: 9, color: '#00e87a', fontFamily: 'monospace', minWidth: 22 }}>{ordinal(i + 1)}</span>
-                    <span style={{ flex: 1, fontSize: 11, color: '#00e87a', fontWeight: 700 }}>{p.in_game_name || p.username}</span>
-                    {canEdit && <button onClick={() => setVipPool(prev => prev.filter(x => x.id !== p.id))} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>}
-                  </div>
-                ))}
-              </div>
+          <div style={{ flex: 1, overflowY: 'auto' }}>
+            {sortedScheds.length === 0 && (
+              <div style={{ padding: '8px 12px', fontSize: 10, color: '#5a7898', fontStyle: 'italic' }}>No saved weeks yet. Save to create one.</div>
             )}
-            {members.filter(m => m.id !== fixedDriver && !vipPool.some(p => p.id === m.id)).map(m => (
-              <button key={m.id} onClick={() => canEdit && setVipPool(p => [...p, m])}
-                style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', marginBottom: 3, background: 'transparent', border: '1px solid #1e3550', color: '#5a7898', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, cursor: canEdit ? 'pointer' : 'default' }}>
-                + {m.in_game_name || m.username}
-              </button>
-            ))}
-          </div>
-          {canEdit && (
-            <>
-              <button onClick={rollVipToNextWeek} style={{ ...S.genBtn, background: 'rgba(0,232,122,0.08)', border: '1px solid rgba(0,232,122,0.3)', color: '#00e87a' }}>
-                <RotateCcw size={12} /> ROLL TO NEXT WEEK
-              </button>
-              <button onClick={generate} style={S.genBtn}><Shuffle size={12} /> GENERATE SCHEDULE</button>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* PAIRED */}
-      {mode === 'paired' && (() => {
-        const pairedMemberIds = new Set(pairs.flatMap(p => [p.driver, p.vip]));
-        const unpaired = members.filter(m => !pairedMemberIds.has(m.id));
-        return (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            <div>
-              <div style={S.cfgLabel}>ROTATION START DATE</div>
-              <p style={{ fontSize: 11, color: '#8aadcc', marginBottom: 6 }}>Set the first Monday this rotation began. Auto-calculates which pair is up each week.</p>
-              <input type="date" value={pairedStartDate} onChange={e => setPairedStartDate(e.target.value)} disabled={!canEdit} style={{ ...S.sel, fontSize: 12, padding: '5px 8px' }} />
-            </div>
-            <div>
-              <div style={S.cfgLabel}>PAIRS ({pairs.length}) {unpaired.length > 0 && <span style={{ color: '#f0a500', fontWeight: 400, fontSize: 9 }}>— {unpaired.length} unassigned</span>}</div>
-              <p style={{ fontSize: 11, color: '#8aadcc', marginBottom: 8 }}>Each pair takes one day. After a full cycle, roles swap automatically.</p>
-              {pairs.map((pair, i) => (
-                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', marginBottom: 3, border: '1px solid #1e3550', background: 'rgba(240,165,0,0.04)' }}>
-                  <div style={{ flex: 1, fontSize: 11 }}>
-                    <div style={{ color: '#ffffff', fontWeight: 700 }}>🚂 {memberById[pair.driver] ? (memberById[pair.driver].in_game_name || memberById[pair.driver].username) : '?'}</div>
-                    <div style={{ color: '#c0d8f0' }}>⭐ {memberById[pair.vip] ? (memberById[pair.vip].in_game_name || memberById[pair.vip].username) : '?'}</div>
-                  </div>
-                  {canEdit && <button onClick={() => removePair(i)} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>}
-                </div>
-              ))}
-              {canEdit && pairs.length > 0 && (
-                <div style={{ display: 'flex', gap: 5, marginBottom: 6 }}>
-                  <button onClick={swapPairs} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, ...S.genBtn, background: 'rgba(240,165,0,0.08)', border: '1px solid rgba(240,165,0,0.3)', color: '#f0a500' }}>
-                    <RotateCcw size={11} /> SWAP ROLES
-                  </button>
-                  <button onClick={() => { setPairs(p => [...p, ...p.map(pair => ({ driver: pair.vip, vip: pair.driver }))]); markDirty(); }}
-                    title="Append a reversed copy — VIP becomes Driver and vice versa"
-                    style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, ...S.genBtn, background: 'rgba(0,200,255,0.07)', border: '1px solid rgba(0,200,255,0.3)', color: '#00c8ff', fontSize: 9 }}>
-                    + REVERSE CYCLE
-                  </button>
-                </div>
-              )}
-            </div>
-            {canEdit && unpaired.length > 0 && (
-              <div>
-                <div style={S.cfgLabel}>ADD PAIR <span style={{ color: '#8aadcc', fontWeight: 400 }}>({unpaired.length} available)</span></div>
-                {sel('Driver', pairDriver, setPairDriver, unpaired)}
-                <div style={{ height: 4 }} />
-                {sel('VIP', pairVip, setPairVip, unpaired.filter(m => m.id !== pairDriver))}
-                <button onClick={() => { addPair(pairDriver, pairVip); setPairDriver(''); setPairVip(''); }} disabled={!pairDriver || !pairVip} style={{ ...S.genBtn, marginTop: 8 }}>
-                  + ADD PAIR
-                </button>
-              </div>
-            )}
-            {canEdit && unpaired.length === 0 && pairs.length > 0 && (
-              <div style={{ fontSize: 11, color: '#00e87a', padding: '6px 10px', background: 'rgba(0,232,122,0.07)', border: '1px solid rgba(0,232,122,0.25)' }}>
-                ✓ All members assigned to pairs. Use REVERSE CYCLE to add a swapped copy, then generate.
-              </div>
-            )}
-            {canEdit && <button onClick={generate} style={S.genBtn}><Shuffle size={12} /> GENERATE SCHEDULE</button>}
-          </div>
-        );
-      })()}
-
-      {/* ROUND ROBIN */}
-      {mode === 'round_robin' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <QueueEditor label="DRIVER QUEUE 🚂" queue={driverQueue} members={members} memberById={memberById} canEdit={canEdit}
-            toggle={id => toggleQueue(driverQueue, setDriverQueue, id)} move={moveDriverQueue} />
-          <QueueEditor label="VIP QUEUE ⭐" queue={vipQueue} members={members} memberById={memberById} canEdit={canEdit}
-            toggle={id => toggleQueue(vipQueue, setVipQueue, id)} move={moveVipQueue} />
-          {canEdit && <button onClick={generate} style={S.genBtn}><Shuffle size={12} /> GENERATE SCHEDULE</button>}
-        </div>
-      )}
-
-      {/* PRIORITY */}
-      {mode === 'priority' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div style={{ fontSize: 11, color: '#c0a0b0', lineHeight: 1.6, padding: '8px 10px', background: 'rgba(255,96,128,0.05)', border: '1px solid rgba(255,96,128,0.2)' }}>
-            Set a <strong style={{ color: '#ff8090' }}>requirement</strong> for each priority day — e.g. "Canyon winner" or "Most kills". These descriptions show as reminders in all other modes. Lock specific slots for event winners; unlocked slots auto-fill.
-          </div>
-          {/* Priority day descriptions */}
-          <div>
-            <div style={S.cfgLabel}>PRIORITY DAY REQUIREMENTS</div>
-            {DAYS.map((day, d) => {
-              const pd = priorityDays.find(p => p.dayIdx === d);
-              const isSet = !!pd;
+            {sortedScheds.map((s, i) => {
+              const isActive = s.id === scheduleId;
+              const label = formatWeekRange(s.week_label);
               return (
-                <div key={d} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 5 }}>
-                  <div style={{ width: 32, fontSize: 10, fontWeight: 700, color: isSet ? '#ff8090' : '#5a7898', letterSpacing: '1px', flexShrink: 0 }}>{day}</div>
-                  {canEdit ? (
-                    <input
-                      value={pd?.description || ''}
-                      onChange={e => {
-                        const val = e.target.value;
-                        setPriorityDays(prev => {
-                          const filtered = prev.filter(p => p.dayIdx !== d);
-                          return val.trim() ? [...filtered, { dayIdx: d, description: val }] : filtered;
-                        });
+                <div
+                  key={s.id}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 10px', background: isActive ? 'rgba(240,165,0,0.07)' : 'transparent', borderLeft: isActive ? '2px solid #f0a500' : '2px solid transparent', cursor: 'pointer', minHeight: 44 }}
+                  onClick={() => {
+                    if (!isActive) {
+                      if (isDirty) { setPendingNav({ type: 'date', key: s.week_label, sched: s }); }
+                      else applySchedule(s);
+                    }
+                  }}
+                >
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: "'Share Tech Mono',monospace", fontSize: 11, color: isActive ? '#f0a500' : '#c0d8f0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{label}</div>
+                    <div style={{ fontSize: 9, color: '#8aadcc', letterSpacing: '1px' }}>WK {i + 1}</div>
+                  </div>
+                  {canEdit && (
+                    <button
+                      onClick={e => {
+                        e.stopPropagation();
+                        if (isActive) { handleDeleteWeek(); }
+                        else {
+                          if (!confirm('Delete this week\'s schedule?')) return;
+                          supabase.from('train_slots').delete().eq('schedule_id', s.id).then(() =>
+                            supabase.from('train_schedules').delete().eq('id', s.id)
+                          );
+                          setAllSchedules(prev => prev.filter(x => x.id !== s.id));
+                        }
                       }}
-                      placeholder="e.g. Canyon winner…"
-                      style={{ flex: 1, background: isSet ? 'rgba(255,96,128,0.06)' : '#0a1220', border: `1px solid ${isSet ? 'rgba(255,96,128,0.4)' : '#1e3550'}`, color: '#ffffff', padding: '4px 8px', fontFamily: "'Rajdhani',sans-serif", fontSize: 11, outline: 'none' }}
-                    />
-                  ) : (
-                    <span style={{ flex: 1, fontSize: 11, color: isSet ? '#ff8090' : '#3a5878', fontStyle: isSet ? 'normal' : 'italic' }}>{pd?.description || '—'}</span>
+                      title="Delete week"
+                      style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', padding: '2px 4px', fontSize: 14, opacity: 0.6, flexShrink: 0, minWidth: 36, minHeight: 36 }}
+                    >🗑</button>
                   )}
                 </div>
               );
             })}
           </div>
-          <div style={{ borderTop: '1px solid rgba(255,96,128,0.2)', paddingTop: 10 }}>
-            <div style={S.cfgLabel}>SLOT LOCKS</div>
-            <PriorityDayLocks slots={slots} setSlots={setSlots} members={members} canEdit={canEdit} markDirty={markDirty} />
-          </div>
-          {canEdit && <button onClick={generate} style={{ ...S.genBtn, background: 'rgba(255,96,128,0.1)', border: '1px solid rgba(255,96,128,0.3)', color: '#ff6080' }}>
-            <Shuffle size={12} /> AUTO-FILL UNLOCKED
-          </button>}
         </div>
+
+        {/* ── Center: planner ─────────────────────────────────────── */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '12px 10px' : '20px 16px' }}>
+          {isMobile && !mobileGridView ? (
+            <DayCarousel
+              day={mobileDay}
+              setDay={setMobileDay}
+              slots={slots}
+              memberById={memberById}
+              canEdit={canEdit}
+              onOpenCell={(day, role) => { setActiveCell({ day, role }); setPickerOpen(true); }}
+              onSwitchToGrid={() => setMobileGridView(true)}
+            />
+          ) : (
+            <ScheduleGrid
+              slots={slots}
+              memberById={memberById}
+              canEdit={canEdit}
+              activeCell={activeCell}
+              setActiveCell={setActiveCell}
+              setPickerOpen={setPickerOpen}
+              isMobile={isMobile}
+              mobileGridView={mobileGridView}
+              onSwitchToCarousel={() => setMobileGridView(false)}
+            />
+          )}
+
+          {!isMobile && (
+            <div style={{ marginTop: 24, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <QueuePanel
+                title="DRIVER QUEUE 🚂"
+                color="#f0a500"
+                queue={driverQueue}
+                allMembers={allMembers}
+                memberById={memberById}
+                canEdit={canEdit}
+                onAdd={id => addToQueue('driver', id)}
+                onRemove={id => removeFromQueue('driver', id)}
+                onMove={(i, dir) => moveQueueItem('driver', i, dir)}
+                onShuffle={() => shuffleQueue('driver')}
+                onReverse={() => reverseQueue('driver')}
+              />
+              <QueuePanel
+                title="VIP QUEUE ⭐"
+                color="#c87aff"
+                queue={vipQueue}
+                allMembers={allMembers}
+                memberById={memberById}
+                canEdit={canEdit}
+                onAdd={id => addToQueue('vip', id)}
+                onRemove={id => removeFromQueue('vip', id)}
+                onMove={(i, dir) => moveQueueItem('vip', i, dir)}
+                onShuffle={() => shuffleQueue('vip')}
+                onReverse={() => reverseQueue('vip')}
+              />
+            </div>
+          )}
+
+          {canEdit && (
+            <div style={{ marginTop: 16, display: 'flex', justifyContent: 'center' }}>
+              <button onClick={generate} style={{ ...S.genBtn, width: 'auto', padding: '10px 24px', minHeight: 44 }}>
+                <Shuffle size={13} /> AUTO-FILL FROM QUEUES
+              </button>
+            </div>
+          )}
+
+          {isMobile && (
+            <div style={{ marginTop: 20 }}>
+              <QueuePanel
+                title="DRIVER QUEUE 🚂"
+                color="#f0a500"
+                queue={driverQueue}
+                allMembers={allMembers}
+                memberById={memberById}
+                canEdit={canEdit}
+                onAdd={id => addToQueue('driver', id)}
+                onRemove={id => removeFromQueue('driver', id)}
+                onMove={(i, dir) => moveQueueItem('driver', i, dir)}
+                onShuffle={() => shuffleQueue('driver')}
+                onReverse={() => reverseQueue('driver')}
+              />
+              <div style={{ height: 16 }} />
+              <QueuePanel
+                title="VIP QUEUE ⭐"
+                color="#c87aff"
+                queue={vipQueue}
+                allMembers={allMembers}
+                memberById={memberById}
+                canEdit={canEdit}
+                onAdd={id => addToQueue('vip', id)}
+                onRemove={id => removeFromQueue('vip', id)}
+                onMove={(i, dir) => moveQueueItem('vip', i, dir)}
+                onShuffle={() => shuffleQueue('vip')}
+                onReverse={() => reverseQueue('vip')}
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Member picker (cell action: lock / auto / clear) ───────── */}
+      {pickerOpen && activeCell && (
+        <CellActionSheet
+          cell={activeCell}
+          slots={slots}
+          allMembers={allMembers}
+          memberById={memberById}
+          canEdit={canEdit}
+          isMobile={isMobile}
+          onLock={memberId => { lockSlot(`${activeCell.day}-${activeCell.role}`, memberId); setPickerOpen(false); setActiveCell(null); }}
+          onAuto={() => { setSlotAuto(`${activeCell.day}-${activeCell.role}`); setPickerOpen(false); setActiveCell(null); }}
+          onClear={() => { clearSlot(`${activeCell.day}-${activeCell.role}`); setPickerOpen(false); setActiveCell(null); }}
+          onClose={() => { setPickerOpen(false); setActiveCell(null); }}
+        />
       )}
     </div>
   );
 }
 
-// ── Priority Day Locks ─────────────────────────────────────────────
-function PriorityDayLocks({ slots, setSlots, members, canEdit, markDirty }) {
-  const [selDay, setSelDay] = useState(null);
-
-  function lockSlot(dayIdx, role, memberId) {
-    const key = `${dayIdx}-${role}`;
-    setSlots(prev => ({ ...prev, [key]: { memberId, locked: true } }));
-    markDirty();
-    setSelDay(null);
-  }
-
-  function clearLock(dayIdx, role) {
-    const key = `${dayIdx}-${role}`;
-    setSlots(prev => ({ ...prev, [key]: { memberId: null, locked: false } }));
-    markDirty();
+// ── Day carousel (mobile) ───────────────────────────────────────────
+function DayCarousel({ day, setDay, slots, memberById, canEdit, onOpenCell, onSwitchToGrid }) {
+  function go(delta) {
+    setDay(d => (d + delta + 7) % 7);
   }
 
   return (
     <div>
-      <div style={S.cfgLabel}>DAY LOCKS (MON–SUN)</div>
-      {DAYS.map((day, d) => {
-        const dSlot = slots[`${d}-driver`] ?? {};
-        const vSlot = slots[`${d}-vip`]    ?? {};
-        return (
-          <div key={d} style={{ marginBottom: 6 }}>
-            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '1.5px', color: '#5a7898', marginBottom: 3 }}>{day}</div>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <div style={{ flex: 1 }}>
-                {dSlot.locked && dSlot.memberId ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', background: 'rgba(240,165,0,0.1)', border: '1px solid rgba(240,165,0,0.4)' }}>
-                    <span style={{ fontSize: 11 }}>👑</span>
-                    <span style={{ flex: 1, fontSize: 9, color: '#f0a500', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {members.find(m => m.id === dSlot.memberId)?.in_game_name || members.find(m => m.id === dSlot.memberId)?.username || '?'}
-                    </span>
-                    {canEdit && <button onClick={() => clearLock(d, 'driver')} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: 0 }}>×</button>}
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => canEdit && setSelDay({ dayIdx: d, role: 'driver' })}
-                    style={{ width: '100%', padding: '4px 5px', background: 'transparent', border: '1px dashed #1e3550', color: '#5a7898', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 8, letterSpacing: '0.5px', cursor: canEdit ? 'pointer' : 'default', textAlign: 'center' }}
-                  >
-                    🚂 SET DRIVER
-                  </button>
-                )}
-              </div>
-              <div style={{ flex: 1 }}>
-                {vSlot.locked && vSlot.memberId ? (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', background: 'rgba(200,122,255,0.1)', border: '1px solid rgba(200,122,255,0.4)' }}>
-                    <span style={{ fontSize: 11 }}>👑</span>
-                    <span style={{ flex: 1, fontSize: 9, color: '#c87aff', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {members.find(m => m.id === vSlot.memberId)?.in_game_name || members.find(m => m.id === vSlot.memberId)?.username || '?'}
-                    </span>
-                    {canEdit && <button onClick={() => clearLock(d, 'vip')} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: 0 }}>×</button>}
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => canEdit && setSelDay({ dayIdx: d, role: 'vip' })}
-                    style={{ width: '100%', padding: '4px 5px', background: 'transparent', border: '1px dashed #1e3550', color: '#5a7898', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 8, letterSpacing: '0.5px', cursor: canEdit ? 'pointer' : 'default', textAlign: 'center' }}
-                  >
-                    ⭐ SET VIP
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <button onClick={() => go(-1)} style={{ ...S.iconBtn, width: 44, height: 44 }} title="Previous day"><ChevronLeft size={18} /></button>
+        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '3px', color: '#d0e4f4' }}>{DAYS[day]}</div>
+        <button onClick={() => go(1)} style={{ ...S.iconBtn, width: 44, height: 44 }} title="Next day"><ChevronRight size={18} /></button>
+      </div>
 
-      {selDay && (
-        <div style={{ marginTop: 8, padding: '8px', background: '#0a1220', border: '1px solid #1e3550' }}>
-          <div style={{ fontSize: 9, color: '#5a7898', marginBottom: 6, fontWeight: 700, letterSpacing: '1.5px' }}>
-            SELECT {selDay.role.toUpperCase()} FOR {DAYS[selDay.dayIdx]}
-          </div>
-          {members.map(m => (
-            <button key={m.id} onClick={() => lockSlot(selDay.dayIdx, selDay.role, m.id)}
-              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '5px 8px', marginBottom: 2, background: 'transparent', border: '1px solid #1e3550', color: '#d0e4f4', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, cursor: 'pointer' }}>
-              {m.in_game_name || m.username}
-            </button>
-          ))}
-          <button onClick={() => setSelDay(null)} style={{ width: '100%', marginTop: 6, padding: '4px', background: 'transparent', border: '1px solid #2a4058', color: '#5a7898', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, cursor: 'pointer' }}>CANCEL</button>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function QueueEditor({ label, queue, members, memberById, canEdit, toggle, move }) {
-  return (
-    <div>
-      <div style={S.cfgLabel}>{label}</div>
-      {queue.length > 0 && (
-        <div style={{ marginBottom: 8 }}>
-          {queue.map((id, i) => (
-            <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 6px', marginBottom: 2, border: '1px solid rgba(200,122,255,0.25)', background: 'rgba(200,122,255,0.06)' }}>
-              <span style={{ fontSize: 9, color: '#5a7898', width: 14, textAlign: 'right', fontFamily: 'monospace' }}>{i + 1}.</span>
-              <span style={{ flex: 1, fontSize: 11, color: '#d0e4f4', fontWeight: 700 }}>{memberById[id] ? (memberById[id].in_game_name || memberById[id].username) : '?'}</span>
-              {canEdit && (
-                <>
-                  <button onClick={() => move(i, -1)} disabled={i === 0} style={S.qBtn}>▲</button>
-                  <button onClick={() => move(i, 1)} disabled={i === queue.length - 1} style={S.qBtn}>▼</button>
-                  <button onClick={() => toggle(id)} style={{ ...S.qBtn, color: '#ff4060' }}>×</button>
-                </>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {members.filter(m => !queue.includes(m.id)).map(m => (
-          <button key={m.id} onClick={() => canEdit && toggle(m.id)}
-            style={{ textAlign: 'left', padding: '4px 8px', background: 'transparent', border: '1px solid #1e3550', color: '#5a7898', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, cursor: canEdit ? 'pointer' : 'default' }}>
-            + {m.in_game_name || m.username}
+      {/* Dot indicator */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginBottom: 16 }}>
+        {DAYS.map((d, i) => (
+          <button
+            key={d}
+            onClick={() => setDay(i)}
+            title={d}
+            style={{
+              width: i === day ? 14 : 10, height: i === day ? 14 : 10, borderRadius: '50%',
+              border: 'none', cursor: 'pointer', padding: 0,
+              background: i === day ? '#f0a500' : '#1e3550',
+              minWidth: 30, minHeight: 30, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <span style={{
+              width: i === day ? 14 : 8, height: i === day ? 14 : 8, borderRadius: '50%',
+              background: i === day ? '#f0a500' : '#1e3550', display: 'block',
+            }} />
           </button>
         ))}
       </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {ROLES.map(role => {
+          const meta = ROLE_META[role];
+          const key = `${day}-${role}`;
+          const slot = slots[key] ?? {};
+          const member = slot.memberId ? memberById[slot.memberId] : null;
+          return (
+            <button
+              key={role}
+              onClick={() => canEdit && onOpenCell(day, role)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '16px',
+                background: member ? `${meta.color}18` : 'rgba(20,35,55,0.35)',
+                border: `1px solid ${slot.locked ? `${meta.color}80` : member ? `${meta.color}50` : '#1e3550'}`,
+                cursor: canEdit ? 'pointer' : 'default', textAlign: 'left', minHeight: 64, width: '100%',
+              }}
+            >
+              <div style={{ fontSize: 24 }}>{meta.icon}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: meta.color }}>{meta.label}</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: member ? '#ffffff' : '#5a7890' }}>
+                  {member ? memberName(member) : '— OPEN —'}
+                </div>
+              </div>
+              <StateIcon locked={slot.locked} hasMember={!!member} />
+            </button>
+          );
+        })}
+      </div>
+
+      <button onClick={onSwitchToGrid} style={{ marginTop: 16, width: '100%', padding: '10px', background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>
+        SHOW 7-DAY GRID
+      </button>
     </div>
   );
 }
 
-// ── Schedule Grid ──────────────────────────────────────────────────
-function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mode, onDragStart, onDragOver, onDragLeave, onDrop, onSlotClick, clearSlot, toggleLock }) {
+function StateIcon({ locked, hasMember }) {
+  if (locked) return <span style={{ fontSize: 18 }} title="Locked">🔒</span>;
+  if (hasMember) return <span style={{ fontSize: 18 }} title="Auto">🔄</span>;
+  return <span style={{ fontSize: 18 }} title="Empty">⬜</span>;
+}
+
+// ── Schedule Grid (desktop / tablet, or mobile grid-view toggle) ───
+function ScheduleGrid({ slots, memberById, canEdit, activeCell, setActiveCell, setPickerOpen, isMobile, mobileGridView, onSwitchToCarousel }) {
   return (
     <div>
+      {isMobile && mobileGridView && (
+        <button onClick={onSwitchToCarousel} style={{ marginBottom: 12, padding: '10px 16px', background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>
+          SHOW DAY VIEW
+        </button>
+      )}
       <div style={{ overflowX: 'auto' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', minWidth: 560 }}>
           <thead>
             <tr>
               <th style={{ width: 80, padding: '6px 10px', textAlign: 'left', fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#5a7898', borderBottom: '1px solid #1e3550' }}></th>
-              {days.map((d) => (
+              {DAYS.map((d) => (
                 <th key={d} style={{ padding: '6px 4px', textAlign: 'center', fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#d0e4f4', borderBottom: '1px solid #1e3550', minWidth: 90 }}>
                   {d}
                 </th>
@@ -1501,120 +1054,249 @@ function ScheduleGrid({ slots, days, memberById, canEdit, dragOver, selected, mo
             </tr>
           </thead>
           <tbody>
-            {[
-              { role: 'driver', label: 'DRIVER', icon: '🚂', color: '#f0a500' },
-              { role: 'vip',    label: 'VIP',    icon: '⭐', color: '#c87aff' },
-            ].map(({ role, label, icon, color }) => (
-              <tr key={role}>
-                <td style={{ padding: '8px 10px 8px 0', verticalAlign: 'middle' }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', color }}>
-                    {icon} {label}
-                  </div>
-                </td>
-                {days.map((_, d) => {
-                  const key    = `${d}-${role}`;
-                  const slot   = slots[key] ?? {};
-                  const member = slot.memberId ? memberById[slot.memberId] : null;
-                  const isOver = dragOver === key;
-                  const isLocked = slot.locked;
+            {ROLES.map(role => {
+              const meta = ROLE_META[role];
+              return (
+                <tr key={role}>
+                  <td style={{ padding: '8px 10px 8px 0', verticalAlign: 'middle' }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1.5px', color: meta.color }}>
+                      {meta.icon} {meta.label}
+                    </div>
+                  </td>
+                  {DAYS.map((_, d) => {
+                    const key = `${d}-${role}`;
+                    const slot = slots[key] ?? {};
+                    const member = slot.memberId ? memberById[slot.memberId] : null;
+                    const isActive = activeCell && activeCell.day === d && activeCell.role === role;
 
-                  return (
-                    <td key={d} style={{ padding: '4px 3px', verticalAlign: 'top' }}>
-                      <div
-                        onDragOver={e => onDragOver(e, key)}
-                        onDragLeave={onDragLeave}
-                        onDrop={e => onDrop(e, key)}
-                        onClick={() => !member && onSlotClick(key)}
-                        style={{
-                          minHeight: 52, borderRadius: 2, padding: '6px 8px',
-                          background: isOver  ? `${color}22` :
-                                      member  ? `${color}18` : 'rgba(20,35,55,0.35)',
-                          border: `1px solid ${isOver ? color : isLocked ? `${color}70` : member ? `${color}50` : '#1e3550'}`,
-                          cursor: canEdit && !member ? 'crosshair' : 'default',
-                          position: 'relative', transition: 'border-color 0.1s',
-                          boxSizing: 'border-box',
-                        }}
-                      >
-                        {isLocked && !member && (
-                          <div style={{ position: 'absolute', top: 3, left: 3 }}>
-                            <span style={{ fontSize: 10 }}>👑</span>
+                    return (
+                      <td key={d} style={{ padding: '4px 3px', verticalAlign: 'top' }}>
+                        <div
+                          onClick={() => { if (canEdit) { setActiveCell({ day: d, role }); setPickerOpen(true); } }}
+                          style={{
+                            minHeight: 56, borderRadius: 2, padding: '8px',
+                            background: isActive ? `${meta.color}28` : member ? `${meta.color}18` : 'rgba(20,35,55,0.35)',
+                            border: `1px solid ${isActive ? meta.color : slot.locked ? `${meta.color}80` : member ? `${meta.color}50` : '#1e3550'}`,
+                            cursor: canEdit ? 'pointer' : 'default',
+                            position: 'relative', transition: 'border-color 0.1s',
+                            boxSizing: 'border-box', display: 'flex', flexDirection: 'column', gap: 4,
+                            justifyContent: 'center', alignItems: 'center', minWidth: 44,
+                          }}
+                        >
+                          <div style={{ position: 'absolute', top: 4, right: 4 }}>
+                            <StateIcon locked={slot.locked} hasMember={!!member} />
                           </div>
-                        )}
-                        {member ? (
-                          <SlotMember
-                            member={member}
-                            role={role}
-                            color={color}
-                            isLocked={isLocked}
-                            canEdit={canEdit}
-                            slotKey={key}
-                            onDragStart={onDragStart}
-                            clearSlot={clearSlot}
-                            toggleLock={toggleLock}
-                          />
-                        ) : (
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: 40 }}>
-                            {isLocked
-                              ? <Lock size={12} style={{ color: `${color}70` }} />
-                              : <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '1px', color: '#5a7890', fontFamily: "'Rajdhani',sans-serif" }}>— OPEN —</span>
-                            }
-                          </div>
-                        )}
-                      </div>
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+                          {member ? (
+                            <>
+                              <div style={{ width: 28, height: 28, borderRadius: 2, background: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#080d14' }}>
+                                {memberInitials(member)}
+                              </div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: '#ffffff', textAlign: 'center', lineHeight: 1.2 }}>
+                                {memberName(member)}
+                              </div>
+                            </>
+                          ) : (
+                            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1px', color: '#5a7890', fontFamily: "'Rajdhani',sans-serif" }}>OPEN</div>
+                          )}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
 
       {/* Legend */}
-      <div style={{ marginTop: 20, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11, color: '#6a8aa8' }}>
-        <span>🔒 Locked slot</span>
-        <span>Drag member from pool → slot</span>
-        <span>Drag filled slot → another slot to swap</span>
-        <span>Drag slot → pool to remove</span>
-        {canEdit && <span>× removes · 🔒 locks slot</span>}
+      <div style={{ marginTop: 16, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11, color: '#6a8aa8' }}>
+        <span>🔄 Auto</span>
+        <span>🔒 Locked</span>
+        <span>⬜ Empty</span>
+        {canEdit && <span>Click a cell to lock, auto-fill, or clear it</span>}
       </div>
     </div>
   );
 }
 
-function SlotMember({ member, role, color, isLocked, canEdit, slotKey, onDragStart, clearSlot, toggleLock }) {
-  return (
-    <div
-      draggable={canEdit && !isLocked}
-      onDragStart={e => !isLocked && onDragStart(e, member.id, slotKey)}
-      style={{ display: 'flex', flexDirection: 'column', gap: 3 }}
-    >
-      <div style={{ fontSize: 14, fontWeight: 700, color: '#ffffff', lineHeight: 1.2, paddingRight: canEdit ? 18 : 0 }}>
-        {member.in_game_name || member.username}
-      </div>
-      {member.username && member.in_game_name && (
-        <div style={{ fontSize: 9, color: '#5a7a98', fontFamily: "'Share Tech Mono',monospace" }}>@{member.username}</div>
-      )}
-      {isLocked && <span style={{ fontSize: 9 }}>👑</span>}
-      {canEdit && (
-        <div style={{ position: 'absolute', top: 3, right: 3, display: 'flex', gap: 2 }}>
-          <button
-            onClick={e => { e.stopPropagation(); toggleLock(slotKey); }}
-            style={{ background: 'none', border: 'none', color: isLocked ? color : '#5a7898', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
-            title={isLocked ? 'Unlock slot' : 'Lock slot'}
-          >
-            {isLocked ? <Lock size={9} /> : <Unlock size={9} />}
-          </button>
-          {!isLocked && (
-            <button
-              onClick={e => { e.stopPropagation(); clearSlot(slotKey); }}
-              style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center' }}
-              title="Remove"
-            >
-              <span style={{ fontSize: 10, lineHeight: 1 }}>×</span>
-            </button>
-          )}
+// ── Cell action sheet / popover (lock / auto / clear) ───────────────
+function CellActionSheet({ cell, slots, allMembers, canEdit, isMobile, onLock, onAuto, onClear, onClose }) {
+  const [search, setSearch] = useState('');
+  const key = `${cell.day}-${cell.role}`;
+  const slot = slots[key] ?? {};
+  const meta = ROLE_META[cell.role];
+
+  const filtered = allMembers.filter(m => memberName(m).toLowerCase().includes(search.toLowerCase()));
+
+  const content = (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #1e3550' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '1.5px', color: meta.color }}>
+          {meta.icon} {DAYS[cell.day]} — {meta.label}
         </div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#7a9bb8', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <X size={18} />
+        </button>
+      </div>
+
+      {canEdit && (
+        <div style={{ display: 'flex', gap: 8, padding: '12px 16px' }}>
+          <button onClick={onAuto} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.3)', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>
+            🔄 SET AUTO
+          </button>
+          <button onClick={onClear} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '10px', background: 'rgba(255,64,96,0.08)', border: '1px solid rgba(255,64,96,0.3)', color: '#ff4060', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>
+            ⬜ CLEAR
+          </button>
+        </div>
+      )}
+
+      <div style={{ padding: '0 16px 8px' }}>
+        <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: '#5a7898', marginBottom: 6 }}>LOCK TO MEMBER</div>
+        <div style={{ position: 'relative', marginBottom: 8 }}>
+          <Search size={13} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#5a7898' }} />
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search members…"
+            style={{ width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: '10px 10px 10px 30px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 12, outline: 'none', boxSizing: 'border-box', minHeight: 44 }}
+          />
+        </div>
+      </div>
+
+      <div style={{ flex: 1, overflowY: 'auto', padding: '0 16px 16px', maxHeight: isMobile ? '40vh' : 320 }}>
+        {filtered.length === 0 && (
+          <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic', padding: '8px 0' }}>No members found.</div>
+        )}
+        {filtered.map(m => {
+          const isCurrent = slot.memberId === m.id;
+          return (
+            <button
+              key={m.id}
+              onClick={() => canEdit && onLock(m.id)}
+              disabled={!canEdit}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+                padding: '10px 10px', marginBottom: 4,
+                background: isCurrent ? 'rgba(240,165,0,0.1)' : 'transparent',
+                border: `1px solid ${isCurrent ? 'rgba(240,165,0,0.4)' : '#1e3550'}`,
+                cursor: canEdit ? 'pointer' : 'default', minHeight: 44,
+              }}
+            >
+              <div style={{ width: 28, height: 28, borderRadius: 2, background: m.is_placeholder ? '#2a4058' : '#1e3550', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#d0e4f4', flexShrink: 0 }}>
+                {memberInitials(m)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: isCurrent ? '#f0a500' : '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {memberName(m)} {m.is_placeholder && <span style={{ fontSize: 9, color: '#5a7898' }}>(P)</span>}
+                </div>
+                {m.power1 && !m.is_placeholder && (
+                  <div style={{ fontSize: 9, color: '#5a7898', fontFamily: "'Share Tech Mono',monospace" }}>{m.power1}B{m.troop1 ? ` · ${m.troop1}` : ''}</div>
+                )}
+              </div>
+              {isCurrent && <Lock size={13} style={{ color: '#f0a500', flexShrink: 0 }} />}
+            </button>
+          );
+        })}
+      </div>
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div style={{ background: '#0d1520', borderTop: '1px solid #1e3550', width: '100%', height: '62vh', display: 'flex', flexDirection: 'column', borderRadius: '12px 12px 0 0' }}>
+          {content}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: '#0d1520', border: '1px solid #1e3550', width: 360, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+        {content}
+      </div>
+    </div>
+  );
+}
+
+// ── Queue panel (driver / vip ordered list editor) ───────────────────
+function QueuePanel({ title, color, queue, allMembers, memberById, canEdit, onAdd, onRemove, onMove, onShuffle, onReverse }) {
+  const [adding, setAdding] = useState(false);
+  const [search, setSearch] = useState('');
+  const available = allMembers.filter(m => !queue.includes(m.id) && memberName(m).toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div style={{ border: `1px solid ${color}30`, background: `${color}08`, padding: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color }}>{title}</div>
+        {canEdit && queue.length > 1 && (
+          <div style={{ display: 'flex', gap: 4 }}>
+            <button onClick={onShuffle} title="Shuffle" style={{ ...S.qIconBtn, color }}>
+              <Shuffle size={13} />
+            </button>
+            <button onClick={onReverse} title="Reverse cycle" style={{ ...S.qIconBtn, color }}>
+              <RotateCcw size={13} />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {queue.length === 0 && (
+        <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic', marginBottom: 8 }}>No members in queue yet.</div>
+      )}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 10 }}>
+        {queue.map((id, i) => {
+          const m = memberById[id];
+          return (
+            <div key={id} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', border: `1px solid ${color}30`, background: `${color}0c` }}>
+              <span style={{ fontSize: 10, color: '#5a7898', width: 18, textAlign: 'right', fontFamily: 'monospace' }}>{i + 1}.</span>
+              <span style={{ flex: 1, fontSize: 12, color: '#d0e4f4', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {m ? memberName(m) : '? (removed)'}
+              </span>
+              {canEdit && (
+                <>
+                  <button onClick={() => onMove(i, -1)} disabled={i === 0} style={S.qIconBtn} title="Move up"><ArrowUp size={13} /></button>
+                  <button onClick={() => onMove(i, 1)} disabled={i === queue.length - 1} style={S.qIconBtn} title="Move down"><ArrowDown size={13} /></button>
+                  <button onClick={() => onRemove(id)} style={{ ...S.qIconBtn, color: '#ff4060' }} title="Remove"><X size={13} /></button>
+                </>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {canEdit && (
+        adding ? (
+          <div>
+            <div style={{ position: 'relative', marginBottom: 6 }}>
+              <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#5a7898' }} />
+              <input
+                autoFocus
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search members…"
+                style={{ width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: '8px 8px 8px 26px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, outline: 'none', boxSizing: 'border-box', minHeight: 40 }}
+              />
+            </div>
+            <div style={{ maxHeight: 180, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {available.map(m => (
+                <button key={m.id} onClick={() => { onAdd(m.id); setSearch(''); }}
+                  style={{ textAlign: 'left', padding: '8px', background: 'transparent', border: '1px solid #1e3550', color: '#d0e4f4', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, cursor: 'pointer', minHeight: 40 }}>
+                  + {memberName(m)}
+                </button>
+              ))}
+              {available.length === 0 && <div style={{ fontSize: 10, color: '#5a7898', fontStyle: 'italic', padding: '4px 0' }}>No matches.</div>}
+            </div>
+            <button onClick={() => { setAdding(false); setSearch(''); }} style={{ marginTop: 6, width: '100%', padding: '8px', background: 'transparent', border: '1px solid #2a4058', color: '#5a7898', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, cursor: 'pointer', minHeight: 40 }}>DONE</button>
+          </div>
+        ) : (
+          <button onClick={() => setAdding(true)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '8px', background: 'transparent', border: `1px solid ${color}40`, color, fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>
+            <Plus size={13} /> ADD MEMBER
+          </button>
+        )
       )}
     </div>
   );
@@ -1627,6 +1309,6 @@ const S = {
   cfgLabel: { fontSize: 9, fontWeight: 700, letterSpacing: '2px', color: '#5a7898', marginBottom: 6 },
   genBtn: { display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, width: '100%', padding: '8px', background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer' },
   sel: { width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: '6px 8px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11 },
-  qBtn: { background: 'none', border: 'none', color: '#5a7898', cursor: 'pointer', padding: '2px 4px', fontSize: 10, fontFamily: 'monospace' },
+  qIconBtn: { background: 'none', border: 'none', color: '#5a7898', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 28, minHeight: 28 },
   weekNavBtn: { display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(30,53,80,0.5)', border: '1px solid #1e3550', color: '#7a9bb8', padding: '4px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, letterSpacing: '1px', cursor: 'pointer', whiteSpace: 'nowrap' },
 };
