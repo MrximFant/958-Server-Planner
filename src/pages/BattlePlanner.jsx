@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
@@ -250,6 +250,15 @@ function groupmateBuildings(building, allBuildings) {
   return allBuildings.filter(b => b.id !== building.id && b.combine_group === group);
 }
 
+function assignedInSiblingTaskforce(eventType, weekLabel, taskforce, allPlans, allBuildings) {
+  const result = new Set();
+  if (!weekLabel) return result;
+  const sibling = allPlans.find(p => p.event_type === eventType && p.week_label === weekLabel && p.taskforce !== taskforce);
+  if (!sibling) return result;
+  (allBuildings[sibling.id] ?? []).forEach(b => (b.assignments ?? []).forEach(a => result.add(a.member_id)));
+  return result;
+}
+
 // ── Main component ─────────────────────────────────────────────────
 export default function BattlePlanner() {
   const { serverId } = useParams();
@@ -288,6 +297,7 @@ export default function BattlePlanner() {
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [openAccordion, setOpenAccordion] = useState({});
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
+  const [sidebarOpen, setSidebarOpen] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 768);
 
   // No-show tracking
   const [allNoshows, setAllNoshows] = useState([]); // all battle_plan_noshows rows for this alliance
@@ -527,6 +537,7 @@ export default function BattlePlanner() {
     if (nav.type === 'switch') doSwitchTo(nav.evt, nav.tf);
     else if (nav.type === 'week') navigateWeek(nav.dir);
     else if (nav.type === 'newweek') doCreateNextWeek();
+    else if (nav.type === 'loadplan') { applyPlan(nav.plan, allBuildings[nav.plan.id] ?? [], eventType); if (isMobile) setSidebarOpen(false); }
   }
 
   // ── Week navigation ───────────────────────────────────────────────
@@ -569,21 +580,58 @@ export default function BattlePlanner() {
     setIsDirty(true);
   }
 
-  async function handleDeleteWeek() {
-    if (!planId) { alert('This week has not been saved yet — nothing to delete.'); return; }
-    if (!confirm('Delete this entire week\'s plan? This cannot be undone.')) return;
-    await supabase.from('battle_plan_buildings').delete().eq('plan_id', planId);
-    await supabase.from('battle_plans').delete().eq('id', planId);
-    const remaining = allPlans.filter(p => p.id !== planId);
+  async function handleDeleteWeekById(targetPlanId) {
+    if (!targetPlanId) { alert('This week has not been saved yet — nothing to delete.'); return; }
+    if (!confirm('Delete this week\'s plan? This cannot be undone.')) return;
+    await supabase.from('battle_plan_buildings').delete().eq('plan_id', targetPlanId);
+    await supabase.from('battle_plans').delete().eq('id', targetPlanId);
+    const remaining = allPlans.filter(p => p.id !== targetPlanId);
     setAllPlans(remaining);
-    const list = plansFor(eventType, taskforce, remaining);
-    if (list.length > 0) applyPlan(list[list.length - 1], allBuildings[list[list.length - 1].id] ?? [], eventType);
-    else {
-      setPlanId(null);
-      setCurrentWeekKey(toDateString(getMondayDate()));
-      setRulesText('');
-      setBuildings(eventType === 'desert' ? seedBuildings() : []);
-      setIsDirty(false);
+    setAllBuildings(prev => { const next = { ...prev }; delete next[targetPlanId]; return next; });
+    if (targetPlanId === planId) {
+      const list = plansFor(eventType, taskforce, remaining);
+      if (list.length > 0) applyPlan(list[list.length - 1], allBuildings[list[list.length - 1].id] ?? [], eventType);
+      else {
+        setPlanId(null);
+        setCurrentWeekKey(toDateString(getMondayDate()));
+        setRulesText('');
+        setBuildings(eventType === 'desert' ? seedBuildings() : []);
+        setIsDirty(false);
+      }
+    }
+  }
+  function handleDeleteWeek() { handleDeleteWeekById(planId); }
+
+  function handleExportTable() {
+    const allianceName = alliance?.name || 'Alliance';
+    const evtMeta = EVENT_TYPES.find(e => e.id === eventType);
+    const weekRange = currentWeekKey ? formatWeekRange(currentWeekKey) : 'Unknown Week';
+    const header = `${evtMeta?.icon ?? ''} ${evtMeta?.label ?? ''} — TASKFORCE ${taskforce} — ${allianceName} — ${weekRange}`;
+    const rows = [];
+    SECTIONS.forEach(section => {
+      buildings.filter(section.match).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0)).forEach(b => {
+        const sLabel = section.title.split('—')[0].trim();
+        const assigns = b.assignments ?? [];
+        const players = assigns.length === 0 ? '—' : assigns.map(a => {
+          const m = memberById[a.member_id]; if (!m) return null;
+          const icon = a.role === 'coordinator' ? '👑 ' : a.role === 'lethal' ? '🔥 ' : '';
+          return `${icon}${memberName(m)}`;
+        }).filter(Boolean).join(', ');
+        const linkTarget = b.links_to_id ? buildings.find(x => x.id === b.links_to_id) : null;
+        rows.push([sLabel, b.name, players, linkTarget ? linkTarget.name : '—']);
+      });
+    });
+    const cols = ['SECTION', 'BUILDING', 'PLAYERS', 'MOVES TO'];
+    const widths = cols.map((c, i) => Math.max(c.length, ...rows.map(r => (r[i] || '').length)));
+    const fmt = row => row.map((cell, i) => ` ${(cell || '').padEnd(widths[i])} `).join('│');
+    const divider = widths.map(w => '─'.repeat(w + 2)).join('┼');
+    const lines = [header, '```', fmt(cols), divider, ...rows.map(fmt), '```'];
+    const text = lines.join('\n');
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => { setToast('TABLE COPIED!'); setTimeout(() => setToast(''), 2000); });
+    } else {
+      const a = document.createElement('a'); a.href = 'data:text/plain;charset=utf-8,' + encodeURIComponent(text);
+      a.download = `battle-table-${taskforce}-${currentWeekKey || 'week'}.txt`; a.click();
     }
   }
 
@@ -616,6 +664,17 @@ export default function BattlePlanner() {
 
   // ── Assignment helpers ──────────────────────────────────────────────
   const memberById = Object.fromEntries(members.map(m => [m.id, m]));
+
+  const siblingTaskforceAssigned = useMemo(
+    () => assignedInSiblingTaskforce(eventType, currentWeekKey, taskforce, allPlans, allBuildings),
+    [eventType, currentWeekKey, taskforce, allPlans, allBuildings]
+  );
+  const crossTaskforceAssigned = siblingTaskforceAssigned;
+  const thisTaskforceAssigned = useMemo(() => {
+    const s = new Set();
+    buildings.forEach(b => (b.assignments ?? []).forEach(a => s.add(a.member_id)));
+    return s;
+  }, [buildings]);
 
   function assignMember(memberId, buildingId) {
     if (!canManage) return;
@@ -789,7 +848,21 @@ export default function BattlePlanner() {
       {/* ── Member picker ────────────────────────────────────────── */}
       {picker && (
         <MemberPicker
-          members={members.filter(m => !(buildings.find(b => b.id === picker.buildingId)?.assignments ?? []).some(a => a.member_id === m.id))}
+          members={members.filter(m => {
+            const pickerBuilding = buildings.find(b => b.id === picker.buildingId);
+            const alreadyHere = (pickerBuilding?.assignments ?? []).some(a => a.member_id === m.id);
+            if (alreadyHere) return false;
+            if (crossTaskforceAssigned.has(m.id)) return false;
+            const group = pickerBuilding?.combine_group;
+            const groupBuildingIds = group
+              ? buildings.filter(b => b.combine_group === group).map(b => b.id)
+              : [picker.buildingId];
+            const assignedElsewhere = buildings.some(b =>
+              !groupBuildingIds.includes(b.id) &&
+              (b.assignments ?? []).some(a => a.member_id === m.id)
+            );
+            return !assignedElsewhere;
+          })}
           search={pickerSearch}
           setSearch={setPickerSearch}
           isMobile={isMobile}
@@ -825,6 +898,7 @@ export default function BattlePlanner() {
       <div style={{ background: 'rgba(8,13,20,0.97)', borderBottom: '1px solid #1e3550', flexShrink: 0, zIndex: 50, position: 'sticky', top: 0 }}>
         <div style={{ height: 48, display: 'flex', alignItems: 'center', gap: 8, padding: '0 12px' }}>
           <button onClick={() => navigate(`/server/${serverId}/alliance`)} style={S.iconBtn}><ArrowLeft size={15} /></button>
+          {eventType === 'desert' && <button onClick={() => setSidebarOpen(v => !v)} style={S.iconBtn}>☰</button>}
           <Swords size={15} style={{ color: '#f0a500', flexShrink: 0 }} />
           <div style={{ fontWeight: 700, fontSize: 14, letterSpacing: '2px', color: '#f0a500' }}>BATTLE PLANNER</div>
           {alliance && <div style={{ fontSize: 13, color: '#c0d8f0', marginLeft: 4 }}>— {alliance.name}</div>}
@@ -833,6 +907,9 @@ export default function BattlePlanner() {
           <button onClick={() => setGuideOpen(true)} style={{ ...S.smallBtn, color: '#8aadcc' }}>❓ {isMobile ? '' : 'GUIDE'}</button>
           {eventType === 'desert' && (
             <button onClick={handleExport} style={{ ...S.smallBtn, color: '#8aadcc' }}><Download size={12} /> {isMobile ? '' : 'COPY FOR DISCORD'}</button>
+          )}
+          {eventType === 'desert' && (
+            <button onClick={handleExportTable} style={{ ...S.smallBtn, color: '#8aadcc' }}><Download size={12} /> {isMobile ? '' : 'EXPORT TABLE'}</button>
           )}
           {eventType === 'desert' && canManage && (
             <button onClick={() => setNoshowModalOpen(true)} style={{ ...S.smallBtn, color: '#ff4060', border: '1px solid rgba(255,64,96,0.3)' }}>
@@ -910,7 +987,37 @@ export default function BattlePlanner() {
       </div>
 
       {/* ── Body ────────────────────────────────────────────────── */}
-      <div style={{ flex: 1, padding: isMobile ? '12px 10px 40px' : '20px 24px 40px', maxWidth: 1400, width: '100%', margin: '0 auto', boxSizing: 'border-box' }}>
+      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+        {eventType === 'desert' && sidebarOpen && isMobile && (
+          <div onClick={() => setSidebarOpen(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 55 }} />
+        )}
+        {eventType === 'desert' && (
+          <div style={{
+            width: 200, flexShrink: 0, background: 'rgba(5,10,18,0.95)',
+            borderRight: '1px solid #1e3550', display: 'flex', flexDirection: 'column',
+            ...(isMobile ? { position: 'fixed', top: 0, left: 0, bottom: 0, zIndex: 60, transform: sidebarOpen ? 'translateX(0)' : 'translateX(-100%)', transition: 'transform 0.2s' } : { display: sidebarOpen ? 'flex' : 'none', flexDirection: 'column' })
+          }}>
+            <div style={{ padding: '12px', borderBottom: '1px solid #1e3550', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '2px', color: '#7a9bb8' }}>WEEKS</span>
+              {isMobile && <button onClick={() => setSidebarOpen(false)} style={{ background: 'none', border: 'none', color: '#7a9bb8', cursor: 'pointer', fontSize: 18, minWidth: 32, minHeight: 32 }}>×</button>}
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {weekList.length === 0 && <div style={{ padding: '12px', fontSize: 11, color: '#5a7898' }}>No saved weeks yet.</div>}
+              {weekList.map(p => (
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', background: p.id === planId ? 'rgba(0,200,255,0.1)' : 'transparent', borderBottom: '1px solid rgba(30,53,80,0.4)' }}>
+                  <button
+                    onClick={() => { if (isDirty) { setPendingNav({ type: 'loadplan', plan: p }); } else { applyPlan(p, allBuildings[p.id] ?? [], eventType); if (isMobile) setSidebarOpen(false); } }}
+                    style={{ flex: 1, textAlign: 'left', background: 'none', border: 'none', color: p.id === planId ? '#00c8ff' : '#a8c4dc', padding: '10px 12px', fontSize: 11, fontFamily: "'Share Tech Mono',monospace", cursor: 'pointer', minHeight: 44 }}
+                  >
+                    {formatWeekRange(p.week_label)}
+                  </button>
+                  <button onClick={() => handleDeleteWeekById(p.id)} style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', padding: '0 10px', minHeight: 44, fontSize: 13 }}>×</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+        <div style={{ flex: 1, padding: isMobile ? '12px 10px 40px' : '20px 24px 40px', maxWidth: 1400, width: '100%', margin: '0 auto', boxSizing: 'border-box', overflowY: 'auto' }}>
 
         {eventType === 'canyon' ? (
           <div style={{ border: '1px solid #1e3550', background: 'rgba(20,35,55,0.25)', padding: '48px 24px', textAlign: 'center' }}>
@@ -957,28 +1064,34 @@ export default function BattlePlanner() {
                 weekLabel={currentWeekKey}
                 planTitle={planTitle}
                 onExportText={handleExport}
+                onExportTable={handleExportTable}
                 onMarkerClick={(buildingId) => setPicker({ buildingId })}
                 onRemovePlayer={canManage ? removeMember : null}
               />
             )}
 
             {viewMode === 'list' && SECTIONS.map(section => {
-              const list = buildings.filter(section.match).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+              const list = buildings.filter(b => {
+                if (!section.match(b)) return false;
+                if (!b.combine_group) return true;
+                const groupMembers = buildings.filter(x => x.combine_group === b.combine_group);
+                const primary = groupMembers.reduce((a, c) => (a.sort_order ?? 0) <= (c.sort_order ?? 0) ? a : c);
+                return primary.id === b.id && section.match(primary);
+              }).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
 
-              // Group by effective key = combine_group || id. Groups with 2+ members render as
-              // a single combined card; everything else renders as a normal single-building entry.
               const groupKey = b => b.combine_group || b.id;
               const groupsInOrder = [];
               const groupsByKey = {};
               list.forEach(b => {
                 const key = groupKey(b);
                 if (!groupsByKey[key]) {
-                  groupsByKey[key] = [];
+                  groupsByKey[key] = b.combine_group
+                    ? buildings.filter(x => x.combine_group === b.combine_group)
+                    : [b];
                   groupsInOrder.push(key);
                 }
-                groupsByKey[key].push(b);
               });
-              const renderUnits = groupsInOrder.map(key => groupsByKey[key]); // each unit: [building, ...]
+              const renderUnits = groupsInOrder.map(key => groupsByKey[key]);
 
               const ungroupedInSection = list.filter(b => !b.combine_group);
 
@@ -1080,6 +1193,7 @@ export default function BattlePlanner() {
                           phase2Options={phase2Buildings}
                           linkTarget={unit[0].links_to_id ? buildings.find(x => x.id === unit[0].links_to_id) : null}
                           ungroupedInSection={ungroupedInSection}
+                          allBuildings={buildings}
                           onRename={n => renameBuilding(unit[0].id, n)}
                           onDelete={() => deleteBuilding(unit[0].id)}
                           onSetLinksTo={tid => setLinksTo(unit[0].id, tid)}
@@ -1118,6 +1232,7 @@ export default function BattlePlanner() {
             </div>
           </>
         )}
+        </div>
       </div>
     </div>
   );
@@ -1194,8 +1309,8 @@ function LinksToControl({ building, phase2Options, linkTarget, canManage, onSetL
 
 // ── "+ combine with" dropdown — lets an admin merge this building with another
 // ungrouped building in the same section into one combined card. ─────────────
-function CombineWithControl({ building, ungroupedInSection, onCombineWith }) {
-  const options = (ungroupedInSection ?? []).filter(b => b.id !== building.id);
+function CombineWithControl({ building, ungroupedInSection, buildings, onCombineWith }) {
+  const options = (buildings ?? ungroupedInSection ?? []).filter(b => b.id !== building.id && !b.combine_group);
   if (options.length === 0) return null;
   return (
     <div style={{ marginTop: 6 }}>
@@ -1242,7 +1357,7 @@ function MemberChip({ building, canManage, onRename, onRemove }) {
 }
 
 // ── Building card (desktop/tablet) ──────────────────────────────────
-function BuildingCard({ building, memberById, canManage, phase2Options, linkTarget, ungroupedInSection, onRename, onDelete, onSetLinksTo, onCombineWith, onAddPlayer, onRemovePlayer, onCycleRole }) {
+function BuildingCard({ building, memberById, canManage, phase2Options, linkTarget, ungroupedInSection, allBuildings, onRename, onDelete, onSetLinksTo, onCombineWith, onAddPlayer, onRemovePlayer, onCycleRole }) {
   const meta = categoryMeta(building.category);
   return (
     <div style={{ border: '1px solid #1e3550', background: 'rgba(13,21,32,0.6)', display: 'flex', flexDirection: 'column' }}>
@@ -1255,7 +1370,7 @@ function BuildingCard({ building, memberById, canManage, phase2Options, linkTarg
           )}
         </div>
         <LinksToControl building={building} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
-        {canManage && <CombineWithControl building={building} ungroupedInSection={ungroupedInSection} onCombineWith={onCombineWith} />}
+        {canManage && <CombineWithControl building={building} ungroupedInSection={ungroupedInSection} buildings={allBuildings} onCombineWith={onCombineWith} />}
       </div>
       <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {(building.assignments ?? []).map(a => {
@@ -1277,7 +1392,7 @@ function BuildingCard({ building, memberById, canManage, phase2Options, linkTarg
 }
 
 // ── Building accordion (mobile) ──────────────────────────────────────
-function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, phase2Options, linkTarget, ungroupedInSection, onRename, onDelete, onSetLinksTo, onCombineWith, onAddPlayer, onRemovePlayer, onCycleRole }) {
+function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, phase2Options, linkTarget, ungroupedInSection, allBuildings, onRename, onDelete, onSetLinksTo, onCombineWith, onAddPlayer, onRemovePlayer, onCycleRole }) {
   const meta = categoryMeta(building.category);
   const count = (building.assignments ?? []).length;
   return (
@@ -1301,7 +1416,7 @@ function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, 
             </div>
           )}
           <LinksToControl building={building} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
-          {canManage && <CombineWithControl building={building} ungroupedInSection={ungroupedInSection} onCombineWith={onCombineWith} />}
+          {canManage && <CombineWithControl building={building} ungroupedInSection={ungroupedInSection} buildings={allBuildings} onCombineWith={onCombineWith} />}
           {(building.assignments ?? []).map(a => {
             const m = memberById[a.member_id];
             if (!m) return null;
@@ -1365,7 +1480,7 @@ function CombinedBuildingCard({ members, memberById, canManage, phase2Options, a
           </div>
         )}
         <LinksToControl building={primary} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
-        {canManage && <CombineWithControl building={primary} ungroupedInSection={ungroupedInSection} onCombineWith={onCombineWith} />}
+        {canManage && <CombineWithControl building={primary} ungroupedInSection={ungroupedInSection} buildings={allBuildings} onCombineWith={onCombineWith} />}
       </div>
       <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {assignments.map(a => {
@@ -1410,7 +1525,7 @@ function CombinedBuildingAccordion({ members, isOpen, onToggle, memberById, canM
             </div>
           )}
           <LinksToControl building={primary} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
-          {canManage && <CombineWithControl building={primary} ungroupedInSection={ungroupedInSection} onCombineWith={onCombineWith} />}
+          {canManage && <CombineWithControl building={primary} ungroupedInSection={ungroupedInSection} buildings={allBuildings} onCombineWith={onCombineWith} />}
           {assignments.map(a => {
             const m = memberById[a.member_id];
             if (!m) return null;
@@ -1453,7 +1568,7 @@ function markerNameLines(building, memberById, allBuildings) {
 }
 
 // ── Map view ──────────────────────────────────────────────────────
-function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTitle, onExportText, onMarkerClick, onRemovePlayer }) {
+function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTitle, onExportText, onExportTable, onMarkerClick, onRemovePlayer }) {
   const [imgStatus, setImgStatus] = useState('loading'); // 'loading' | 'ok' | 'error'
   const imgRef = useRef(null);
   const containerRef = useRef(null);
@@ -1543,16 +1658,16 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTi
       const boxX = cx - boxW / 2;
       const boxY = cy + dotR + 4;
 
-      ctx.fillStyle = 'rgba(8,13,20,0.85)';
+      ctx.fillStyle = '#ffffff';
       ctx.fillRect(boxX, boxY, boxW, boxH);
-      ctx.strokeStyle = 'rgba(122,155,184,0.6)';
+      ctx.strokeStyle = '#cbd5e1';
       ctx.lineWidth = 1;
       ctx.strokeRect(boxX, boxY, boxW, boxH);
 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       labelLines.forEach((line, i) => {
-        ctx.fillStyle = i === 0 ? '#ffffff' : '#a8c4dc';
+        ctx.fillStyle = i === 0 ? '#111827' : '#374151';
         ctx.fillText(line, cx, boxY + padding / 2 + i * lineHeight);
       });
     });
@@ -1579,6 +1694,7 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTi
             <Download size={12} /> COPY FOR DISCORD
           </button>
         )}
+        {onExportTable && <button onClick={onExportTable} style={{ ...S.smallBtn, color: '#8aadcc' }}><Download size={12} /> EXPORT TABLE</button>}
         {imgStatus === 'ok' && (
           <button onClick={handleDownload} style={{ ...S.smallBtn, background: 'rgba(0,232,122,0.1)', border: '1px solid rgba(0,232,122,0.4)', color: '#00e87a' }}>
             <Download size={12} /> DOWNLOAD MAP
@@ -1638,15 +1754,15 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTi
                   boxShadow: combined ? `0 0 14px 4px ${dotColor}, 0 0 4px ${dotColor}` : `0 0 6px ${dotColor}`,
                 }} />
                 <div style={{
-                  marginTop: 4, background: 'rgba(8,13,20,0.88)', border: '1px solid rgba(122,155,184,0.4)',
+                  marginTop: 4, background: 'rgba(255,255,255,0.95)', border: '1px solid #cbd5e1',
                   padding: '4px 7px', maxWidth: 130, textAlign: onLeftHalf ? 'left' : 'right',
                 }}>
                   {shownNames.length > 0 ? (
-                    <div style={{ fontSize: 9, color: '#a8c4dc', lineHeight: 1.4 }}>
+                    <div style={{ fontSize: 9, color: '#111827', lineHeight: 1.4 }}>
                       {shownNames.join(', ')}{extra > 0 ? ` +${extra} more` : ''}
                     </div>
                   ) : (
-                    <div style={{ fontSize: 9, color: '#5a7898', fontStyle: 'italic' }}>unassigned</div>
+                    <div style={{ fontSize: 9, color: '#374151', fontStyle: 'italic' }}>unassigned</div>
                   )}
                 </div>
               </button>
