@@ -79,6 +79,29 @@ function phaseDotColor(building) {
   return PHASE_DOT_COLOR[building.phase] || '#7a9bb8'; // kill_squad / substitutes / null -> neutral
 }
 
+// Palette used to color matched phase1<->phase2 link pairs distinctly & deterministically.
+const LINK_COLOR_PALETTE = ['#00c8ff', '#ff6b35', '#a855f7', '#22d3ee', '#facc15', '#34d399'];
+
+// Given the list of { building } matched to markers, discover phase1->phase2 links (in stable
+// discovery order) and assign each a palette color. Returns a map of buildingId -> color for
+// every building that's part of a link (both ends share the same color).
+function computeLinkColors(matched) {
+  const byBuildingId = Object.fromEntries(matched.map(m => [m.building.id, m]));
+  const colorByBuildingId = {};
+  let linkIdx = 0;
+  matched
+    .filter(m => m.building.phase === 'phase1' && m.building.links_to_id)
+    .forEach(m => {
+      const target = byBuildingId[m.building.links_to_id];
+      if (!target) return;
+      const color = LINK_COLOR_PALETTE[linkIdx % LINK_COLOR_PALETTE.length];
+      linkIdx += 1;
+      colorByBuildingId[m.building.id] = color;
+      colorByBuildingId[target.building.id] = color;
+    });
+  return colorByBuildingId;
+}
+
 // ── Constants ──────────────────────────────────────────────────────
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');`;
 
@@ -112,16 +135,30 @@ const CATEGORY_META = {
 };
 
 const DEFAULT_BUILDINGS = [
-  { name: 'Oil Refinery',        category: 'oil_refinery',      phase: 'phase1' },
+  { name: 'Oil Refinery 1',      category: 'oil_refinery',      phase: 'phase1' },
+  { name: 'Oil Refinery 2',      category: 'oil_refinery',      phase: 'phase1' },
   { name: 'Info Center',         category: 'info_center',       phase: 'phase1' },
   { name: 'Science Hub',         category: 'science_hub',       phase: 'phase1' },
   { name: 'Field Hospital 1',    category: 'field_hospital',    phase: 'phase1' },
   { name: 'Field Hospital 2',    category: 'field_hospital',    phase: 'phase1' },
+  { name: 'Field Hospital 3',    category: 'field_hospital',    phase: 'phase1' },
+  { name: 'Field Hospital 4',    category: 'field_hospital',    phase: 'phase1' },
   { name: 'Arsenal',             category: 'arsenal',           phase: 'phase2' },
   { name: 'Mercenary Factory',   category: 'mercenary_factory', phase: 'phase2' },
   { name: 'Nuclear Silo',        category: 'nuclear_silo',      phase: 'phase2' },
   { name: 'Kill Squad',          category: 'kill_squad',        phase: null },
   { name: 'Substitutes',         category: 'substitutes',       phase: null },
+];
+
+// Sensible default phase1 -> phase2 transitions matching the real-world building pairing.
+// Resolved by name after the buildings list is built (see seedBuildings()).
+const DEFAULT_LINKS = [
+  { from: 'Field Hospital 1', to: 'Mercenary Factory' },
+  { from: 'Field Hospital 3', to: 'Mercenary Factory' },
+  { from: 'Field Hospital 2', to: 'Arsenal' },
+  { from: 'Field Hospital 4', to: 'Arsenal' },
+  { from: 'Oil Refinery 1',   to: 'Nuclear Silo' },
+  { from: 'Oil Refinery 2',   to: 'Nuclear Silo' },
 ];
 
 const SECTIONS = [
@@ -193,7 +230,7 @@ function emptyBuilding(defaults) {
 }
 
 function seedBuildings() {
-  return DEFAULT_BUILDINGS.map((b, i) => ({
+  const list = DEFAULT_BUILDINGS.map((b, i) => ({
     id: localId(),
     name: b.name,
     category: b.category,
@@ -202,6 +239,14 @@ function seedBuildings() {
     sort_order: i,
     assignments: [],
   }));
+  // Second pass: resolve default links_to_id by name.
+  const idByName = Object.fromEntries(list.map(b => [b.name, b.id]));
+  DEFAULT_LINKS.forEach(({ from, to }) => {
+    const fromB = list.find(b => b.name === from);
+    const targetId = idByName[to];
+    if (fromB && targetId) fromB.links_to_id = targetId;
+  });
+  return list;
 }
 
 // ── Main component ─────────────────────────────────────────────────
@@ -243,6 +288,10 @@ export default function BattlePlanner() {
   const [openAccordion, setOpenAccordion] = useState({});
   const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
 
+  // No-show tracking
+  const [allNoshows, setAllNoshows] = useState([]); // all battle_plan_noshows rows for this alliance
+  const [noshowModalOpen, setNoshowModalOpen] = useState(false);
+
   useEffect(() => {
     function onResize() { setIsMobile(window.innerWidth < 768); }
     window.addEventListener('resize', onResize);
@@ -256,14 +305,16 @@ export default function BattlePlanner() {
     if (!myAllianceId) { setLoading(false); return; }
 
     async function load() {
-      const [{ data: al }, { data: mems }, { data: plans }] = await Promise.all([
+      const [{ data: al }, { data: mems }, { data: plans }, { data: noshows }] = await Promise.all([
         supabase.from('alliances').select('id, name, color, server_id').eq('id', myAllianceId).single(),
         supabase.from('members').select('id, username, in_game_name, power1, troop1, alliance_role').eq('alliance_id', myAllianceId).order('username'),
         supabase.from('battle_plans').select('*').eq('alliance_id', myAllianceId).order('week_label'),
+        supabase.from('battle_plan_noshows').select('*').eq('alliance_id', myAllianceId),
       ]);
       setAlliance(al);
       setMembers(mems ?? []);
       setAllPlans(plans ?? []);
+      setAllNoshows(noshows ?? []);
 
       let grouped = {};
       const planIds = (plans ?? []).map(p => p.id);
@@ -422,6 +473,35 @@ export default function BattlePlanner() {
     setIsDirty(false);
     setTimeout(() => setSaved(false), 2500);
   }, [myAllianceId, planId, currentWeekKey, eventType, taskforce, rulesText, buildings]);
+
+  // ── No-show tracking ────────────────────────────────────────────────
+  // Saves a diff against existing battle_plan_noshows rows for the exact
+  // (alliance, event_type, taskforce, week_label) scope: inserts newly-checked
+  // members, deletes unchecked ones. Doesn't require planId to exist in DB yet.
+  async function handleSaveNoshows(checkedMemberIds) {
+    if (!myAllianceId) return;
+    const wLabel = currentWeekKey || toDateString(getMondayDate());
+    const existing = allNoshows.filter(n => n.alliance_id === myAllianceId && n.event_type === eventType && n.taskforce === taskforce && n.week_label === wLabel);
+    const existingIds = new Set(existing.map(n => n.member_id));
+    const checkedSet = new Set(checkedMemberIds);
+
+    const toInsert = [...checkedSet].filter(mid => !existingIds.has(mid));
+    const toDeleteRows = existing.filter(n => !checkedSet.has(n.member_id));
+
+    if (toInsert.length > 0) {
+      await supabase.from('battle_plan_noshows').insert(
+        toInsert.map(mid => ({ alliance_id: myAllianceId, event_type: eventType, taskforce, week_label: wLabel, member_id: mid }))
+      );
+    }
+    if (toDeleteRows.length > 0) {
+      await supabase.from('battle_plan_noshows').delete().in('id', toDeleteRows.map(r => r.id));
+    }
+
+    // Refresh local state.
+    const { data: refreshed } = await supabase.from('battle_plan_noshows').select('*').eq('alliance_id', myAllianceId);
+    setAllNoshows(refreshed ?? []);
+    setNoshowModalOpen(false);
+  }
 
   // ── Unsaved changes guard ─────────────────────────────────────────
   async function handleUnsavedSave() {
@@ -636,6 +716,13 @@ export default function BattlePlanner() {
 
   const phase2Buildings = buildings.filter(b => b.phase === 'phase2');
 
+  // No-show counts scoped to the current eventType + taskforce (recomputed on every render,
+  // same pattern as weekList derived from allPlans).
+  const noShowCounts = {};
+  allNoshows
+    .filter(n => n.event_type === eventType && n.taskforce === taskforce)
+    .forEach(n => { noShowCounts[n.member_id] = (noShowCounts[n.member_id] ?? 0) + 1; });
+
   return (
     <div style={{ minHeight: '100vh', background: '#080d14', display: 'flex', flexDirection: 'column', fontFamily: "'Rajdhani',sans-serif", color: '#d0e4f4', position: 'relative' }}>
       <ParticleBackground />
@@ -663,8 +750,21 @@ export default function BattlePlanner() {
           search={pickerSearch}
           setSearch={setPickerSearch}
           isMobile={isMobile}
+          noShowCounts={noShowCounts}
           onPick={(memberId) => assignMember(memberId, picker.buildingId)}
           onClose={() => { setPicker(null); setPickerSearch(''); }}
+        />
+      )}
+
+      {/* ── No-show modal ────────────────────────────────────────── */}
+      {noshowModalOpen && (
+        <NoshowModal
+          members={members}
+          weekLabel={currentWeekKey}
+          existingNoshows={allNoshows.filter(n => n.alliance_id === myAllianceId && n.event_type === eventType && n.taskforce === taskforce && n.week_label === (currentWeekKey || toDateString(getMondayDate())))}
+          isMobile={isMobile}
+          onSave={handleSaveNoshows}
+          onClose={() => setNoshowModalOpen(false)}
         />
       )}
 
@@ -686,6 +786,11 @@ export default function BattlePlanner() {
           <div style={{ flex: 1 }} />
           {eventType === 'desert' && (
             <button onClick={handleExport} style={{ ...S.smallBtn, color: '#8aadcc' }}><Download size={12} /> {isMobile ? '' : 'COPY FOR DISCORD'}</button>
+          )}
+          {eventType === 'desert' && canManage && (
+            <button onClick={() => setNoshowModalOpen(true)} style={{ ...S.smallBtn, color: '#ff4060', border: '1px solid rgba(255,64,96,0.3)' }}>
+              ❗ {isMobile ? '' : 'MARK NO-SHOWS'}
+            </button>
           )}
           {eventType === 'desert' && canManage && (
             <button onClick={handleSave} disabled={saving} style={{ ...S.smallBtn, background: saved ? 'rgba(0,232,122,0.1)' : 'rgba(240,165,0,0.1)', border: `1px solid ${saved ? 'rgba(0,232,122,0.5)' : 'rgba(240,165,0,0.5)'}`, color: saved ? '#00e87a' : '#f0a500' }}>
@@ -801,6 +906,7 @@ export default function BattlePlanner() {
                 taskforce={taskforce}
                 weekLabel={currentWeekKey}
                 onMarkerClick={(buildingId) => setPicker({ buildingId })}
+                onRemovePlayer={canManage ? removeMember : null}
               />
             )}
 
@@ -873,7 +979,7 @@ export default function BattlePlanner() {
                 <textarea
                   value={rulesText}
                   onChange={e => { setRulesText(e.target.value); markDirty(); }}
-                  placeholder="Enter rules for this taskforce…"
+                  placeholder={'1. Be on time! It is critical to start complete.\n2. Stick to your assigned position so we have building coverage.\n3. Do not leave before you secure a sub to swap with you.\n4. After 15 minutes, if the score gap is big enough, let subs in so everyone can score.\n5. No-shows may be deprioritized for next week\'s team makeup.'}
                   rows={5}
                   style={{ width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: 10, fontFamily: "'Rajdhani',sans-serif", fontWeight: 600, fontSize: 13, lineHeight: 1.6, outline: 'none', boxSizing: 'border-box', resize: 'vertical' }}
                 />
@@ -1037,8 +1143,26 @@ function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, 
   );
 }
 
+// Build the label lines for a marker: assigned player names only (no building name —
+// the map image already prints it), each prefixed with a role icon when applicable.
+// 👑 for coordinator assignments, 🔥 for any member assigned to a kill_squad building,
+// otherwise fall back to the existing ROLE_META icon for consistency.
+function markerNameLines(building, memberById) {
+  const isKillSquad = building.category === 'kill_squad';
+  const names = (building.assignments ?? []).map(a => {
+    const m = memberById[a.member_id];
+    if (!m) return null;
+    let icon = '';
+    if (a.role === 'coordinator') icon = '👑 ';
+    else if (isKillSquad) icon = '🔥 ';
+    else if (a.role && ROLE_META[a.role]) icon = ROLE_META[a.role].icon + ' ';
+    return `${icon}${memberName(m)}`;
+  }).filter(Boolean);
+  return names;
+}
+
 // ── Map view ──────────────────────────────────────────────────────
-function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMarkerClick }) {
+function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMarkerClick, onRemovePlayer }) {
   const [imgStatus, setImgStatus] = useState('loading'); // 'loading' | 'ok' | 'error'
   const imgRef = useRef(null);
   const containerRef = useRef(null);
@@ -1061,9 +1185,21 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
     .map(m => {
       const target = byBuildingId[m.building.links_to_id];
       if (!target) return null;
-      return { from: m.marker, to: target.marker };
+      return { from: m.marker, to: target.marker, fromId: m.building.id, toId: target.building.id };
     })
     .filter(Boolean);
+
+  // Deterministic color per linked pair (both ends + connector share one palette color).
+  const linkColorByBuildingId = computeLinkColors(matched);
+  const connectorColors = {}; // fromId -> color, keyed for connector rendering below
+  connectors.forEach(c => { connectorColors[c.fromId] = linkColorByBuildingId[c.fromId] || '#00c8ff'; });
+
+  function dotColorFor(building) {
+    return linkColorByBuildingId[building.id] || phaseDotColor(building);
+  }
+
+  // Substitutes building(s) for the overlay panel.
+  const substitutesBuildings = buildings.filter(b => b.category === 'substitutes');
 
   function handleDownload() {
     const img = imgRef.current;
@@ -1077,9 +1213,10 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
     ctx.drawImage(img, 0, 0, w, h);
 
     // Connectors first (under markers).
-    ctx.strokeStyle = 'rgba(0,200,255,0.8)';
     ctx.lineWidth = Math.max(2, w * 0.0025);
     connectors.forEach(c => {
+      const color = connectorColors[c.fromId] || '#00c8ff';
+      ctx.strokeStyle = color;
       const x1 = (c.from.x / 100) * w, y1 = (c.from.y / 100) * h;
       const x2 = (c.to.x / 100) * w, y2 = (c.to.y / 100) * h;
       ctx.beginPath();
@@ -1094,7 +1231,7 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
       ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
       ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
       ctx.closePath();
-      ctx.fillStyle = 'rgba(0,200,255,0.8)';
+      ctx.fillStyle = color;
       ctx.fill();
     });
 
@@ -1105,18 +1242,15 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
       const dotR = Math.max(5, w * 0.006);
       ctx.beginPath();
       ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
-      ctx.fillStyle = phaseDotColor(building);
+      ctx.fillStyle = dotColorFor(building);
       ctx.fill();
       ctx.lineWidth = 2;
       ctx.strokeStyle = '#0a1220';
       ctx.stroke();
 
-      const names = (building.assignments ?? []).map(a => {
-        const m = memberById[a.member_id];
-        return m ? memberName(m) : null;
-      }).filter(Boolean);
+      const names = markerNameLines(building, memberById);
 
-      const labelLines = [building.name, ...(names.length > 0 ? [names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3} more` : '')] : ['(unassigned)'])];
+      const labelLines = names.length > 0 ? [names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3} more` : '')] : ['(unassigned)'];
 
       const fontSize = Math.max(12, Math.round(w * 0.012));
       ctx.font = `bold ${fontSize}px Arial`;
@@ -1192,31 +1326,33 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
           {imgStatus === 'ok' && (
             <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
               <defs>
-                <marker id="ds-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
-                  <path d="M0,0 L8,4 L0,8 Z" fill="rgba(0,200,255,0.85)" />
-                </marker>
+                {connectors.map((c, i) => {
+                  const color = connectorColors[c.fromId] || '#00c8ff';
+                  return (
+                    <marker key={i} id={`ds-arrowhead-${i}`} markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                      <path d="M0,0 L8,4 L0,8 Z" fill={color} />
+                    </marker>
+                  );
+                })}
               </defs>
               {connectors.map((c, i) => (
                 <line
                   key={i}
                   x1={`${c.from.x}%`} y1={`${c.from.y}%`}
                   x2={`${c.to.x}%`} y2={`${c.to.y}%`}
-                  stroke="rgba(0,200,255,0.85)" strokeWidth={2}
-                  markerEnd="url(#ds-arrowhead)"
+                  stroke={connectorColors[c.fromId] || '#00c8ff'} strokeWidth={2}
+                  markerEnd={`url(#ds-arrowhead-${i})`}
                 />
               ))}
             </svg>
           )}
 
           {imgStatus === 'ok' && matched.map(({ marker, building }) => {
-            const names = (building.assignments ?? []).map(a => {
-              const m = memberById[a.member_id];
-              return m ? memberName(m) : null;
-            }).filter(Boolean);
+            const names = markerNameLines(building, memberById);
             const shownNames = names.slice(0, 3);
             const extra = names.length - shownNames.length;
             const onLeftHalf = marker.x < 50;
-            const dotColor = phaseDotColor(building);
+            const dotColor = dotColorFor(building);
 
             return (
               <button
@@ -1238,9 +1374,6 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
                   marginTop: 4, background: 'rgba(8,13,20,0.88)', border: '1px solid rgba(122,155,184,0.4)',
                   padding: '4px 7px', maxWidth: 130, textAlign: onLeftHalf ? 'left' : 'right',
                 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {building.name}
-                  </div>
                   {shownNames.length > 0 ? (
                     <div style={{ fontSize: 9, color: '#a8c4dc', lineHeight: 1.4 }}>
                       {shownNames.join(', ')}{extra > 0 ? ` +${extra} more` : ''}
@@ -1252,14 +1385,74 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
               </button>
             );
           })}
+
+          {imgStatus === 'ok' && substitutesBuildings.length > 0 && (
+            <SubstitutesPanel
+              substitutesBuildings={substitutesBuildings}
+              memberById={memberById}
+              onMarkerClick={onMarkerClick}
+              onRemovePlayer={onRemovePlayer}
+            />
+          )}
         </div>
       </div>
     </div>
   );
 }
 
+// ── Substitutes overlay panel (bottom-left, anchored on the map container) ──
+function SubstitutesPanel({ substitutesBuildings, memberById, onMarkerClick, onRemovePlayer }) {
+  return (
+    <div style={{
+      position: 'absolute', left: 10, bottom: 10, zIndex: 5, maxWidth: 220,
+      background: 'rgba(8,13,20,0.92)', border: '1px solid rgba(122,155,184,0.5)', padding: '8px 10px',
+    }}>
+      <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: '#f0a500', marginBottom: 6 }}>
+        🔄 SUBSTITUTES
+      </div>
+      {substitutesBuildings.map(b => (
+        <div key={b.id} style={{ marginBottom: 6 }}>
+          {(b.assignments ?? []).map(a => {
+            const m = memberById[a.member_id];
+            if (!m) return null;
+            return (
+              <button
+                key={a.member_id}
+                onClick={() => onRemovePlayer && onRemovePlayer(a.member_id, b.id)}
+                title={onRemovePlayer ? 'Tap to remove' : undefined}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, width: '100%', textAlign: 'left',
+                  background: 'transparent', border: 'none', cursor: onRemovePlayer ? 'pointer' : 'default',
+                  padding: '2px 0', minHeight: 22,
+                }}
+              >
+                <span style={{ fontSize: 10, color: '#d0e4f4', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{memberName(m)}</span>
+                {onRemovePlayer && <span style={{ color: '#ff4060', fontSize: 11 }}>×</span>}
+              </button>
+            );
+          })}
+          {(b.assignments ?? []).length === 0 && (
+            <div style={{ fontSize: 10, color: '#5a7898', fontStyle: 'italic' }}>none</div>
+          )}
+          <button
+            onClick={() => onMarkerClick(b.id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 4, marginTop: 4, width: '100%', textAlign: 'left',
+              background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', color: '#00c8ff',
+              fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 9, letterSpacing: '0.5px', cursor: 'pointer',
+              padding: '4px 6px', minHeight: 28,
+            }}
+          >
+            <Plus size={10} /> ADD
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ── Member picker (bottom sheet on mobile, popover on desktop) ──────
-function MemberPicker({ members, search, setSearch, isMobile, onPick, onClose }) {
+function MemberPicker({ members, search, setSearch, isMobile, onPick, onClose, noShowCounts = {} }) {
   const filtered = members.filter(m => memberName(m).toLowerCase().includes(search.toLowerCase()));
 
   const content = (
@@ -1293,7 +1486,12 @@ function MemberPicker({ members, search, setSearch, isMobile, onPick, onClose })
             style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '10px', marginBottom: 4, background: 'transparent', border: '1px solid #1e3550', cursor: 'pointer', minHeight: 44 }}
           >
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{memberName(m)}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{memberName(m)}</span>
+                {noShowCounts[m.id] > 0 && (
+                  <span style={{ fontSize: 9, fontWeight: 700, color: '#ff4060', flexShrink: 0 }}>❗{noShowCounts[m.id]}</span>
+                )}
+              </div>
               {m.power1 && (
                 <div style={{ fontSize: 9, color: '#5a7898', fontFamily: "'Share Tech Mono',monospace" }}>{m.power1}M{m.troop1 ? ` · ${m.troop1}` : ''}</div>
               )}
@@ -1317,6 +1515,92 @@ function MemberPicker({ members, search, setSearch, isMobile, onPick, onClose })
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div style={{ background: '#0d1520', border: '1px solid #1e3550', width: 360, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+        {content}
+      </div>
+    </div>
+  );
+}
+
+// ── No-show modal (bottom sheet on mobile, popover on desktop) ──────
+function NoshowModal({ members, weekLabel, existingNoshows, isMobile, onSave, onClose }) {
+  const [checked, setChecked] = useState(() => new Set(existingNoshows.map(n => n.member_id)));
+  const [saving, setSaving] = useState(false);
+
+  function toggle(memberId) {
+    setChecked(prev => {
+      const next = new Set(prev);
+      if (next.has(memberId)) next.delete(memberId);
+      else next.add(memberId);
+      return next;
+    });
+  }
+
+  async function handleSaveClick() {
+    setSaving(true);
+    await onSave([...checked]);
+    setSaving(false);
+  }
+
+  const content = (
+    <>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', borderBottom: '1px solid #1e3550' }}>
+        <div style={{ fontSize: 13, fontWeight: 700, letterSpacing: '1.5px', color: '#ff4060' }}>MARK NO-SHOWS{weekLabel ? ` — ${formatWeekRange(weekLabel)}` : ''}</div>
+        <button onClick={onClose} style={{ background: 'none', border: 'none', color: '#7a9bb8', cursor: 'pointer', minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <X size={18} />
+        </button>
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '12px 16px', maxHeight: isMobile ? '55vh' : 380 }}>
+        {members.length === 0 && (
+          <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic', padding: '8px 0' }}>No members found.</div>
+        )}
+        {members.map(m => {
+          const isChecked = checked.has(m.id);
+          return (
+            <button
+              key={m.id}
+              onClick={() => toggle(m.id)}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left', padding: '10px',
+                marginBottom: 4, background: isChecked ? 'rgba(255,64,96,0.1)' : 'transparent',
+                border: `1px solid ${isChecked ? 'rgba(255,64,96,0.4)' : '#1e3550'}`, cursor: 'pointer', minHeight: 44,
+              }}
+            >
+              <span style={{
+                width: 18, height: 18, border: `1px solid ${isChecked ? '#ff4060' : '#3a5878'}`,
+                background: isChecked ? '#ff4060' : 'transparent', flexShrink: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff',
+              }}>
+                {isChecked ? '✓' : ''}
+              </span>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#ffffff', flex: 1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{memberName(m)}</span>
+            </button>
+          );
+        })}
+      </div>
+      <div style={{ padding: '12px 16px', borderTop: '1px solid #1e3550', display: 'flex', gap: 8 }}>
+        <button onClick={handleSaveClick} disabled={saving} style={{ flex: 1, padding: '9px', background: 'rgba(255,64,96,0.12)', border: '1px solid rgba(255,64,96,0.4)', color: '#ff4060', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>
+          {saving ? 'SAVING…' : 'SAVE'}
+        </button>
+        <button onClick={onClose} style={{ flex: 1, padding: '9px', background: 'transparent', border: '1px solid #1e3550', color: '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 11, letterSpacing: '1px', cursor: 'pointer', minHeight: 44 }}>
+          CANCEL
+        </button>
+      </div>
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,0.7)', display: 'flex', alignItems: 'flex-end' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div style={{ background: '#0d1520', borderTop: '1px solid #1e3550', width: '100%', height: '75vh', display: 'flex', flexDirection: 'column', borderRadius: '12px 12px 0 0' }}>
+          {content}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 220, background: 'rgba(0,0,0,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: '#0d1520', border: '1px solid #1e3550', width: 380, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
         {content}
       </div>
     </div>

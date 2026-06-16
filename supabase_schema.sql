@@ -5,6 +5,7 @@
 -- ============================================================
 
 -- ── Clean slate ──────────────────────────────────────────────
+DROP TABLE IF EXISTS battle_plan_noshows         CASCADE;
 DROP TABLE IF EXISTS battle_plan_assignments     CASCADE;
 DROP TABLE IF EXISTS battle_plan_buildings       CASCADE;
 DROP TABLE IF EXISTS battle_plans                CASCADE;
@@ -246,6 +247,19 @@ CREATE TABLE battle_plan_assignments (
   UNIQUE(building_id, member_id)
 );
 
+-- ── battle_plan_noshows ────────────────────────────────────────
+-- No-show attendance tracking, scoped per alliance/event/taskforce/week
+CREATE TABLE battle_plan_noshows (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alliance_id  UUID NOT NULL REFERENCES alliances(id) ON DELETE CASCADE,
+  event_type   TEXT NOT NULL,
+  taskforce    TEXT NOT NULL,
+  week_label   DATE NOT NULL,
+  member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(alliance_id, event_type, taskforce, week_label, member_id)
+);
+
 -- ============================================================
 -- Realtime subscriptions
 -- ============================================================
@@ -257,6 +271,7 @@ ALTER PUBLICATION supabase_realtime ADD TABLE train_slots;
 ALTER PUBLICATION supabase_realtime ADD TABLE battle_plans;
 ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_buildings;
 ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_assignments;
+ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_noshows;
 ALTER PUBLICATION supabase_realtime ADD TABLE territories;
 ALTER PUBLICATION supabase_realtime ADD TABLE alliance_plans;
 ALTER PUBLICATION supabase_realtime ADD TABLE season_map_servers;
@@ -283,6 +298,7 @@ ALTER TABLE train_slots                 ENABLE ROW LEVEL SECURITY;
 ALTER TABLE battle_plans                ENABLE ROW LEVEL SECURITY;
 ALTER TABLE battle_plan_buildings       ENABLE ROW LEVEL SECURITY;
 ALTER TABLE battle_plan_assignments     ENABLE ROW LEVEL SECURITY;
+ALTER TABLE battle_plan_noshows         ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "servers_select"   ON servers   FOR SELECT USING (true);
 CREATE POLICY "servers_insert"   ON servers   FOR INSERT WITH CHECK (true);
@@ -353,3 +369,8 @@ CREATE POLICY "battle_plan_assignments_select" ON battle_plan_assignments FOR SE
 CREATE POLICY "battle_plan_assignments_insert" ON battle_plan_assignments FOR INSERT WITH CHECK (true);
 CREATE POLICY "battle_plan_assignments_update" ON battle_plan_assignments FOR UPDATE USING (true);
 CREATE POLICY "battle_plan_assignments_delete" ON battle_plan_assignments FOR DELETE USING (true);
+
+CREATE POLICY "battle_plan_noshows_select" ON battle_plan_noshows FOR SELECT USING (true);
+CREATE POLICY "battle_plan_noshows_insert" ON battle_plan_noshows FOR INSERT WITH CHECK (true);
+CREATE POLICY "battle_plan_noshows_update" ON battle_plan_noshows FOR UPDATE USING (true);
+CREATE POLICY "battle_plan_noshows_delete" ON battle_plan_noshows FOR DELETE USING (true);

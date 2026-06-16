@@ -60,3 +60,28 @@ CREATE POLICY "battle_plan_assignments_delete" ON battle_plan_assignments FOR DE
 ALTER PUBLICATION supabase_realtime ADD TABLE battle_plans;
 ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_buildings;
 ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_assignments;
+
+-- ============================================================
+-- No-show tracking — Desert Storm attendance per week
+-- Run this block separately if the above tables already exist.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS battle_plan_noshows (
+  id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  alliance_id  UUID NOT NULL REFERENCES alliances(id) ON DELETE CASCADE,
+  event_type   TEXT NOT NULL,
+  taskforce    TEXT NOT NULL,
+  week_label   DATE NOT NULL,
+  member_id    UUID NOT NULL REFERENCES members(id) ON DELETE CASCADE,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  UNIQUE(alliance_id, event_type, taskforce, week_label, member_id)
+);
+
+ALTER TABLE battle_plan_noshows ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "battle_plan_noshows_select" ON battle_plan_noshows FOR SELECT USING (true);
+CREATE POLICY "battle_plan_noshows_insert" ON battle_plan_noshows FOR INSERT WITH CHECK (true);
+CREATE POLICY "battle_plan_noshows_update" ON battle_plan_noshows FOR UPDATE USING (true);
+CREATE POLICY "battle_plan_noshows_delete" ON battle_plan_noshows FOR DELETE USING (true);
+
+ALTER PUBLICATION supabase_realtime ADD TABLE battle_plan_noshows;
