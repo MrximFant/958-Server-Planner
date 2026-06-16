@@ -1,9 +1,83 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { useAuth } from '../contexts/AuthContext';
-import { ArrowLeft, Swords, Save, Download, ChevronLeft, ChevronRight, X, Search, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Swords, Save, Download, ChevronLeft, ChevronRight, X, Search, Plus, Trash2, Map, List } from 'lucide-react';
 import ParticleBackground from '../components/ParticleBackground';
+
+// Desert Storm map image is expected at /public/desert-storm-map.png (user-provided asset, not committed).
+// If it's missing, MapView shows a placeholder message instead of a broken image.
+const MAP_IMAGE_SRC = '/desert-storm-map.png';
+
+// Fixed marker layout for the (shared, non-customizable) Desert Storm battlefield, as % of image width/height.
+const MAP_MARKERS = [
+  { name: 'Info Center',        x: 29, y: 14 },
+  { name: 'Field Hospital IV',  x: 74, y: 15 },
+  { name: 'Arsenal',            x: 50, y: 25 },
+  { name: 'Oil Refinery I',     x: 13, y: 35 },
+  { name: 'Field Hospital II',  x: 88, y: 39 },
+  { name: 'Nuclear Silo',       x: 50, y: 50 },
+  { name: 'Field Hospital I',   x: 13, y: 59 },
+  { name: 'Oil Refinery II',    x: 88, y: 63 },
+  { name: 'Mercenary Factory',  x: 50, y: 75 },
+  { name: 'Field Hospital III', x: 30, y: 86 },
+  { name: 'Science Hub',        x: 71, y: 86 },
+];
+
+// Map a category to the trailing roman-numeral/number sequence used to disambiguate
+// multiple buildings of the same category (e.g. "Field Hospital I/II/III/IV").
+const ROMAN_TO_NUM = { i: 1, ii: 2, iii: 3, iv: 4, v: 5 };
+function trailingOrdinal(name) {
+  const m = (name || '').trim().match(/(\d+|[ivx]+)\s*$/i);
+  if (!m) return null;
+  const token = m[1].toLowerCase();
+  if (/^\d+$/.test(token)) return parseInt(token, 10);
+  return ROMAN_TO_NUM[token] ?? null;
+}
+
+const CATEGORY_TO_MARKER_BASE = {
+  info_center: 'Info Center',
+  arsenal: 'Arsenal',
+  oil_refinery: 'Oil Refinery',
+  nuclear_silo: 'Nuclear Silo',
+  field_hospital: 'Field Hospital',
+  mercenary_factory: 'Mercenary Factory',
+  science_hub: 'Science Hub',
+};
+
+// Match a building (free-text name + category) to one of the fixed MAP_MARKERS.
+// Primary: category. Fallback: case-insensitive substring name match.
+// When multiple markers share a category base (e.g. Field Hospital I-IV), disambiguate by trailing ordinal.
+function matchBuildingToMarker(building) {
+  const base = CATEGORY_TO_MARKER_BASE[building.category];
+  if (base) {
+    const candidates = MAP_MARKERS.filter(mk => mk.name.startsWith(base));
+    if (candidates.length === 1) return candidates[0];
+    if (candidates.length > 1) {
+      const bOrd = trailingOrdinal(building.name);
+      if (bOrd != null) {
+        const byOrd = candidates.find(mk => trailingOrdinal(mk.name) === bOrd);
+        if (byOrd) return byOrd;
+      }
+      // Fallback: substring match within the candidate set.
+      const lowerName = (building.name || '').toLowerCase();
+      const bySubstr = candidates.find(mk => lowerName.includes(mk.name.toLowerCase()));
+      if (bySubstr) return bySubstr;
+    }
+  }
+  // Full fallback: fuzzy substring match against all markers by name.
+  const lowerName = (building.name || '').toLowerCase();
+  const direct = MAP_MARKERS.find(mk => lowerName.includes(mk.name.toLowerCase()) || mk.name.toLowerCase().includes(lowerName));
+  return direct || null;
+}
+
+const PHASE_DOT_COLOR = {
+  phase1: '#00c8ff',
+  phase2: '#f0a500',
+};
+function phaseDotColor(building) {
+  return PHASE_DOT_COLOR[building.phase] || '#7a9bb8'; // kill_squad / substitutes / null -> neutral
+}
 
 // ── Constants ──────────────────────────────────────────────────────
 const FONT = `@import url('https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Share+Tech+Mono&display=swap');`;
@@ -167,6 +241,7 @@ export default function BattlePlanner() {
 
   const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' && window.innerWidth < 768);
   const [openAccordion, setOpenAccordion] = useState({});
+  const [viewMode, setViewMode] = useState('list'); // 'list' | 'map'
 
   useEffect(() => {
     function onResize() { setIsMobile(window.innerWidth < 768); }
@@ -692,7 +767,44 @@ export default function BattlePlanner() {
           </div>
         ) : (
           <>
-            {SECTIONS.map(section => {
+            {/* List / Map view toggle */}
+            <div style={{ display: 'flex', gap: 0, marginBottom: 20, border: '1px solid #1e3550', width: 'fit-content' }}>
+              <button
+                onClick={() => setViewMode('list')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
+                  background: viewMode === 'list' ? 'rgba(0,200,255,0.12)' : 'transparent', border: 'none',
+                  color: viewMode === 'list' ? '#00c8ff' : '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700,
+                  fontSize: 11, letterSpacing: '1.5px', cursor: 'pointer', minHeight: 44,
+                }}
+              >
+                <List size={13} /> LIST VIEW
+              </button>
+              <button
+                onClick={() => setViewMode('map')}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6, padding: '8px 16px',
+                  background: viewMode === 'map' ? 'rgba(0,200,255,0.12)' : 'transparent', border: 'none',
+                  color: viewMode === 'map' ? '#00c8ff' : '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700,
+                  fontSize: 11, letterSpacing: '1.5px', cursor: 'pointer', minHeight: 44, borderLeft: '1px solid #1e3550',
+                }}
+              >
+                <Map size={13} /> MAP VIEW
+              </button>
+            </div>
+
+            {viewMode === 'map' && (
+              <MapView
+                buildings={buildings}
+                memberById={memberById}
+                isMobile={isMobile}
+                taskforce={taskforce}
+                weekLabel={currentWeekKey}
+                onMarkerClick={(buildingId) => setPicker({ buildingId })}
+              />
+            )}
+
+            {viewMode === 'list' && SECTIONS.map(section => {
               const list = buildings.filter(section.match).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
               return (
                 <div key={section.key} style={{ marginBottom: 24 }}>
@@ -921,6 +1033,227 @@ function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, 
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Map view ──────────────────────────────────────────────────────
+function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMarkerClick }) {
+  const [imgStatus, setImgStatus] = useState('loading'); // 'loading' | 'ok' | 'error'
+  const imgRef = useRef(null);
+  const containerRef = useRef(null);
+
+  // Match each building (with a marker) — first match wins per marker name.
+  const matched = []; // [{ marker, building }]
+  const usedMarkerNames = new Set();
+  buildings.forEach(b => {
+    const marker = matchBuildingToMarker(b);
+    if (!marker || usedMarkerNames.has(marker.name)) return;
+    usedMarkerNames.add(marker.name);
+    matched.push({ marker, building: b });
+  });
+
+  const byBuildingId = Object.fromEntries(matched.map(m => [m.building.id, m]));
+
+  // Connector lines: phase1 building -> linked phase2 building, when both are matched to markers.
+  const connectors = matched
+    .filter(m => m.building.phase === 'phase1' && m.building.links_to_id)
+    .map(m => {
+      const target = byBuildingId[m.building.links_to_id];
+      if (!target) return null;
+      return { from: m.marker, to: target.marker };
+    })
+    .filter(Boolean);
+
+  function handleDownload() {
+    const img = imgRef.current;
+    if (!img || imgStatus !== 'ok') return;
+    const canvas = document.createElement('canvas');
+    const w = img.naturalWidth || 1200;
+    const h = img.naturalHeight || 800;
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, w, h);
+
+    // Connectors first (under markers).
+    ctx.strokeStyle = 'rgba(0,200,255,0.8)';
+    ctx.lineWidth = Math.max(2, w * 0.0025);
+    connectors.forEach(c => {
+      const x1 = (c.from.x / 100) * w, y1 = (c.from.y / 100) * h;
+      const x2 = (c.to.x / 100) * w, y2 = (c.to.y / 100) * h;
+      ctx.beginPath();
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+      ctx.stroke();
+      // arrowhead
+      const angle = Math.atan2(y2 - y1, x2 - x1);
+      const headLen = Math.max(10, w * 0.012);
+      ctx.beginPath();
+      ctx.moveTo(x2, y2);
+      ctx.lineTo(x2 - headLen * Math.cos(angle - Math.PI / 6), y2 - headLen * Math.sin(angle - Math.PI / 6));
+      ctx.lineTo(x2 - headLen * Math.cos(angle + Math.PI / 6), y2 - headLen * Math.sin(angle + Math.PI / 6));
+      ctx.closePath();
+      ctx.fillStyle = 'rgba(0,200,255,0.8)';
+      ctx.fill();
+    });
+
+    // Markers + labels.
+    matched.forEach(({ marker, building }) => {
+      const cx = (marker.x / 100) * w;
+      const cy = (marker.y / 100) * h;
+      const dotR = Math.max(5, w * 0.006);
+      ctx.beginPath();
+      ctx.arc(cx, cy, dotR, 0, Math.PI * 2);
+      ctx.fillStyle = phaseDotColor(building);
+      ctx.fill();
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = '#0a1220';
+      ctx.stroke();
+
+      const names = (building.assignments ?? []).map(a => {
+        const m = memberById[a.member_id];
+        return m ? memberName(m) : null;
+      }).filter(Boolean);
+
+      const labelLines = [building.name, ...(names.length > 0 ? [names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3} more` : '')] : ['(unassigned)'])];
+
+      const fontSize = Math.max(12, Math.round(w * 0.012));
+      ctx.font = `bold ${fontSize}px Arial`;
+      const padding = 6;
+      const lineHeight = fontSize + 4;
+      const textW = Math.max(...labelLines.map(l => ctx.measureText(l).width));
+      const boxW = textW + padding * 2;
+      const boxH = lineHeight * labelLines.length + padding;
+      const boxX = cx - boxW / 2;
+      const boxY = cy + dotR + 4;
+
+      ctx.fillStyle = 'rgba(8,13,20,0.85)';
+      ctx.fillRect(boxX, boxY, boxW, boxH);
+      ctx.strokeStyle = 'rgba(122,155,184,0.6)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(boxX, boxY, boxW, boxH);
+
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      labelLines.forEach((line, i) => {
+        ctx.fillStyle = i === 0 ? '#ffffff' : '#a8c4dc';
+        ctx.fillText(line, cx, boxY + padding / 2 + i * lineHeight);
+      });
+    });
+
+    canvas.toBlob(blob => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `desert-storm-${taskforce}-${weekLabel || 'week'}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  }
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', marginBottom: 10 }}>
+        {imgStatus === 'ok' && (
+          <button onClick={handleDownload} style={{ ...S.smallBtn, background: 'rgba(0,232,122,0.1)', border: '1px solid rgba(0,232,122,0.4)', color: '#00e87a' }}>
+            <Download size={12} /> DOWNLOAD MAP
+          </button>
+        )}
+      </div>
+
+      {imgStatus === 'error' && (
+        <div style={{ border: '1px solid #1e3550', background: 'rgba(20,35,55,0.25)', padding: '48px 24px', textAlign: 'center' }}>
+          <div style={{ fontSize: 28, marginBottom: 10 }}>🗺️</div>
+          <div style={{ color: '#7a9bb8', fontSize: 13, lineHeight: 1.6 }}>
+            Upload <code style={{ color: '#f0a500' }}>public/desert-storm-map.png</code> to enable the map view.
+          </div>
+        </div>
+      )}
+
+      <div
+        ref={containerRef}
+        style={{
+          display: imgStatus === 'error' ? 'none' : 'block',
+          overflow: 'auto', maxWidth: '100%', border: '1px solid #1e3550', background: 'rgba(13,21,32,0.6)',
+        }}
+      >
+        <div style={{ position: 'relative', width: isMobile ? 900 : '100%', maxWidth: isMobile ? 'none' : 1100, margin: isMobile ? 0 : '0 auto' }}>
+          <img
+            ref={imgRef}
+            src={MAP_IMAGE_SRC}
+            alt="Desert Storm map"
+            onLoad={() => setImgStatus('ok')}
+            onError={() => setImgStatus('error')}
+            style={{ display: 'block', width: '100%', height: 'auto', objectFit: 'contain' }}
+          />
+
+          {imgStatus === 'ok' && (
+            <svg style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+              <defs>
+                <marker id="ds-arrowhead" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+                  <path d="M0,0 L8,4 L0,8 Z" fill="rgba(0,200,255,0.85)" />
+                </marker>
+              </defs>
+              {connectors.map((c, i) => (
+                <line
+                  key={i}
+                  x1={`${c.from.x}%`} y1={`${c.from.y}%`}
+                  x2={`${c.to.x}%`} y2={`${c.to.y}%`}
+                  stroke="rgba(0,200,255,0.85)" strokeWidth={2}
+                  markerEnd="url(#ds-arrowhead)"
+                />
+              ))}
+            </svg>
+          )}
+
+          {imgStatus === 'ok' && matched.map(({ marker, building }) => {
+            const names = (building.assignments ?? []).map(a => {
+              const m = memberById[a.member_id];
+              return m ? memberName(m) : null;
+            }).filter(Boolean);
+            const shownNames = names.slice(0, 3);
+            const extra = names.length - shownNames.length;
+            const onLeftHalf = marker.x < 50;
+            const dotColor = phaseDotColor(building);
+
+            return (
+              <button
+                key={building.id}
+                onClick={() => onMarkerClick(building.id)}
+                title={`${building.name} — tap to assign players`}
+                style={{
+                  position: 'absolute', left: `${marker.x}%`, top: `${marker.y}%`, transform: 'translate(-50%, -50%)',
+                  display: 'flex', flexDirection: 'column', alignItems: onLeftHalf ? 'flex-start' : 'flex-end',
+                  background: 'transparent', border: 'none', cursor: 'pointer', padding: 0,
+                  minWidth: 44, minHeight: 44, justifyContent: 'center', zIndex: 2,
+                }}
+              >
+                <span style={{
+                  width: 14, height: 14, borderRadius: '50%', background: dotColor,
+                  border: '2px solid #0a1220', boxShadow: `0 0 6px ${dotColor}`, flexShrink: 0,
+                }} />
+                <div style={{
+                  marginTop: 4, background: 'rgba(8,13,20,0.88)', border: '1px solid rgba(122,155,184,0.4)',
+                  padding: '4px 7px', maxWidth: 130, textAlign: onLeftHalf ? 'left' : 'right',
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#ffffff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {building.name}
+                  </div>
+                  {shownNames.length > 0 ? (
+                    <div style={{ fontSize: 9, color: '#a8c4dc', lineHeight: 1.4 }}>
+                      {shownNames.join(', ')}{extra > 0 ? ` +${extra} more` : ''}
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 9, color: '#5a7898', fontStyle: 'italic' }}>unassigned</div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
