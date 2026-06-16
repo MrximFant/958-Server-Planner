@@ -114,11 +114,9 @@ const TASKFORCES = ['A', 'B'];
 
 const ROLE_META = {
   coordinator: { label: 'Role: Coordinator', icon: '👑', color: '#ffd700' },
-  lethal:      { label: 'Role: Lethal Killer', icon: '🔥', color: '#ff4060' },
-  science:     { label: 'Role: Science',      icon: '✅', color: '#00e87a' },
-  info:        { label: 'Role: Info',         icon: 'ℹ️', color: '#00c8ff' },
+  lethal:      { label: 'Role: Moves to next building', icon: '🔥', color: '#ff4060' },
 };
-const ROLE_CYCLE = [null, 'coordinator', 'lethal', 'science', 'info'];
+const ROLE_CYCLE = [null, 'coordinator', 'lethal'];
 
 const CATEGORY_META = {
   oil_refinery:      { icon: '🛢️', label: 'Oil Refinery' },
@@ -150,17 +148,6 @@ const DEFAULT_BUILDINGS = [
   { name: 'Substitutes',         category: 'substitutes',       phase: null },
 ];
 
-// Sensible default phase1 -> phase2 transitions matching the real-world building pairing.
-// Resolved by name after the buildings list is built (see seedBuildings()).
-const DEFAULT_LINKS = [
-  { from: 'Field Hospital 1', to: 'Mercenary Factory' },
-  { from: 'Field Hospital 3', to: 'Mercenary Factory' },
-  { from: 'Field Hospital 2', to: 'Arsenal' },
-  { from: 'Field Hospital 4', to: 'Arsenal' },
-  { from: 'Oil Refinery 1',   to: 'Nuclear Silo' },
-  { from: 'Oil Refinery 2',   to: 'Nuclear Silo' },
-];
-
 const SECTIONS = [
   { key: 'phase1',     title: 'PHASE 1 — FIRST 10 MIN',   match: b => b.phase === 'phase1',                         newDefaults: { category: 'custom', phase: 'phase1' } },
   { key: 'phase2',     title: 'PHASE 2 — AFTER MINUTE 10', match: b => b.phase === 'phase2',                         newDefaults: { category: 'custom', phase: 'phase2' } },
@@ -175,6 +162,27 @@ function memberName(m) {
 
 function categoryMeta(cat) {
   return CATEGORY_META[cat] || CATEGORY_META.custom;
+}
+
+// Players assigned to a phase1 building with role === 'lethal' (🔥) whose building links_to
+// the given phase2 building are displayed as "present" there too (map/export only — no new
+// battle_plan_assignments row is created). Returns deduped member ids, with their source
+// building attached for export-text disambiguation.
+function getIncomingFireMembers(phase2BuildingId, buildings) {
+  const seen = new Set();
+  const result = [];
+  buildings
+    .filter(b => b.phase === 'phase1' && b.links_to_id === phase2BuildingId)
+    .forEach(sourceBuilding => {
+      (sourceBuilding.assignments ?? [])
+        .filter(a => a.role === 'lethal')
+        .forEach(a => {
+          if (seen.has(a.member_id)) return;
+          seen.add(a.member_id);
+          result.push({ member_id: a.member_id, sourceBuilding });
+        });
+    });
+  return result;
 }
 
 function getMondayDate(d = new Date()) {
@@ -230,7 +238,7 @@ function emptyBuilding(defaults) {
 }
 
 function seedBuildings() {
-  const list = DEFAULT_BUILDINGS.map((b, i) => ({
+  return DEFAULT_BUILDINGS.map((b, i) => ({
     id: localId(),
     name: b.name,
     category: b.category,
@@ -239,14 +247,6 @@ function seedBuildings() {
     sort_order: i,
     assignments: [],
   }));
-  // Second pass: resolve default links_to_id by name.
-  const idByName = Object.fromEntries(list.map(b => [b.name, b.id]));
-  DEFAULT_LINKS.forEach(({ from, to }) => {
-    const fromB = list.find(b => b.name === from);
-    const targetId = idByName[to];
-    if (fromB && targetId) fromB.links_to_id = targetId;
-  });
-  return list;
 }
 
 // ── Main component ─────────────────────────────────────────────────
@@ -671,6 +671,14 @@ export default function BattlePlanner() {
         const troop = m.troop1 ? `, ${m.troop1}` : '';
         lines.push(`  ${icon}${memberName(m)} (${power}${troop})`);
       });
+      if (b.phase === 'phase2') {
+        const incoming = getIncomingFireMembers(b.id, buildings);
+        incoming.forEach(({ member_id, sourceBuilding }) => {
+          const m = memberById[member_id];
+          if (!m) return;
+          lines.push(`  🔥 ${memberName(m)} (incoming from ${sourceBuilding.name})`);
+        });
+      }
     }
 
     SECTIONS.forEach(section => {
@@ -1147,7 +1155,7 @@ function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, 
 // the map image already prints it), each prefixed with a role icon when applicable.
 // 👑 for coordinator assignments, 🔥 for any member assigned to a kill_squad building,
 // otherwise fall back to the existing ROLE_META icon for consistency.
-function markerNameLines(building, memberById) {
+function markerNameLines(building, memberById, allBuildings) {
   const isKillSquad = building.category === 'kill_squad';
   const names = (building.assignments ?? []).map(a => {
     const m = memberById[a.member_id];
@@ -1158,6 +1166,15 @@ function markerNameLines(building, memberById) {
     else if (a.role && ROLE_META[a.role]) icon = ROLE_META[a.role].icon + ' ';
     return `${icon}${memberName(m)}`;
   }).filter(Boolean);
+
+  if (building.phase === 'phase2' && allBuildings) {
+    getIncomingFireMembers(building.id, allBuildings).forEach(({ member_id }) => {
+      const m = memberById[member_id];
+      if (!m) return;
+      names.push(`🔥 ${memberName(m)}`);
+    });
+  }
+
   return names;
 }
 
@@ -1248,7 +1265,7 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
       ctx.strokeStyle = '#0a1220';
       ctx.stroke();
 
-      const names = markerNameLines(building, memberById);
+      const names = markerNameLines(building, memberById, buildings);
 
       const labelLines = names.length > 0 ? [names.slice(0, 3).join(', ') + (names.length > 3 ? ` +${names.length - 3} more` : '')] : ['(unassigned)'];
 
@@ -1348,7 +1365,7 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, onMark
           )}
 
           {imgStatus === 'ok' && matched.map(({ marker, building }) => {
-            const names = markerNameLines(building, memberById);
+            const names = markerNameLines(building, memberById, buildings);
             const shownNames = names.slice(0, 3);
             const extra = names.length - shownNames.length;
             const onLeftHalf = marker.x < 50;
