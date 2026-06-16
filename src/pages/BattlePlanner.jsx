@@ -11,17 +11,17 @@ const MAP_IMAGE_SRC = '/desert-storm-map.png';
 
 // Fixed marker layout for the (shared, non-customizable) Desert Storm battlefield, as % of image width/height.
 const MAP_MARKERS = [
-  { name: 'Info Center',        x: 29, y: 14 },
-  { name: 'Field Hospital IV',  x: 74, y: 15 },
-  { name: 'Arsenal',            x: 50, y: 25 },
-  { name: 'Oil Refinery I',     x: 13, y: 35 },
-  { name: 'Field Hospital II',  x: 88, y: 39 },
-  { name: 'Nuclear Silo',       x: 50, y: 50 },
-  { name: 'Field Hospital I',   x: 13, y: 59 },
-  { name: 'Oil Refinery II',    x: 88, y: 63 },
-  { name: 'Mercenary Factory',  x: 50, y: 75 },
-  { name: 'Field Hospital III', x: 30, y: 86 },
-  { name: 'Science Hub',        x: 71, y: 86 },
+  { name: 'Info Center',        x: 35.5, y: 20.7 },
+  { name: 'Field Hospital IV',  x: 68.8, y: 20.7 },
+  { name: 'Arsenal',            x: 51.5, y: 20.7 },
+  { name: 'Oil Refinery I',     x: 22.5, y: 34.3 },
+  { name: 'Field Hospital II',  x: 81.1, y: 34.3 },
+  { name: 'Nuclear Silo',       x: 51.5, y: 47.1 },
+  { name: 'Field Hospital I',   x: 22.1, y: 60.4 },
+  { name: 'Oil Refinery II',    x: 81.1, y: 60.4 },
+  { name: 'Mercenary Factory',  x: 51.4, y: 72.1 },
+  { name: 'Field Hospital III', x: 30.4, y: 74.6 },
+  { name: 'Science Hub',        x: 71.2, y: 74.6 },
 ];
 
 // Map a category to the trailing roman-numeral/number sequence used to disambiguate
