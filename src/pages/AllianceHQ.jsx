@@ -1609,6 +1609,16 @@ export default function AllianceHQ() {
               <span className="snav-label">TRAIN PLANNER</span>
             </button>
           )}
+          {(canManage) && (
+            <button
+              className="ahq-sidebar-nav-item"
+              onClick={() => { navigate(`/server/${serverId}/battle`); setMobileOpen(false); }}
+              title={sidebarCollapsed ? 'BATTLE PLANNER' : undefined}
+            >
+              <span className="snav-icon">⚔</span>
+              <span className="snav-label">BATTLE PLANNER</span>
+            </button>
+          )}
           {(isAdmin || role === 'helper') && (
             <button
               className="ahq-sidebar-nav-item"
@@ -1650,6 +1660,16 @@ export default function AllianceHQ() {
                   />
                 )}
                 <TrainWeekSummary allianceId={effectiveAllianceId} serverId={serverId} navigate={navigate} canManage={canManage} />
+                {canManage && (
+                  <div className="ahq-panel">
+                    <div className="ahq-panel-header" style={{ borderColor: 'rgba(240,165,0,0.3)', color: '#f0a500' }}>
+                      <span>⚔ BATTLE PLANNER — Canyon Storm &amp; Desert Storm</span>
+                      <button className="btn-secondary-sm" onClick={() => navigate(`/server/${serverId}/battle`)}>
+                        OPEN →
+                      </button>
+                    </div>
+                  </div>
+                )}
                 {showRoster ? (
                   <RosterView
                     members={members}

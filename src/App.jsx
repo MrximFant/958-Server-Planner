@@ -10,6 +10,7 @@ import Rules           from './pages/Rules';
 import SuperAdmin      from './pages/SuperAdmin';
 import Register        from './pages/Register';
 import TrainPlanner   from './pages/TrainPlanner';
+import BattlePlanner  from './pages/BattlePlanner';
 import PublicRoster   from './pages/PublicRoster';
 
 function App() {
@@ -26,6 +27,7 @@ function App() {
           <Route path="/server/:serverId/alliance"  element={<AllianceHQ />} />
           <Route path="/server/:serverId/rules"      element={<Rules />} />
           <Route path="/server/:serverId/train"      element={<TrainPlanner />} />
+          <Route path="/server/:serverId/battle"     element={<BattlePlanner />} />
           <Route path="/server/:serverId/register/:allianceId" element={<Register />} />
           <Route path="/server/:serverId/alliance/:allianceId/public" element={<PublicRoster />} />
           <Route path="/map"      element={<Navigate to="/" replace />} />
