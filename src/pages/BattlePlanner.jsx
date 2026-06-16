@@ -231,7 +231,7 @@ function emptyBuilding(defaults) {
     phase: defaults.phase,
     links_to_id: null,
     sort_order: 0,
-    team_label: '',
+    combine_group: null,
     assignments: [], // [{ member_id, role }]
   };
 }
@@ -244,16 +244,16 @@ function seedBuildings() {
     phase: b.phase,
     links_to_id: null,
     sort_order: i,
-    team_label: '',
+    combine_group: null,
     assignments: [],
   }));
 }
 
-// Find other buildings sharing the same (case-insensitive, trimmed) team_label.
-function teammateBuildings(building, allBuildings) {
-  const label = (building.team_label || '').trim().toLowerCase();
-  if (!label) return [];
-  return allBuildings.filter(b => b.id !== building.id && (b.team_label || '').trim().toLowerCase() === label);
+// Find other buildings sharing the same non-null combine_group.
+function groupmateBuildings(building, allBuildings) {
+  const group = building.combine_group || null;
+  if (!group) return [];
+  return allBuildings.filter(b => b.id !== building.id && b.combine_group === group);
 }
 
 // ── Main component ─────────────────────────────────────────────────
@@ -285,7 +285,6 @@ export default function BattlePlanner() {
   const [currentWeekKey, setCurrentWeekKey] = useState('');
   const [planId, setPlanId] = useState(null);
   const [rulesText, setRulesText] = useState('');
-  const [planName, setPlanName] = useState('');
   const [buildings, setBuildings] = useState([]); // [{id, name, category, phase, links_to_id, sort_order, assignments:[{member_id,role}]}]
 
   const [pendingNav, setPendingNav] = useState(null);
@@ -300,6 +299,9 @@ export default function BattlePlanner() {
   const [allNoshows, setAllNoshows] = useState([]); // all battle_plan_noshows rows for this alliance
   const [noshowModalOpen, setNoshowModalOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
+
+  // Auto-derived plan title (replaces the old manual "Plan Name" field).
+  const planTitle = `${alliance?.name || 'Alliance'} — Taskforce ${taskforce}`;
 
   useEffect(() => {
     function onResize() { setIsMobile(window.innerWidth < 768); }
@@ -374,7 +376,6 @@ export default function BattlePlanner() {
       setPlanId(null);
       setCurrentWeekKey(todayMonday);
       setRulesText('');
-      setPlanName('');
       setBuildings(evt === 'desert' ? seedBuildings() : []);
       setIsDirty(false);
     }
@@ -384,7 +385,6 @@ export default function BattlePlanner() {
     setPlanId(plan.id);
     setCurrentWeekKey(plan.week_label ?? '');
     setRulesText(plan.rules_text ?? '');
-    setPlanName(plan.name ?? '');
     const rows = buildingRows ?? [];
     setBuildings(rows.length > 0 ? rows.map(b => ({ ...b })) : (evt === 'desert' || plan.event_type === 'desert' ? seedBuildings() : []));
     setIsDirty(false);
@@ -413,7 +413,7 @@ export default function BattlePlanner() {
     if (!pid) {
       const { data, error } = await supabase
         .from('battle_plans')
-        .insert({ alliance_id: myAllianceId, event_type: eventType, taskforce, week_label: wLabel, rules_text: rulesText, name: planName })
+        .insert({ alliance_id: myAllianceId, event_type: eventType, taskforce, week_label: wLabel, rules_text: rulesText })
         .select('*').single();
       if (error) { setSaving(false); return; }
       pid = data?.id;
@@ -424,9 +424,9 @@ export default function BattlePlanner() {
     } else {
       const { data } = await supabase
         .from('battle_plans')
-        .update({ rules_text: rulesText, week_label: wLabel, name: planName })
+        .update({ rules_text: rulesText, week_label: wLabel })
         .eq('id', pid).select('*').single();
-      setAllPlans(prev => prev.map(p => p.id === pid ? (data ?? { ...p, rules_text: rulesText, week_label: wLabel, name: planName }) : p));
+      setAllPlans(prev => prev.map(p => p.id === pid ? (data ?? { ...p, rules_text: rulesText, week_label: wLabel }) : p));
     }
 
     if (!pid) { setSaving(false); return; }
@@ -444,7 +444,7 @@ export default function BattlePlanner() {
       phase: b.phase,
       links_to_id: null,
       sort_order: b.sort_order ?? i,
-      team_label: b.team_label || '',
+      combine_group: b.combine_group || null,
     }));
     const { data: insertedBuildings } = await supabase.from('battle_plan_buildings').insert(buildingInserts).select('*');
 
@@ -484,7 +484,7 @@ export default function BattlePlanner() {
     setSaved(true);
     setIsDirty(false);
     setTimeout(() => setSaved(false), 2500);
-  }, [myAllianceId, planId, currentWeekKey, eventType, taskforce, rulesText, planName, buildings]);
+  }, [myAllianceId, planId, currentWeekKey, eventType, taskforce, rulesText, buildings]);
 
   // ── No-show tracking ────────────────────────────────────────────────
   // Saves a diff against existing battle_plan_noshows rows for the exact
@@ -588,7 +588,6 @@ export default function BattlePlanner() {
       setPlanId(null);
       setCurrentWeekKey(toDateString(getMondayDate()));
       setRulesText('');
-      setPlanName('');
       setBuildings(eventType === 'desert' ? seedBuildings() : []);
       setIsDirty(false);
     }
@@ -628,9 +627,9 @@ export default function BattlePlanner() {
     if (!canManage) return;
     setBuildings(prev => {
       const source = prev.find(b => b.id === buildingId);
-      const teammateIds = new Set(teammateBuildings(source ?? { id: buildingId, team_label: '' }, prev).map(b => b.id));
+      const groupmateIds = new Set(groupmateBuildings(source ?? { id: buildingId, combine_group: null }, prev).map(b => b.id));
       return prev.map(b => {
-        if (b.id !== buildingId && !teammateIds.has(b.id)) return b;
+        if (b.id !== buildingId && !groupmateIds.has(b.id)) return b;
         if ((b.assignments ?? []).some(a => a.member_id === memberId)) return b;
         return { ...b, assignments: [...(b.assignments ?? []), { member_id: memberId, role: null }] };
       });
@@ -643,9 +642,9 @@ export default function BattlePlanner() {
     if (!canManage) return;
     setBuildings(prev => {
       const source = prev.find(b => b.id === buildingId);
-      const teammateIds = new Set(teammateBuildings(source ?? { id: buildingId, team_label: '' }, prev).map(b => b.id));
+      const groupmateIds = new Set(groupmateBuildings(source ?? { id: buildingId, combine_group: null }, prev).map(b => b.id));
       return prev.map(b => {
-        if (b.id !== buildingId && !teammateIds.has(b.id)) return b;
+        if (b.id !== buildingId && !groupmateIds.has(b.id)) return b;
         return { ...b, assignments: (b.assignments ?? []).filter(a => a.member_id !== memberId) };
       });
     });
@@ -655,9 +654,9 @@ export default function BattlePlanner() {
     if (!canManage) return;
     setBuildings(prev => {
       const source = prev.find(b => b.id === buildingId);
-      const teammateIds = new Set(teammateBuildings(source ?? { id: buildingId, team_label: '' }, prev).map(b => b.id));
+      const groupmateIds = new Set(groupmateBuildings(source ?? { id: buildingId, combine_group: null }, prev).map(b => b.id));
       return prev.map(b => {
-        if (b.id !== buildingId && !teammateIds.has(b.id)) return b;
+        if (b.id !== buildingId && !groupmateIds.has(b.id)) return b;
         return {
           ...b,
           assignments: (b.assignments ?? []).map(a => {
@@ -671,14 +670,16 @@ export default function BattlePlanner() {
     });
     markDirty();
   }
-  function setTeamLabel(buildingId, label) {
+  // Set (or clear) a building's combine_group. Pass a fresh group id to start a new merge,
+  // or null to un-combine. Does not touch assignments.
+  function setCombineGroup(buildingId, groupId) {
     if (!canManage) return;
-    setBuildings(prev => prev.map(b => b.id === buildingId ? { ...b, team_label: label } : b));
+    setBuildings(prev => prev.map(b => b.id === buildingId ? { ...b, combine_group: groupId } : b));
     markDirty();
   }
   function clearAllAssignments() {
     if (!canManage) return;
-    if (!confirm('Clear ALL player assignments for every building this week? Buildings, links, and team labels are kept. You still need to hit SAVE to persist this.')) return;
+    if (!confirm('Clear ALL player assignments for every building this week? Buildings, links, and combine groups are kept. You still need to hit SAVE to persist this.')) return;
     setBuildings(prev => prev.map(b => ({ ...b, assignments: [] })));
     markDirty();
   }
@@ -690,7 +691,7 @@ export default function BattlePlanner() {
     const weekRange = currentWeekKey ? formatWeekRange(currentWeekKey) : 'Unknown Week';
     const lines = [
       `${evtMeta?.icon ?? ''} ${evtMeta?.label ?? eventType.toUpperCase()} — TASKFORCE ${taskforce} — ${allianceName}`,
-      ...(planName.trim() ? [`PLAN: ${planName.trim()}`] : []),
+      planTitle,
       `Week of ${weekRange}`,
       '',
     ];
@@ -927,21 +928,6 @@ export default function BattlePlanner() {
           </div>
         ) : (
           <>
-            {/* Plan name */}
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '1.5px', color: '#7a9bb8', marginBottom: 6 }}>PLAN NAME</div>
-              {canManage ? (
-                <input
-                  value={planName}
-                  onChange={e => { setPlanName(e.target.value); markDirty(); }}
-                  placeholder="e.g. Taskforce A — Main Squad"
-                  style={{ width: '100%', maxWidth: 420, background: '#0a1220', border: '1px solid #1e3550', color: '#d0e4f4', padding: '8px 10px', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 13, outline: 'none', boxSizing: 'border-box', minHeight: 40 }}
-                />
-              ) : (
-                <div style={{ fontSize: 14, fontWeight: 700, color: '#f0a500' }}>{planName.trim() || '(no name set)'}</div>
-              )}
-            </div>
-
             {/* List / Map view toggle */}
             <div style={{ display: 'flex', gap: 0, marginBottom: 20, border: '1px solid #1e3550', width: 'fit-content' }}>
               <button
@@ -975,7 +961,7 @@ export default function BattlePlanner() {
                 isMobile={isMobile}
                 taskforce={taskforce}
                 weekLabel={currentWeekKey}
-                planName={planName}
+                planTitle={planTitle}
                 onExportText={handleExport}
                 onMarkerClick={(buildingId) => setPicker({ buildingId })}
                 onRemovePlayer={canManage ? removeMember : null}
@@ -984,6 +970,24 @@ export default function BattlePlanner() {
 
             {viewMode === 'list' && SECTIONS.map(section => {
               const list = buildings.filter(section.match).sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+
+              // Group by effective key = combine_group || id. Groups with 2+ members render as
+              // a single combined card; everything else renders as a normal single-building entry.
+              const groupKey = b => b.combine_group || b.id;
+              const groupsInOrder = [];
+              const groupsByKey = {};
+              list.forEach(b => {
+                const key = groupKey(b);
+                if (!groupsByKey[key]) {
+                  groupsByKey[key] = [];
+                  groupsInOrder.push(key);
+                }
+                groupsByKey[key].push(b);
+              });
+              const renderUnits = groupsInOrder.map(key => groupsByKey[key]); // each unit: [building, ...]
+
+              const ungroupedInSection = list.filter(b => !b.combine_group);
+
               return (
                 <div key={section.key} style={{ marginBottom: 24 }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
@@ -1001,43 +1005,98 @@ export default function BattlePlanner() {
 
                   {isMobile ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {list.map(b => (
-                        <BuildingAccordion
-                          key={b.id}
-                          building={b}
-                          isOpen={!!openAccordion[b.id]}
-                          onToggle={() => setOpenAccordion(prev => ({ ...prev, [b.id]: !prev[b.id] }))}
+                      {renderUnits.map(unit => unit.length > 1 ? (
+                        <CombinedBuildingAccordion
+                          key={groupKey(unit[0])}
+                          members={unit}
+                          isOpen={!!openAccordion[groupKey(unit[0])]}
+                          onToggle={() => setOpenAccordion(prev => ({ ...prev, [groupKey(unit[0])]: !prev[groupKey(unit[0])] }))}
                           memberById={memberById}
                           canManage={canManage}
                           phase2Options={phase2Buildings}
-                          linkTarget={b.links_to_id ? buildings.find(x => x.id === b.links_to_id) : null}
-                          onRename={n => renameBuilding(b.id, n)}
-                          onDelete={() => deleteBuilding(b.id)}
-                          onSetLinksTo={tid => setLinksTo(b.id, tid)}
-                          onSetTeamLabel={label => setTeamLabel(b.id, label)}
-                          onAddPlayer={() => setPicker({ buildingId: b.id })}
-                          onRemovePlayer={mid => removeMember(mid, b.id)}
-                          onCycleRole={mid => cycleRole(mid, b.id)}
+                          allBuildings={buildings}
+                          ungroupedInSection={ungroupedInSection}
+                          onRenameMember={(bid, n) => renameBuilding(bid, n)}
+                          onSetLinksTo={tid => setLinksTo(unit[0].id, tid)}
+                          onUncombine={bid => setCombineGroup(bid, null)}
+                          onCombineWith={otherId => {
+                            const gid = unit[0].combine_group || `combine_${localId()}`;
+                            if (!unit[0].combine_group) unit.forEach(m => setCombineGroup(m.id, gid));
+                            setCombineGroup(otherId, gid);
+                          }}
+                          onAddPlayer={() => setPicker({ buildingId: unit[0].id })}
+                          onRemovePlayer={mid => removeMember(mid, unit[0].id)}
+                          onCycleRole={mid => cycleRole(mid, unit[0].id)}
+                        />
+                      ) : (
+                        <BuildingAccordion
+                          key={unit[0].id}
+                          building={unit[0]}
+                          isOpen={!!openAccordion[unit[0].id]}
+                          onToggle={() => setOpenAccordion(prev => ({ ...prev, [unit[0].id]: !prev[unit[0].id] }))}
+                          memberById={memberById}
+                          canManage={canManage}
+                          phase2Options={phase2Buildings}
+                          allBuildings={buildings}
+                          ungroupedInSection={ungroupedInSection}
+                          linkTarget={unit[0].links_to_id ? buildings.find(x => x.id === unit[0].links_to_id) : null}
+                          onRename={n => renameBuilding(unit[0].id, n)}
+                          onDelete={() => deleteBuilding(unit[0].id)}
+                          onSetLinksTo={tid => setLinksTo(unit[0].id, tid)}
+                          onCombineWith={otherId => {
+                            const gid = `combine_${localId()}`;
+                            setCombineGroup(unit[0].id, gid);
+                            setCombineGroup(otherId, gid);
+                          }}
+                          onAddPlayer={() => setPicker({ buildingId: unit[0].id })}
+                          onRemovePlayer={mid => removeMember(mid, unit[0].id)}
+                          onCycleRole={mid => cycleRole(mid, unit[0].id)}
                         />
                       ))}
                     </div>
                   ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(list.length, 4) || 1}, 1fr)`, gap: 14 }}>
-                      {list.map(b => (
-                        <BuildingCard
-                          key={b.id}
-                          building={b}
+                    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.min(renderUnits.length, 4) || 1}, 1fr)`, gap: 14 }}>
+                      {renderUnits.map(unit => unit.length > 1 ? (
+                        <CombinedBuildingCard
+                          key={groupKey(unit[0])}
+                          members={unit}
                           memberById={memberById}
                           canManage={canManage}
                           phase2Options={phase2Buildings}
-                          linkTarget={b.links_to_id ? buildings.find(x => x.id === b.links_to_id) : null}
-                          onRename={n => renameBuilding(b.id, n)}
-                          onDelete={() => deleteBuilding(b.id)}
-                          onSetLinksTo={tid => setLinksTo(b.id, tid)}
-                          onSetTeamLabel={label => setTeamLabel(b.id, label)}
-                          onAddPlayer={() => setPicker({ buildingId: b.id })}
-                          onRemovePlayer={mid => removeMember(mid, b.id)}
-                          onCycleRole={mid => cycleRole(mid, b.id)}
+                          allBuildings={buildings}
+                          ungroupedInSection={ungroupedInSection}
+                          onRenameMember={(bid, n) => renameBuilding(bid, n)}
+                          onSetLinksTo={tid => setLinksTo(unit[0].id, tid)}
+                          onUncombine={bid => setCombineGroup(bid, null)}
+                          onCombineWith={otherId => {
+                            const gid = unit[0].combine_group || `combine_${localId()}`;
+                            if (!unit[0].combine_group) unit.forEach(m => setCombineGroup(m.id, gid));
+                            setCombineGroup(otherId, gid);
+                          }}
+                          onAddPlayer={() => setPicker({ buildingId: unit[0].id })}
+                          onRemovePlayer={mid => removeMember(mid, unit[0].id)}
+                          onCycleRole={mid => cycleRole(mid, unit[0].id)}
+                        />
+                      ) : (
+                        <BuildingCard
+                          key={unit[0].id}
+                          building={unit[0]}
+                          memberById={memberById}
+                          canManage={canManage}
+                          phase2Options={phase2Buildings}
+                          linkTarget={unit[0].links_to_id ? buildings.find(x => x.id === unit[0].links_to_id) : null}
+                          ungroupedInSection={ungroupedInSection}
+                          onRename={n => renameBuilding(unit[0].id, n)}
+                          onDelete={() => deleteBuilding(unit[0].id)}
+                          onSetLinksTo={tid => setLinksTo(unit[0].id, tid)}
+                          onCombineWith={otherId => {
+                            const gid = `combine_${localId()}`;
+                            setCombineGroup(unit[0].id, gid);
+                            setCombineGroup(otherId, gid);
+                          }}
+                          onAddPlayer={() => setPicker({ buildingId: unit[0].id })}
+                          onRemovePlayer={mid => removeMember(mid, unit[0].id)}
+                          onCycleRole={mid => cycleRole(mid, unit[0].id)}
                         />
                       ))}
                     </div>
@@ -1139,31 +1198,57 @@ function LinksToControl({ building, phase2Options, linkTarget, canManage, onSetL
   );
 }
 
-// ── Team label control (shared roster grouping) ────────────────────
-function TeamLabelControl({ building, canManage, onSetTeamLabel }) {
-  if (!canManage) {
-    if (!building.team_label || !building.team_label.trim()) return null;
-    return (
-      <div style={{ display: 'inline-block', marginTop: 6, fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: '#00c8ff', background: 'rgba(0,200,255,0.1)', border: '1px solid rgba(0,200,255,0.3)', padding: '2px 7px' }}>
-        {building.team_label.trim()}
-      </div>
-    );
-  }
+// ── "+ combine with" dropdown — lets an admin merge this building with another
+// ungrouped building in the same section into one combined card. ─────────────
+function CombineWithControl({ building, ungroupedInSection, onCombineWith }) {
+  const options = (ungroupedInSection ?? []).filter(b => b.id !== building.id);
+  if (options.length === 0) return null;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6 }}>
-      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.5px', color: '#7a9bb8' }}>TEAM:</span>
-      <input
-        value={building.team_label || ''}
-        onChange={e => onSetTeamLabel(e.target.value)}
-        placeholder="e.g. Team 1"
-        style={{ flex: 1, background: '#0a1220', border: '1px solid #1e3550', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, padding: '4px 6px', outline: 'none', minHeight: 26 }}
-      />
+    <div style={{ marginTop: 6 }}>
+      <select
+        value=""
+        onChange={e => { if (e.target.value) onCombineWith(e.target.value); }}
+        style={{ width: '100%', background: '#0a1220', border: '1px solid #1e3550', color: '#7a9bb8', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, padding: '6px 6px', outline: 'none', minHeight: 32 }}
+      >
+        <option value="">+ COMBINE WITH…</option>
+        {options.map(opt => (
+          <option key={opt.id} value={opt.id}>{opt.name}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+// ── Removable name chip — used inside a combined card to show/rename/remove one member building ──
+function MemberChip({ building, canManage, onRename, onRemove }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, background: 'rgba(0,200,255,0.08)', border: '1px solid rgba(0,200,255,0.25)', padding: '3px 6px' }}>
+      {editing && canManage ? (
+        <input
+          autoFocus
+          value={building.name}
+          onChange={e => onRename(e.target.value)}
+          onBlur={() => setEditing(false)}
+          style={{ background: '#0a1220', border: '1px solid #1e3550', color: '#00c8ff', fontFamily: "'Rajdhani',sans-serif", fontWeight: 700, fontSize: 10, padding: '2px 4px', outline: 'none', width: 90 }}
+        />
+      ) : (
+        <span
+          onClick={() => canManage && setEditing(true)}
+          style={{ fontSize: 10, fontWeight: 700, color: '#00c8ff', cursor: canManage ? 'text' : 'default' }}
+        >
+          {building.name}
+        </span>
+      )}
+      {canManage && (
+        <button onClick={onRemove} title="Remove from combined card" style={{ background: 'none', border: 'none', color: '#ff4060', cursor: 'pointer', fontSize: 11, lineHeight: 1, padding: 0, minWidth: 16, minHeight: 16 }}>✕</button>
+      )}
     </div>
   );
 }
 
 // ── Building card (desktop/tablet) ──────────────────────────────────
-function BuildingCard({ building, memberById, canManage, phase2Options, linkTarget, onRename, onDelete, onSetLinksTo, onSetTeamLabel, onAddPlayer, onRemovePlayer, onCycleRole }) {
+function BuildingCard({ building, memberById, canManage, phase2Options, linkTarget, ungroupedInSection, onRename, onDelete, onSetLinksTo, onCombineWith, onAddPlayer, onRemovePlayer, onCycleRole }) {
   const meta = categoryMeta(building.category);
   return (
     <div style={{ border: '1px solid #1e3550', background: 'rgba(13,21,32,0.6)', display: 'flex', flexDirection: 'column' }}>
@@ -1176,7 +1261,7 @@ function BuildingCard({ building, memberById, canManage, phase2Options, linkTarg
           )}
         </div>
         <LinksToControl building={building} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
-        <TeamLabelControl building={building} canManage={canManage} onSetTeamLabel={onSetTeamLabel} />
+        {canManage && <CombineWithControl building={building} ungroupedInSection={ungroupedInSection} onCombineWith={onCombineWith} />}
       </div>
       <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
         {(building.assignments ?? []).map(a => {
@@ -1198,7 +1283,7 @@ function BuildingCard({ building, memberById, canManage, phase2Options, linkTarg
 }
 
 // ── Building accordion (mobile) ──────────────────────────────────────
-function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, phase2Options, linkTarget, onRename, onDelete, onSetLinksTo, onSetTeamLabel, onAddPlayer, onRemovePlayer, onCycleRole }) {
+function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, phase2Options, linkTarget, ungroupedInSection, onRename, onDelete, onSetLinksTo, onCombineWith, onAddPlayer, onRemovePlayer, onCycleRole }) {
   const meta = categoryMeta(building.category);
   const count = (building.assignments ?? []).length;
   return (
@@ -1222,13 +1307,122 @@ function BuildingAccordion({ building, isOpen, onToggle, memberById, canManage, 
             </div>
           )}
           <LinksToControl building={building} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
-          <TeamLabelControl building={building} canManage={canManage} onSetTeamLabel={onSetTeamLabel} />
+          {canManage && <CombineWithControl building={building} ungroupedInSection={ungroupedInSection} onCombineWith={onCombineWith} />}
           {(building.assignments ?? []).map(a => {
             const m = memberById[a.member_id];
             if (!m) return null;
             return <PlayerRow key={a.member_id} member={m} role={a.role} canManage={canManage} onRemove={() => onRemovePlayer(a.member_id)} onCycleRole={() => onCycleRole(a.member_id)} />;
           })}
           {(building.assignments ?? []).length === 0 && (
+            <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic' }}>No players assigned.</div>
+          )}
+          {canManage && (
+            <button onClick={onAddPlayer} style={S.addPlayerBtn}>
+              <Plus size={13} /> ADD PLAYER
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Combined card shared body: header (name, chips, combine-with, links control for
+// the primary building) + roster (union of all members' assignments) + add player. ──
+function combinedDisplayName(members) {
+  const sorted = [...members].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  return sorted.map(m => m.name).join(' & ');
+}
+function combinedIcon(members) {
+  const sorted = [...members].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  return categoryMeta(sorted[0].category).icon;
+}
+function unionAssignments(members) {
+  const seen = new Set();
+  const result = [];
+  members.forEach(b => (b.assignments ?? []).forEach(a => {
+    if (seen.has(a.member_id)) return;
+    seen.add(a.member_id);
+    result.push(a);
+  }));
+  return result;
+}
+
+// ── Combined building card (desktop/tablet) ─────────────────────────
+function CombinedBuildingCard({ members, memberById, canManage, phase2Options, allBuildings, ungroupedInSection, onRenameMember, onSetLinksTo, onUncombine, onCombineWith, onAddPlayer, onRemovePlayer, onCycleRole }) {
+  const sorted = [...members].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const primary = sorted[0];
+  const linkTarget = primary.links_to_id ? allBuildings.find(x => x.id === primary.links_to_id) : null;
+  const assignments = unionAssignments(members);
+  return (
+    <div style={{ border: '1px solid #1e3550', background: 'rgba(13,21,32,0.6)', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ padding: '10px 12px', borderBottom: '1px solid #1e3550' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 14, flexShrink: 0 }}>{combinedIcon(members)}</span>
+          <span style={{ flex: 1, fontSize: 12, fontWeight: 700, color: '#d0e4f4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {combinedDisplayName(members)}
+          </span>
+        </div>
+        {canManage && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+            {sorted.map(b => (
+              <MemberChip key={b.id} building={b} canManage={canManage} onRename={n => onRenameMember(b.id, n)} onRemove={() => onUncombine(b.id)} />
+            ))}
+          </div>
+        )}
+        <LinksToControl building={primary} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
+        {canManage && <CombineWithControl building={primary} ungroupedInSection={ungroupedInSection} onCombineWith={onCombineWith} />}
+      </div>
+      <div style={{ padding: 10, display: 'flex', flexDirection: 'column', gap: 6, flex: 1 }}>
+        {assignments.map(a => {
+          const m = memberById[a.member_id];
+          if (!m) return null;
+          return <PlayerRow key={a.member_id} member={m} role={a.role} canManage={canManage} onRemove={() => onRemovePlayer(a.member_id)} onCycleRole={() => onCycleRole(a.member_id)} />;
+        })}
+        {assignments.length === 0 && (
+          <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic' }}>No players assigned.</div>
+        )}
+        {canManage && (
+          <button onClick={onAddPlayer} style={S.addPlayerBtn}>
+            <Plus size={13} /> ADD PLAYER
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Combined building accordion (mobile) ─────────────────────────────
+function CombinedBuildingAccordion({ members, isOpen, onToggle, memberById, canManage, phase2Options, allBuildings, ungroupedInSection, onRenameMember, onSetLinksTo, onUncombine, onCombineWith, onAddPlayer, onRemovePlayer, onCycleRole }) {
+  const sorted = [...members].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0));
+  const primary = sorted[0];
+  const linkTarget = primary.links_to_id ? allBuildings.find(x => x.id === primary.links_to_id) : null;
+  const assignments = unionAssignments(members);
+  const count = assignments.length;
+  return (
+    <div style={{ border: '1px solid #1e3550', background: 'rgba(13,21,32,0.6)' }}>
+      <button onClick={onToggle} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '12px', background: 'transparent', border: 'none', cursor: 'pointer', minHeight: 44, textAlign: 'left' }}>
+        <span style={{ fontSize: 14, flexShrink: 0 }}>{combinedIcon(members)}</span>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#d0e4f4', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{combinedDisplayName(members)}</span>
+        <span style={{ fontSize: 10, color: '#5a7898' }}>{count} {isOpen ? '▲' : '▼'}</span>
+      </button>
+      {isOpen && (
+        <div style={{ padding: '0 12px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {canManage && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              {sorted.map(b => (
+                <MemberChip key={b.id} building={b} canManage={canManage} onRename={n => onRenameMember(b.id, n)} onRemove={() => onUncombine(b.id)} />
+              ))}
+            </div>
+          )}
+          <LinksToControl building={primary} phase2Options={phase2Options} linkTarget={linkTarget} canManage={canManage} onSetLinksTo={onSetLinksTo} />
+          {canManage && <CombineWithControl building={primary} ungroupedInSection={ungroupedInSection} onCombineWith={onCombineWith} />}
+          {assignments.map(a => {
+            const m = memberById[a.member_id];
+            if (!m) return null;
+            return <PlayerRow key={a.member_id} member={m} role={a.role} canManage={canManage} onRemove={() => onRemovePlayer(a.member_id)} onCycleRole={() => onCycleRole(a.member_id)} />;
+          })}
+          {assignments.length === 0 && (
             <div style={{ fontSize: 11, color: '#5a7898', fontStyle: 'italic' }}>No players assigned.</div>
           )}
           {canManage && (
@@ -1265,7 +1459,7 @@ function markerNameLines(building, memberById, allBuildings) {
 }
 
 // ── Map view ──────────────────────────────────────────────────────
-function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planName, onExportText, onMarkerClick, onRemovePlayer }) {
+function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planTitle, onExportText, onMarkerClick, onRemovePlayer }) {
   const [imgStatus, setImgStatus] = useState('loading'); // 'loading' | 'ok' | 'error'
   const imgRef = useRef(null);
   const containerRef = useRef(null);
@@ -1315,14 +1509,14 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planNa
     const ctx = canvas.getContext('2d');
     ctx.drawImage(img, 0, 0, w, h);
 
-    if (planName && planName.trim()) {
+    if (planTitle) {
       const titleFontSize = Math.max(20, Math.round(w * 0.022));
       ctx.font = `bold ${titleFontSize}px Arial`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
       const titlePadding = 10;
       const titleY = 8;
-      const titleText = planName.trim();
+      const titleText = planTitle;
       const titleW = ctx.measureText(titleText).width + titlePadding * 2;
       ctx.fillStyle = 'rgba(8,13,20,0.85)';
       ctx.fillRect(w / 2 - titleW / 2, titleY, titleW, titleFontSize + titlePadding);
@@ -1407,8 +1601,8 @@ function MapView({ buildings, memberById, isMobile, taskforce, weekLabel, planNa
 
   return (
     <div style={{ marginBottom: 24 }}>
-      {planName && planName.trim() && (
-        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '1.5px', color: '#f0a500', marginBottom: 10, textAlign: 'center' }}>{planName.trim()}</div>
+      {planTitle && (
+        <div style={{ fontSize: 18, fontWeight: 700, letterSpacing: '1.5px', color: '#f0a500', marginBottom: 10, textAlign: 'center' }}>{planTitle}</div>
       )}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8, marginBottom: 10 }}>
         {onExportText && (
@@ -1740,7 +1934,7 @@ function GuideModal({ onClose }) {
     'Tap "ADD PLAYER" on any building to assign someone — players can be on multiple buildings at once.',
     "Tap a player's role icon to cycle: none → 👑 Coordinator → 🔥 Moves to next building.",
     'Phase 1 buildings have a "→ moves to" dropdown — link it to whichever Phase 2 building your team pushes to after minute 10. 🔥-tagged players will then also show up at that Phase 2 building.',
-    'Give 2+ buildings the same "Team" label to mirror one roster across all of them automatically.',
+    'Use "+ COMBINE WITH" on a building to merge it with another in the same phase into one card with a shared roster — handy when one team covers multiple buildings.',
     'MAP VIEW shows the same data laid over the real battlefield image, with colored lines connecting linked buildings.',
     'Use "MARK NO-SHOWS" each week to track attendance — repeat no-shows get a ❗ badge when picking players.',
     '"+ NEXT WEEK" copies your buildings/links/team setup forward but clears all player assignments, so you can re-assign fresh each week.',

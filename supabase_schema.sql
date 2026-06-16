@@ -233,7 +233,7 @@ CREATE TABLE battle_plan_buildings (
   phase        TEXT, -- 'phase1' | 'phase2' | NULL (kill squad / substitutes have NULL phase)
   links_to_id  UUID REFERENCES battle_plan_buildings(id) ON DELETE SET NULL, -- phase1 building -> phase2 building it transitions to
   sort_order   INTEGER NOT NULL DEFAULT 0,
-  team_label   TEXT DEFAULT '', -- shared team name to mirror roster across 2+ buildings
+  combine_group TEXT, -- shared id to merge 2+ buildings into one card (List View) and mirror roster across them
   created_at   TIMESTAMPTZ DEFAULT NOW()
 );
 
