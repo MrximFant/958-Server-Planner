@@ -164,7 +164,7 @@ export default function TrainPlanner() {
   const [isMobile,       setIsMobile]       = useState(typeof window !== 'undefined' && window.innerWidth < 768);
 
   // ── Panel state ──────────────────────────────────────────────────
-  const [leftOpen,    setLeftOpen]    = useState(true);
+  const [leftOpen,    setLeftOpen]    = useState(() => !(typeof window !== 'undefined' && window.innerWidth < 768));
 
   // ── Manage Train (flattened) ──────────────────────────────────────
   const [managePanelOpen, setManagePanelOpen] = useState(false); // advanced section
@@ -759,14 +759,28 @@ export default function TrainPlanner() {
 
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden', position: 'relative' }}>
 
+        {/* ── Mobile backdrop for week sidebar ──────────────────── */}
+        {isMobile && leftOpen && (
+          <div
+            onClick={() => setLeftOpen(false)}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.55)', zIndex: 55 }}
+          />
+        )}
+
         {/* ── Left: Week sidebar ─────────────────────────────────── */}
         <div
           className={`tp-left-panel${leftOpen ? ' open' : ''}`}
           style={{ width: 240, minWidth: 240, background: 'rgba(5,10,18,0.98)', borderRight: '1px solid #1e3550', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
         >
-          <div style={{ flexShrink: 0, padding: '10px 10px 6px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+          <div style={{ flexShrink: 0, padding: '10px 10px 6px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#8aadcc' }}>WEEKS ({sortedScheds.length})</div>
+            {isMobile && (
+              <button onClick={() => setLeftOpen(false)} style={{ background: 'none', border: 'none', color: '#7a9bb8', cursor: 'pointer', fontSize: 18, lineHeight: 1, minWidth: 36, minHeight: 36 }}>×</button>
+            )}
+          </div>
+          <div style={{ flexShrink: 0, padding: '0 10px 6px', display: 'flex', flexDirection: 'column', gap: 6 }}>
             {canEdit && (
-              <button onClick={createNextWeek} style={{ ...S.genBtn, background: 'rgba(0,232,122,0.1)', border: '1px solid rgba(0,232,122,0.4)', color: '#00e87a', minHeight: 44 }}>
+              <button onClick={() => { createNextWeek(); if (isMobile) setLeftOpen(false); }} style={{ ...S.genBtn, background: 'rgba(0,232,122,0.1)', border: '1px solid rgba(0,232,122,0.4)', color: '#00e87a', minHeight: 44 }}>
                 <Plus size={13} /> NEXT WEEK
               </button>
             )}
@@ -787,9 +801,6 @@ export default function TrainPlanner() {
             )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 10px 4px' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: '2px', color: '#8aadcc' }}>WEEKS ({sortedScheds.length})</div>
-          </div>
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {sortedScheds.length === 0 && (
               <div style={{ padding: '8px 12px', fontSize: 10, color: '#5a7898', fontStyle: 'italic' }}>No saved weeks yet. Save to create one.</div>
@@ -806,6 +817,7 @@ export default function TrainPlanner() {
                       if (isDirty) { setPendingNav({ type: 'date', key: s.week_label, sched: s }); }
                       else applySchedule(s);
                     }
+                    if (isMobile) setLeftOpen(false);
                   }}
                 >
                   <div style={{ flex: 1, minWidth: 0 }}>
