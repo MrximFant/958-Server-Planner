@@ -1348,7 +1348,6 @@ function EventsView({ members, alliance, myMemberId, showPower, canManage }) {
               <div className="team-box-header">
                 <div className={`dot-l ${cat.dot}`} />
                 {cat.label}
-                {cat.slotId && <span className="team-time" style={{ fontSize: 11, color: '#7a9bb8', marginLeft: 6 }}><SlotTime event={type} slotId={cat.slotId} /></span>}
                 <span className="team-count">{list.length}</span>
               </div>
               <div className="team-body">
