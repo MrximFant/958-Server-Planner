@@ -1,7 +1,7 @@
 # Last War Server Planner — Project Plan
 
 > Living document. Updated as features are built or planned.
-> Last updated: 2026-06-12
+> Last updated: 2026-06-16
 
 ---
 
@@ -114,23 +114,24 @@ Emergency admin password login has been removed from both the UI and login flow.
 - **Desert Storm** — 3 time slots (Friday, server time UTC-2, no DST), **30 minutes each**:
   - 09:00–09:30 · 18:00–18:30 · 23:00–23:30
 - Admin assigns each team (Team A / Team B) to a time slot independently — both can share a slot
-- **Time display**: every slot shows server time + user's local time (DST-aware — uses next real upcoming Thu/Fri date so the browser applies the correct offset, not a fixed year-2000 date)
+- **Time display**: summary banner above each roster shows server time + user's local time per team (DST-aware — uses next real upcoming Thu/Fri date so the browser applies the correct offset, not a fixed year-2000 date). Individual team boxes inside the roster show just "Team A" / "Team B" + count — no timer clutter.
 - Config saved to `alliances.event_config` (JSONB) in Supabase — shared across all members
-- ⚠️ **Requires DB migration**: `ALTER TABLE alliances ADD COLUMN IF NOT EXISTS event_config JSONB;`
+- ✅ DB migration applied: `event_config JSONB` column added to `alliances`
 - Team boxes: Team A (green), Team B (orange), Substitutes, Flexible — show assigned members with power + troop type
 - Troop type filter
 
-#### Train Planner (`/server/:id/train`)
-- Five modes: Manual, Fixed Driver, Paired Rotation, Round Robin, Priority Days
-- Multi-week navigation with left sidebar week list
-- Action buttons in sidebar: MANAGE (green border), EXPORT, CLEAR, SAVE
-- MANAGE TRAIN modal: Generate Weeks, Manage Weeks, Placeholder Members tabs
-- Foldable members panel, mode tab bar pinned at bottom of left panel
-- Placeholder members stored in localStorage (`tp_ph_<allianceId>`)
-- Priority Days: text description per day, shown as banner in other modes
-- Paired rotation: filter out already-paired members, + REVERSE CYCLE button
-- All data saved to `train_schedules` + `train_slots` in Supabase
-- Mobile: left panel + members panel become fixed drawers
+#### Train Planner (`/server/:id/train`) — Rebuilt 2026-06-16
+- **Single unified grid** — replaced the old 5-mode system (Manual / Fixed Driver / Paired / Round Robin / Priority Days) entirely. Every slot (7 days × Driver/VIP) is just one of 3 states: 🔄 Auto, 🔒 Locked, ⬜ Empty.
+- Two ordered queues (Driver, VIP) drive auto-fill; reorder via ▲▼ buttons (no drag-and-drop — unreliable on touch), shuffle/reverse-cycle supported
+- Tapping/clicking a slot opens a lock/auto/clear action sheet with a searchable member picker (bottom sheet on mobile, popover on desktop) — no native `<select>` dropdowns
+- **Mobile (<768px)**: day-card carousel — one day at a time, explicit ◀ ▶ arrows + 7-dot indicator, toggle to switch to the full grid if preferred
+- **Tablet/desktop (≥768px)**: full 7×2 grid, ≥44px touch targets throughout
+- Week management flattened: "+ NEXT WEEK" one-click sidebar button is primary; bulk-generate weeks + placeholder members moved into a collapsed "ADVANCED" panel
+- Week sidebar on mobile is a proper closeable overlay (defaults closed, tap-outside backdrop, auto-closes after picking a week) — previously defaulted open and covered the back button + part of the grid on load
+- Backward-compatible: old `mode_config` shapes (fixed driver id, pairs, queue order) are converted into the new `{driverQueue, vipQueue}` format on load — no schema migration, no data loss for existing alliances
+- All data still saved to `train_schedules` (`mode_config` JSONB) + `train_slots` in Supabase
+- Export (clipboard/file) preserved, reads from unified slot state
+- Placeholder members still in localStorage (`tp_ph_<allianceId>`)
 
 #### War Map (`/server/:id/map`)
 - Territory map from territories.json
@@ -152,6 +153,14 @@ Emergency admin password login has been removed from both the UI and login flow.
 
 #### Discord Bot (notify-activation)
 - Supabase Edge Function — DMs activation code to requester on approval
+
+#### In-depth Contextual Help & Admin Onboarding — Built 2026-06-15/16
+- **Setup Wizard** (`SetupWizard.jsx`) — 4-step modal for new server admins, auto-shows when no alliances exist, re-openable via "📋 SETUP GUIDE" topbar button. Resumes at the correct step based on actual progress (no alliances → step 1, alliance exists but owner link not yet copied → step 2, copied → step 3) rather than always restarting at step 1.
+- **Owner Checklist** (`OwnerChecklist.jsx`) — shown on Alliance HQ HOME for owners; checks profile filled in / members joined / events configured / train schedule created; each incomplete item links to where to fix it; dismissible via localStorage
+- **Quick Reference card** (`QuickReference.jsx`) — collapsible "WHAT TO DO WHEN…" card, **role-aware**: server admin/helper see 7 admin-panel-focused items, alliance owner/admin see 4 alliance-scoped items, members see 3 self-service items. Rendered in Admin Panel and Alliance HQ → Manage tab.
+- **Tooltip component** (`Tooltip.jsx`) — reusable `?` icon, 300ms hover delay, tap-friendly, dismiss on outside click. Currently wired to Owner/Member invite link labels in both Admin Panel and Alliance HQ Settings.
+- **Empty-state improvements** — done for: no alliances yet (Admin Panel), no members yet (Alliance HQ roster). Still generic elsewhere (train schedule, events with no members).
+- 🔲 **Not yet done**: tooltips on Train Planner controls and Profile power fields; "Improved Role Help" step indicators (1→2→3) on Server Dashboard — current role help there is still text-only, collapsed by default.
 
 ---
 
@@ -235,79 +244,20 @@ CREATE TABLE battle_plan_slots (
 
 ### 🔲 Other Planned Features
 
-#### In-depth Contextual Help & Admin Onboarding (Next Session Priority)
+#### Remaining onboarding/help polish
+- Improved Role Help on Server Dashboard — make it visually step-based (1→2→3) instead of plain collapsed text, always-visible for first-time visitors
+- Tooltips on Train Planner controls (slot states, queues) and Profile power fields
+- Better empty states for: no train schedule yet, events tab with no members
 
-The current help system (collapsible role banners on the server dashboard + static Rules page)
-is too passive — admins and owners have to hunt for guidance. The goal is **just-in-time, 
-contextual help that appears exactly where the user needs it**, so the platform feels 
-self-explanatory without a manual.
-
-**Problems to solve:**
-- Server admins setting up for the first time don't know what order to do things in
-- Alliance owners don't know they need to copy and share the invite link before members can join
-- Members don't know to fill in their profile immediately after registering
-- Admins don't know where to find things like "how do I reset a password" or "how do I add an alliance admin"
-- No visual cues pointing to the next required action
-
-**What to build:**
-
-1. **Setup Wizard for new Server Admins**
-   - Shown on first login only (tracked via a `setup_completed` flag on the server record or localStorage)
-   - Step-by-step modal/overlay: Create your first alliance → Copy the Owner Invite link → Send it to your R5 → Done
-   - Each step has a direct action button ("CREATE ALLIANCE →") that takes them there
-   - Can be dismissed and re-opened from a "SETUP GUIDE" button in the topbar
-
-2. **Setup Checklist for Alliance Owners**
-   - Shown in Alliance HQ HOME when `setup_completed` is false for the alliance
-   - Checklist items with green ticks when done:
-     - ✅ / ⬜ Your profile is filled in (in_game_name + at least one power stat)
-     - ✅ / ⬜ At least one member has joined (memberCount > 1)
-     - ✅ / ⬜ Event time slots configured (Canyon + Desert)
-     - ✅ / ⬜ At least one train schedule created
-   - Each incomplete item is a clickable link to where to fix it
-   - Dismiss once all items are green
-
-3. **Inline contextual `?` tooltips throughout the UI**
-   - Small `?` icon next to any label that isn't self-explanatory
-   - On hover/tap: short 1–2 sentence tooltip explaining what it is and why it matters
-   - Priority locations:
-     - Alliance HQ → Manage → Settings: next to "Owner Invite Link" and "Member Invite Link"
-     - Admin Panel → Alliances: next to the invite link copy buttons
-     - Train Planner: next to each mode name (Fixed Driver, Paired Rotation, etc.)
-     - Events: next to "Team A / Team B" slot dropdowns in admin manager
-     - Profile: next to each power field and the Canyon/Desert team preference selects
-   - Tooltips should be a single reusable `<Tooltip text="...">` component that wraps any element
-
-4. **Empty-state guidance**
-   - Every empty list/section should have a helpful empty state — not just "No entries"
-   - Examples:
-     - No alliances yet → "No alliances set up. Go to SERVER ADMIN → ALLIANCES to create your first one."
-     - No train schedule → "No schedule for this week. Click MANAGE to generate weeks."
-     - No members → "No members yet. Share your Member Invite link from MANAGE → SETTINGS."
-     - Events tab with no members → "No members have set event preferences yet. Share your invite link."
-
-5. **Admin Quick Reference card** (visible in Admin Panel + Alliance HQ Manage tab)
-   - Collapsible card titled "QUICK REFERENCE — WHAT TO DO WHEN…"
-   - Covers the most common admin tasks with direct navigation links:
-     - "New player wants to join" → share Member Invite from Settings
-     - "Player forgot their password" → Manage → Roster → edit member → change password
-     - "Promote a player to officer" → Manage → Admins → add name
-     - "Player switched alliance" → Admin Panel → Members → reassign
-     - "New season starting" → Admin Panel → Server → update season number
-     - "Set up Canyon/Desert times" → Alliance HQ → Events → ⚙ Admin Manager
-
-6. **Improved Role Help on Server Dashboard**
-   - Current role help is text-only and collapsed by default
-   - Change to always-visible for first-time visitors (before login)
-   - After login: show role-specific version prominently with actionable next step highlighted
-   - Add visual step indicators (1 → 2 → 3) instead of a plain list
-
-**Implementation notes:**
-- Keep it unobtrusive — guides should be dismissible and not re-appear once dismissed (use localStorage flags per user/alliance)
-- Tooltip component: small floating box, dark background, max 200px wide, appears on hover and on tap (300ms delay on hover to avoid accidental trigger)
-- Wizard/checklist components should be standalone and importable anywhere
-- No new DB tables needed for most of this — localStorage flags are sufficient for "has seen" tracking
-
+#### Rework Invite Links (Owner / Member) — needs clearer UX
+The current invite link system (one-time Owner link, reusable Member link, shown as raw
+copy-able URLs in Admin Panel → Alliances and Alliance HQ → Manage → Settings) is functional
+but confusing for non-technical users:
+- It's not obvious at a glance which link is which, or that the Owner link is single-use
+- No visual confirmation/state showing whether the Owner link has already been used
+- Raw long URLs are intimidating to share via Discord — no "copied!" feedback pattern consistency, no QR code option for mobile sharing
+- New admins/owners don't realize they *must* share these links before anyone can join — easy to skip in the setup flow
+- Consider: clearer labelling ("Send this ONE-TIME link to your R5" vs "Share this link with all players"), a used/active status badge, possibly short codes instead of long URLs, and a simple share sheet (copy / Discord-formatted text / QR) instead of a bare link
 
 #### Password Reset via Discord Bot
 - Member sends command to bot → bot DMs a one-time temp password
@@ -325,15 +275,9 @@ self-explanatory without a manual.
 
 ---
 
-## Database — Current State (2026-06-12)
+## Database — Current State (2026-06-16)
 
-All migrations applied. Schema is clean.
-
-### Pending migration (must run in Supabase SQL editor)
-```sql
--- Required for Events tab time slot config
-ALTER TABLE alliances ADD COLUMN IF NOT EXISTS event_config JSONB;
-```
+All migrations applied, including `event_config` on `alliances`. Schema is clean, no pending migrations.
 
 ### Tables
 
@@ -364,7 +308,7 @@ src/
     ServerDashboard.jsx     — server home: alliances+actions left, collapsible rules right
     AdminPanel.jsx          — server admin tools (SERVER ADMIN label)
     AllianceHQ.jsx          — main member area (home, events, profile, manage)
-    TrainPlanner.jsx        — multi-week train planner
+    TrainPlanner.jsx        — unified slot-state train planner (grid + mobile day carousel)
     Map.jsx                 — war map
     Register.jsx            — member + owner registration via invite link
     JoinServer.jsx          — invite link resolver
@@ -373,6 +317,10 @@ src/
     PublicRoster.jsx        — public alliance roster (no login)
   components/
     ParticleBackground.jsx  — shared animated field (400 dots, DST-pulse, on all pages except AllianceHQ)
+    Tooltip.jsx              — reusable "?" hover/tap tooltip
+    SetupWizard.jsx          — 4-step first-time admin setup modal
+    OwnerChecklist.jsx       — alliance owner setup checklist (Alliance HQ HOME)
+    QuickReference.jsx       — role-aware "what to do when…" card
   contexts/
     AuthContext.jsx         — session management via localStorage
   lib/
